@@ -43,6 +43,10 @@
       _nav.appendChild(navItem('📤  My Submissions', () => loadModule('submissions'), { 'data-nav': 'submissions' }, 'approved'));
     }
 
+    if (permissions.isAdmin(user) || (permissions.can('reports', user) && user.unitKeys.length)) {
+      _nav.appendChild(navItem('📊  Reports', () => loadModule('reports'), { 'data-nav': 'reports' }));
+    }
+
     if (list.length) group('Units');
     list.forEach(u => _nav.appendChild(navItem(u.name, () => loadUnit(u), { 'data-unit': u.key })));
 
