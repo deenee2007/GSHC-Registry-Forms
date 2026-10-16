@@ -24,11 +24,17 @@
       ui.el('p', { class: 'muted' }, config.subtitle || '')
     ]));
 
+    if (!formKeys.length) {
+      container.appendChild(ui.el('div', { class: 'notice notice--warn' }, permissions.isAdmin()
+        ? 'This unit has no forms yet. Choose its forms under Settings → Form Access.'
+        : 'This unit has no forms yet. Ask the administrator to choose its forms.'));
+    }
+
     // ── New entry toolbar ──
     const formPicker = ui.el('select', { class: 'form-picker', 'aria-label': 'Form' },
       formKeys.map(k => ui.el('option', { value: k }, defOf(k).label)));
     const newBtn = ui.el('button', {
-      class: 'btn btn--primary', disabled: can('create') ? null : 'disabled',
+      class: 'btn btn--primary', disabled: can('create') && formKeys.length ? null : 'disabled',
       onclick: () => wf.openForm({ unitKey: unit.key, formType: formPicker.value })
     }, '+ New Entry');
     const refreshBtn = ui.el('button', { class: 'btn btn--ghost', onclick: () => refresh() }, '↻ Refresh');

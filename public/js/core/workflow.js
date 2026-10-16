@@ -131,6 +131,7 @@
       B('Return with Comments', 'btn--danger', done(() => returnDialog(doc)), can.giveBack),
       B('Revoke', 'btn--danger', done(() => revokeDialog(doc)), can.revoke),
       B('🖨  Print Draft Copy', 'btn--ghost', () => print(doc, def), can.printDraft),
+      B('⬇  Download Copy', 'btn--ghost', () => download(doc.id), doc.status === 'final' || doc.status === 'revoked'),
       B('🖨  Print', 'btn--primary', () => print(doc, def), can.print),
       B(submitLabel(doc), 'btn--primary', done(() => submitDialog(doc)), can.submit),
       B('✔  Approve & Sign', 'btn--ok', done(() => approveDialog(doc)), can.approve)
@@ -355,8 +356,18 @@
     } catch (e) { ui().toast(e.offline ? 'This document is not available offline.' : e.message, 'error'); }
   }
 
+  // The saved copy of a signed document, as a file the user keeps.
+  function download(id) {
+    const a = document.createElement('a');
+    a.href = `/api/records/${id}/copy`;
+    a.download = '';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
   App.workflow = {
     onChange, changed, meta, roleLabel, abilities, submitLabel,
-    openForm, openDocument, submitDialog, approveDialog, returnDialog, revokeDialog, withdraw, deleteRecord, print
+    openForm, openDocument, download, submitDialog, approveDialog, returnDialog, revokeDialog, withdraw, deleteRecord, print
   };
 })();

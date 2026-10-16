@@ -66,6 +66,7 @@
         panel.appendChild(ui.table(cols, records, [
           { label: 'Open', onClick: r => wf.openDocument(r.id) },
           { label: '🖨 Print', class: 'btn--primary', show: () => tab === 'final', onClick: r => wf.print(r.id) },
+          { label: '⬇ Download', show: () => tab === 'final' || tab === 'revoked', onClick: r => wf.download(r.id) },
           { label: 'Edit', show: r => wf.abilities(r).edit, onClick: async r => { const { record } = await api.get('/records/' + r.id); wf.openForm({ unitKey: r.unitKey, formType: r.formType, record }); } },
           { label: 'Resubmit', class: 'btn--ok', show: r => tab === 'returned' && wf.abilities(r).submit, onClick: r => wf.submitDialog(r).then(x => x && wf.changed()) },
           { label: 'Withdraw', show: () => tab === 'pending', onClick: r => wf.withdraw(r).then(x => x && wf.changed()) }

@@ -10,6 +10,7 @@ const catalogue = require('../forms/catalogue');
 const pw = require('../services/passwords');
 const mail = require('../services/mail');
 const links = require('../services/passwordLinks');
+const settings = require('../services/settings');
 const audit = require('../services/audit');
 const { HttpError, requireLogin, requireAdmin } = require('../middleware/auth');
 
@@ -52,13 +53,21 @@ async function cleanUserInput(body, units) {
     if (out.signerRoles.some(r => !SIGNER_ROLES[r])) throw new HttpError(400, 'Invalid signing role.');
   }
   if (body.active !== undefined) out.active = !!body.active;
+  if (body.emailAlertsBlocked !== undefined) out.emailAlertsBlocked = !!body.emailAlertsBlocked;
   return out;
 }
 
 // ── Reference data for the Settings screens ──
-router.get('/meta', (req, res) => {
-  res.json({ privileges: PRIVILEGES, signerRoles: SIGNER_ROLES, mailEnabled: mail.enabled() });
-});
+router.get('/meta', wrap(async (req, res) => {
+  res.json({ privileges: PRIVILEGES, signerRoles: SIGNER_ROLES, mailEnabled: mail.enabled(), settings: await settings.get() });
+}));
+
+// System wide switches, e.g. { emailAlerts: false } stops alert emails for everyone.
+router.put('/settings', wrap(async (req, res) => {
+  const out = await settings.set(req.body || {});
+  await audit.log(req, 'settings_updated', { details: req.body });
+  res.json({ settings: out });
+}));
 
 // ── Users ──
 router.get('/users', wrap(async (req, res) => {
@@ -162,22 +171,33 @@ router.delete('/users/:id', wrap(async (req, res) => {
 }));
 
 // ── Units ──
+// New units are either another Court Registry (numbered automatically,
+// with the registry forms) or an "Other Unit" (Probate, Accounts, Open
+// Registry, ...) whose forms the admin picks under Form Access. Appeals and
+// Execution exist once each and are not added here.
 router.post('/units', wrap(async (req, res) => {
   const type = req.body.type || 'registry';
-  if (!catalogue.MODULES[type]) throw new HttpError(400, 'Invalid unit type.');
-  const name = String(req.body.name || '').trim();
+  if (!['registry', 'general'].includes(type)) throw new HttpError(400, 'Choose Court Registry or Other Unit.');
+  const name = String(req.body.name || '').trim().slice(0, 80);
   if (!name) throw new HttpError(400, 'Unit name is required.');
-  let key = String(req.body.key || '').trim().toLowerCase();
-  let courtNo;
-  if (!key && type === 'registry') {
+  let key, courtNo;
+  if (type === 'registry') {
     const nums = (await Unit.find({ type: 'registry' })).map(u => u.courtNo || 0);
     courtNo = Math.max(0, ...nums) + 1;
     key = 'hc' + courtNo;
+  } else {
+    const base = name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 24) || 'unit';
+    key = base;
+    for (let i = 2; await Unit.exists({ key }); i++) key = `${base}_${i}`;
   }
-  if (!/^[a-z0-9_-]{2,30}$/.test(key)) throw new HttpError(400, 'Unit key must be 2 to 30 letters or numbers.');
   if (await Unit.exists({ key })) throw new HttpError(409, 'A unit with that key already exists.');
-  const unit = await Unit.create({ key, type, name, courtNo });
-  await audit.log(req, 'unit_created', { unitKey: key });
+  let allowedForms = null;
+  if (Array.isArray(req.body.allowedForms) && req.body.allowedForms.length) {
+    allowedForms = [...new Set(req.body.allowedForms.map(String))];
+    if (allowedForms.some(f => !catalogue.forms[f])) throw new HttpError(400, 'Unknown form.');
+  }
+  const unit = await Unit.create({ key, type, name, courtNo, allowedForms });
+  await audit.log(req, 'unit_created', { unitKey: key, details: { type, name } });
   res.status(201).json({ unit });
 }));
 

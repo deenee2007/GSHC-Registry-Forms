@@ -7,7 +7,7 @@
   window.App = window.App || {};
   window.App.modules = window.App.modules || {};
 
-  const TYPE_LABELS = { registry: 'Court Registry', appeals: 'Appeals', execution: 'Execution / Bailiffs' };
+  const TYPE_LABELS = { registry: 'Court Registry', appeals: 'Appeals', execution: 'Execution / Bailiffs', general: 'Other Unit' };
   const MODULE_OF = { registry: 'Registry', appeals: 'Appeals', execution: 'Execution' };
 
   window.App.modules.settings = {
@@ -62,8 +62,21 @@
         ui.clear(panel);
         const [{ users }, units] = await Promise.all([api.get('/admin/users'), allUnits()]);
         const unitName = (k) => (units.find(u => u.key === k) || {}).name || k;
+        const globalAlerts = el('input', { type: 'checkbox' });
+        globalAlerts.checked = meta.settings.emailAlerts;
+        globalAlerts.disabled = !meta.mailEnabled;
+        globalAlerts.addEventListener('change', async () => {
+          try {
+            const r = await api.put('/admin/settings', { emailAlerts: globalAlerts.checked });
+            meta.settings = r.settings;
+            ui.toast(r.settings.emailAlerts ? 'Email alerts switched on for everyone (except users switched off below).' : 'Email alerts switched off for everyone.', 'success', 5000);
+            renderUsers();
+          } catch (e) { globalAlerts.checked = !globalAlerts.checked; ui.toast(e.message, 'error'); }
+        });
         panel.appendChild(el('div', { class: 'toolbar' }, [
-          el('button', { class: 'btn btn--primary', onclick: () => userForm(null, units) }, '+ Add User')
+          el('button', { class: 'btn btn--primary', onclick: () => userForm(null, units) }, '+ Add User'),
+          el('label', { class: 'check check--plain alert-switch' }, [globalAlerts,
+            meta.mailEnabled ? ' Send email alerts to all users' : ' Email alerts (email is not set up on the server)'])
         ]));
         panel.appendChild(ui.table(
           [
@@ -73,6 +86,8 @@
             { label: 'Role', value: u => u.role === 'admin' ? 'Administrator' : 'Unit User' },
             { label: 'Units', value: u => u.role === 'admin' ? 'All' : (u.unitKeys.length ? u.unitKeys.map(unitName).join(', ') : (u.signerRoles.length ? 'All' : 'None')) },
             { label: 'Privileges', value: u => u.role === 'admin' ? 'Full' : (u.privileges.join(', ') || 'none') },
+            { label: 'Email Alerts', value: u => !u.email ? 'No email' : !meta.settings.emailAlerts ? 'Off for everyone'
+              : u.emailAlertsBlocked ? 'Off (by admin)' : u.emailAlerts ? 'On' : 'Off (by user)' },
             { label: 'Signs As', value: u => u.signerRoles.map(r => meta.signerRoles[r]).join(', ') || '—' },
             { label: 'Signature', value: u => u.signerRoles.length ? (u.hasSignature && u.hasSigningPin ? 'Ready' : 'Not set up') : '—' },
             { label: 'Status', node: u => el('span', { class: 'badge ' + (u.active ? 'badge--final' : 'badge--revoked') }, u.active ? 'Active' : 'Inactive') }
@@ -113,6 +128,10 @@
         invite.checked = true;
         const inviteRow = el('label', { class: 'check check--plain form-field--full' }, [invite,
           ' Email an invitation link so they choose their own password (instead of showing a one time password here)']);
+        const alertsAllowed = el('input', { type: 'checkbox' });
+        alertsAllowed.checked = !v.emailAlertsBlocked;
+        const alertsRow = el('label', { class: 'check check--plain form-field--full' }, [alertsAllowed,
+          ' Allow email alerts for this user (forms waiting for them; their forms approved, returned or revoked)']);
         const syncInvite = () => { inviteRow.hidden = !(meta.mailEnabled && !existing && email.value.trim()); };
         email.addEventListener('input', syncInvite);
         syncInvite();
@@ -136,13 +155,14 @@
           el('label', { class: 'form-field' }, [el('span', { class: 'form-field__label' }, 'Title (printed with signature)'), title]),
           el('label', { class: 'form-field form-field--full' }, [el('span', { class: 'form-field__label' }, 'Email (for invitations and password reset)'), email]),
           inviteRow,
+          meta.mailEnabled ? alertsRow : null,
           unitRow, privRow, signRow
         ]);
 
         await ui.modal(existing ? 'Edit User' : 'Add User', body, {
           confirmText: existing ? 'Save' : 'Create User',
           onConfirm: async () => {
-            const payload = { fullName: fullName.value, title: title.value, email: email.value, role: role.value, unitKeys: unitBox.values(), privileges: privBox.values(), signerRoles: signBox.values() };
+            const payload = { fullName: fullName.value, title: title.value, email: email.value, role: role.value, unitKeys: unitBox.values(), privileges: privBox.values(), signerRoles: signBox.values(), emailAlertsBlocked: !alertsAllowed.checked };
             if (existing) {
               await api.patch('/admin/users/' + existing.id, payload);
               ui.toast('User updated.', 'success');
@@ -162,7 +182,7 @@
         ui.clear(panel);
         const units = await allUnits();
         panel.appendChild(el('div', { class: 'toolbar' }, [
-          el('button', { class: 'btn btn--primary', onclick: addCourt }, '+ Add Court Registry')
+          el('button', { class: 'btn btn--primary', onclick: addUnit }, '+ Add Unit')
         ]));
         panel.appendChild(ui.table(
           [
@@ -179,16 +199,36 @@
           } }]
         ));
       }
-      async function addCourt() {
-        const name = el('input', { type: 'text', placeholder: 'e.g. High Court 10 Registry' });
-        await ui.modal('Add Court Registry', el('div', { class: 'form-grid' }, [ui.field('Registry Name', name)]), {
+      async function addUnit() {
+        const units = await allUnits();
+        const nextCourt = Math.max(0, ...units.filter(u => u.type === 'registry').map(u => u.courtNo || 0)) + 1;
+        const type = el('select', null, [
+          el('option', { value: 'registry' }, 'Court Registry'),
+          el('option', { value: 'general' }, 'Other Unit (Probate, Accounts, Open Registry and so on)')
+        ]);
+        const name = el('input', { type: 'text' });
+        const help = el('p', { class: 'muted form-field--full' });
+        const sync = () => {
+          if (type.value === 'registry') {
+            name.value = `High Court ${nextCourt} Registry`;
+            help.textContent = `Numbered automatically as High Court ${nextCourt}. It gets the court registry forms; you can change them later under Form Access.`;
+          } else {
+            if (/^High Court \d+ Registry$/.test(name.value)) name.value = '';
+            name.placeholder = 'e.g. Probate Registry';
+            help.textContent = 'It starts with no forms. Next you choose its forms from any module; its own forms and workflow can be added to the system later.';
+          }
+        };
+        type.addEventListener('change', sync);
+        sync();
+        await ui.modal('Add Unit', el('div', { class: 'form-grid' }, [ui.field('Type', type), ui.field('Unit Name', name), help]), {
           confirmText: 'Add',
           onConfirm: async () => {
             if (!name.value.trim()) { ui.toast('Enter a name.', 'error'); return undefined; }
-            await api.post('/admin/units', { type: 'registry', name: name.value.trim() });
-            ui.toast('Registry added.', 'success');
+            const { unit } = await api.post('/admin/units', { type: type.value, name: name.value.trim() });
+            ui.toast(`${unit.name} added.`, 'success');
             await router.buildNav();
             renderUnits();
+            if (unit.type === 'general') setTimeout(() => configureFormAccess(unit, renderUnits), 50);
             return true;
           }
         });
@@ -203,12 +243,12 @@
           [
             { label: 'Unit', key: 'name' },
             { label: 'Type', value: u => TYPE_LABELS[u.type] || u.type },
-            { label: 'Form Access', value: u => u.allowedForms ? `${u.allowedForms.length} form(s) chosen` : 'Default (own module)' }
+            { label: 'Form Access', value: u => u.allowedForms ? `${u.allowedForms.length} form(s) chosen` : (u.type === 'general' ? 'None yet: choose its forms' : 'Default (own module)') }
           ],
           units,
           [
             { label: 'Configure', onClick: u => configureFormAccess(u) },
-            { label: 'Reset', class: 'btn--ghost', show: u => !!u.allowedForms, onClick: async u => {
+            { label: 'Reset', class: 'btn--ghost', show: u => !!u.allowedForms && u.type !== 'general', onClick: async u => {
               if (!confirm(`Reset ${u.name} to its default forms?`)) return;
               await api.patch('/admin/units/' + u.key, { allowedForms: null });
               ui.toast('Reset to defaults.', 'success'); renderFormAccess();
@@ -216,7 +256,7 @@
           ]
         ));
       }
-      async function configureFormAccess(unit) {
+      async function configureFormAccess(unit, after) {
         const byModule = window.App.allFormsByModule || {};
         const boxes = {};
         const body = el('div', { class: 'form-grid' });
@@ -236,7 +276,8 @@
             if (!selected.length) { ui.toast('Select at least one form.', 'error'); return undefined; }
             await api.patch('/admin/units/' + unit.key, { allowedForms: selected });
             ui.toast(`Saved: ${selected.length} form(s) for ${unit.name}.`, 'success');
-            renderFormAccess();
+            await router.buildNav();
+            (after || renderFormAccess)();
             return true;
           }
         });

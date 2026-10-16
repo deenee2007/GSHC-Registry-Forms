@@ -21,6 +21,8 @@ const UserSchema = new Schema({
   fullName:     { type: String, required: true, trim: true },
   title:        { type: String, trim: true, default: '' },     // e.g. "Hon. Justice", printed under a signature
   email:        { type: String, trim: true, lowercase: true },  // for invitations and password reset links
+  emailAlerts:  { type: Boolean, default: true },   // the user's own choice (My Account)
+  emailAlertsBlocked: { type: Boolean, default: false }, // switched off by an administrator
   passwordHash: { type: String, required: true },
   role:         { type: String, enum: ['admin', 'user'], default: 'user' },
   unitKeys:     { type: [String], default: [] },               // empty = every unit (admins, Chief Registrar)
@@ -45,6 +47,7 @@ UserSchema.methods.toSafeJSON = function () {
   return {
     id: String(this._id), username: this.username, fullName: this.fullName, title: this.title, email: this.email || '',
     role: this.role, unitKeys: this.unitKeys, privileges: this.privileges, signerRoles: this.signerRoles,
+    emailAlerts: this.emailAlerts !== false, emailAlertsBlocked: !!this.emailAlertsBlocked,
     hasSignature: !!this.signature, hasSigningPin: !!this.signingPinHash,
     mustChangePassword: this.mustChangePassword, active: this.active,
     lastLoginAt: this.lastLoginAt, createdAt: this.createdAt
@@ -53,7 +56,7 @@ UserSchema.methods.toSafeJSON = function () {
 
 const UnitSchema = new Schema({
   key:          { type: String, required: true, unique: true, lowercase: true, trim: true },
-  type:         { type: String, enum: ['registry', 'appeals', 'execution'], required: true },
+  type:         { type: String, enum: ['registry', 'appeals', 'execution', 'general'], required: true },
   name:         { type: String, required: true, trim: true },
   courtNo:      Number,
   allowedForms: { type: [String], default: null },
@@ -151,6 +154,15 @@ const PasswordTokenSchema = new Schema({
 }, { timestamps: true });
 PasswordTokenSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
+// The exact document as it was signed: a standalone HTML file with its
+// styles, signature images and QR code inside, kept for download.
+const DocumentCopySchema = new Schema({
+  record:      { type: Schema.Types.ObjectId, ref: 'Record', required: true, unique: true },
+  html:        { type: String, required: true },
+  generatedAt: { type: Date, default: Date.now },
+  late:        { type: Boolean, default: false } // made after signing (record signed before copies existed)
+});
+
 module.exports = {
   PRIVILEGES, STATUSES,
   User:         mongoose.model('User', UserSchema),
@@ -159,5 +171,6 @@ module.exports = {
   Record:       mongoose.model('Record', RecordSchema),
   AuditLog:     mongoose.model('AuditLog', AuditLogSchema),
   Notification: mongoose.model('Notification', NotificationSchema),
-  PasswordToken: mongoose.model('PasswordToken', PasswordTokenSchema)
+  PasswordToken: mongoose.model('PasswordToken', PasswordTokenSchema),
+  DocumentCopy: mongoose.model('DocumentCopy', DocumentCopySchema)
 };
