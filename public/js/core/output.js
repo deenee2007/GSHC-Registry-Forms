@@ -26,13 +26,16 @@
   function L(v, size) { return `<span class="line ${size || "medium"}">${fmt(v)}</span>`; }
 
   function splitDate(value) {
-    if (!value) return { day: "", month: "", year2: "" };
+    const none = { day: "", month: "", monthNum: "", year2: "", year4: "" };
+    if (!value) return none;
     const date = new Date(value + "T00:00:00");
-    if (isNaN(date)) return { day: "", month: "", year2: "" };
+    if (isNaN(date)) return none;
     return {
       day: String(date.getDate()),
       month: date.toLocaleString("en-GB", { month: "long" }),
-      year2: String(date.getFullYear()).slice(-2)
+      monthNum: String(date.getMonth() + 1),
+      year2: String(date.getFullYear()).slice(-2),
+      year4: String(date.getFullYear())
     };
   }
   function formatDateTime(value) {
@@ -437,7 +440,7 @@
     const months = ['January','February','March','April','May','June',
                     'July','August','September','October','November','December'];
     const dateStr = sd.day && sd.month && sd.year4
-      ? `${parseInt(sd.day, 10)} ${months[parseInt(sd.month,10)-1] || sd.month} ${sd.year4}`
+      ? `${parseInt(sd.day, 10)} ${months[parseInt(sd.monthNum,10)-1] || sd.month} ${sd.year4}`
       : (d.sittingDate || '');
 
     // Judge block — single or panel
@@ -623,7 +626,7 @@
     const sDate  = sd.day && sd.year4 ? new Date(d.sittingDate + 'T00:00:00') : null;
     const dayName= sDate ? DAYS[sDate.getDay()] : '';
     const ordDay = sd.day ? ord(parseInt(sd.day, 10)) : '';
-    const mthName= sd.month ? (MONTHS[parseInt(sd.month,10)-1] || '') : '';
+    const mthName= sd.monthNum ? (MONTHS[parseInt(sd.monthNum,10)-1] || '') : '';
     const yr4    = sd.year4 || ('20' + (sd.year2 || ''));
 
     // Judge block
@@ -663,8 +666,8 @@
     };
     const pLabel = pTypeMap[d.processType] || esc(d.processType || '');
     const pd = splitDate(d.processDate), fd = splitDate(d.filingDate);
-    const pdStr = pd.day ? `${pd.day}/${pd.month}/${pd.year2}` : '';
-    const fdStr = fd.day ? `${fd.day}/${fd.month}/${fd.year2}` : '';
+    const pdStr = pd.day ? `${pd.day}/${pd.monthNum}/${pd.year4}` : '';
+    const fdStr = fd.day ? `${fd.day}/${fd.monthNum}/${fd.year4}` : '';
 
     const preamble =
       `UPON ${pLabel} dated ${L(pdStr)} filed on the ${L(fdStr)}` +
@@ -691,7 +694,7 @@
       ? 'THE PANEL OF JUSTICES'
       : (judgeFullLine ? judgeFullLine + ' ' : 'THE HONOURABLE JUDGE ');
     const closingDate = is.day
-      ? `${ord(parseInt(is.day,10))} DAY OF ${MONTHS[parseInt(is.month,10)-1]||''} ${is.year4||'20'+(is.year2||'')}`
+      ? `${ord(parseInt(is.day,10))} DAY OF ${MONTHS[parseInt(is.monthNum,10)-1]||''} ${is.year4||'20'+(is.year2||'')}`
       : '_____ DAY OF _____________ 20____';
 
     return shell(u,
@@ -774,7 +777,7 @@
 
   /* 1 ── Affidavit of Service (Execution) */
   function exAffidavitOfService(d, u, r) {
-    const sv = splitDate(d.serviceDate), sw = splitDate(d.swornDate);
+    const sv = splitDate(d.serviceDate), sw = splitDate(d.swornDate), pr = splitDate(d.processDate);
     return shell(u,
       formRef(`IN THE GOMBE JUDICIAL DIVISION<br>HOLDEN AT GOMBE`) +
       title('AFFIDAVIT OF SERVICE') +
@@ -782,19 +785,19 @@
       parties(d.plaintiff, 'Plaintiff', d.defendant, 'Defendant') +
       `<p>I, ${L(d.bailiffName)} Bailiff High Court of Justice, Gombe State make oath and say that
       ${onDayLine(sv)} at ${L(d.serviceTime)} o'clock I serve upon ${L(d.servedUpon)}
-      a ${L(d.processDescription)} in suit No. ${L(d.processSuitNo)} Dated ${L(d.processDate)},
+      a ${L(d.processDescription)} in suit No. ${L(d.processSuitNo)} dated ${L(pr.day ? `${pr.day} ${pr.month} ${pr.year4}` : '')},
       a true copy whereof is hereby unto approved issued out of this court at ${L(d.issuedAt)}
       upon ${L(d.complaintOf)},
       by delivering the same personally to ${L(d.deliveredTo)}
       of ${L(d.recipientAddress)}
       at ${L(d.placeOfService)}.</p>
-      <p>Before the day I served the ${L(d.unknownPerson)} I did not know ${L(d.unknownPerson)}
+      <p>Before the day I served the process, I did not know ${L(d.unknownPerson)}
       personally, but after He/She was pointed out to me by ${L(d.pointedOutBy)},
       I asked him/her if he/she were ${L(d.askedIdentity)}
       and he/she said that he/she was ${L(d.identityResponse)}.</p>` +
       sign('DEPONENT') +
       `<p>Sworn to at ${L(d.swornAt)} Registry Gombe</p>
-      <p>This ${dayLine(sw)}</p>
+      <p>${dayLine(sw).replace(/^this/, 'This')}</p>
       <p style="text-align:center">Before me</p>`,
       r);
   }
@@ -1080,9 +1083,9 @@
       `<p>In the High Court of Justice of the ${L(division)} Judicial Division.</p>` +
       parties(d.plaintiff, 'Plaintiff', d.defendant, 'Defendant') +
       caseLine('Plaint/Suit No.', d.suitNo) +
-      `<p><strong>WHEREAS</strong> on the ${dayLine(jd)} ${fmt(d.judgmentDetails)}</p>
+      `<p><strong>WHEREAS</strong> ${onDayLine(jd)} ${fmt(d.judgmentDetails)}</p>
       <p><strong>AND WHEREAS</strong> default has been made in payment according to the said judgment/order
-      and upon the application of the platform it was ${onDayLine(dd)}.</p>
+      and upon the application of the Plaintiff it was ${onDayLine(dd)}.</p>
       <p>Ordered that execution should issue for sum of N: ${L(d.executionSumNaira)} : k: ${L(d.executionSumKobo)}
       being part of the sum of N: ${L(d.totalSumNaira)} : k: ${L(d.totalSumKobo)} remaining unpaid.</p>
       <p>These are therefore to require and order you forthwith to make and levy the amount due to the
@@ -1090,7 +1093,7 @@
       of executing the same, by distress and sale of the goods and chattels of the ${L(d.debtorName)} (Judgment Debtor)
       wheresoever they may be found within the ${L(division)} Judicial Division (except the
       wearing apparel and bedding of him, his family, and the tools and implements of his trade, to the
-      value of five pounds) and also by seizing and taking to the any money, bank notes, cheques, bills
+      value of five pounds) and also by seizing and taking any money, bank notes, cheques, bills
       of exchange, promissory notes, bonds or securities for money belonging to the ${L(d.debtorName)}.</p>
       <p>Which may there be found or such part or so much thereof as may be sufficient to satisfy this
       execution, and to bring what you shall have so levied into court and to make return of what you have
