@@ -1,270 +1,309 @@
 /*
- * modules/settings.js — Admin panel
- * Create users, assign each user to a unit, and grant/revoke action
- * privileges. Also lists the configured units and lets the admin add a
- * court registry if needed. Admin-only (router enforces this).
+ * modules/settings.js — administration.
+ * Users (units, privileges, signing roles), units, which forms each unit
+ * may use, who signs each form, and the audit log.
  */
 (function () {
   window.App = window.App || {};
   window.App.modules = window.App.modules || {};
 
+  const TYPE_LABELS = { registry: 'Court Registry', appeals: 'Appeals', execution: 'Execution / Bailiffs' };
+  const MODULE_OF = { registry: 'Registry', appeals: 'Appeals', execution: 'Execution' };
+
   window.App.modules.settings = {
-    id: 'settings',
     async render(container, ctx) {
-      const { ui, db, permissions, auth } = ctx;
+      const { ui, api, router } = ctx;
+      const el = ui.el;
 
-      container.appendChild(ui.el('div', { class: 'page-head' }, [
-        ui.el('h1', null, '⚙  Settings & Administration'),
-        ui.el('p', { class: 'muted' }, 'Manage users, unit assignments and privileges')
+      container.appendChild(el('div', { class: 'page-head' }, [
+        el('h1', null, '⚙  Settings & Administration'),
+        el('p', { class: 'muted' }, 'Users, units, form access, signing rules and the audit log')
       ]));
+      const tabsBar = el('div', { class: 'tabs', role: 'tablist' });
+      const panel = el('div', { class: 'tab-panel' });
+      container.append(tabsBar, panel);
 
-      const tabsBar = ui.el('div', { class: 'tabs' });
-      const panel = ui.el('div', { class: 'tab-panel' });
-      container.appendChild(tabsBar);
-      container.appendChild(panel);
+      const meta = await api.get('/admin/meta');
+      const allUnits = async () => (await api.get('/catalogue/units')).units;
+      const checkboxes = (items, selected) => {
+        const map = {};
+        const wrap = el('div', { class: 'checks' }, items.map(([value, label]) => {
+          const cb = el('input', { type: 'checkbox' });
+          cb.checked = selected.includes(value);
+          map[value] = cb;
+          return el('label', { class: 'check check--plain' }, [cb, ' ' + label]);
+        }));
+        return { node: wrap, values: () => Object.entries(map).filter(([, cb]) => cb.checked).map(([v]) => v) };
+      };
 
-      // ---------- USERS ----------
+      function showTempPassword(username, pw) {
+        ui.modal('Temporary Password', el('div', null, [
+          el('p', null, `Give this one time password to ${username}. They must change it when they first sign in. It will not be shown again.`),
+          el('div', { class: 'temp-pw' }, pw)
+        ]), { confirmText: 'Done', cancelText: 'Close' });
+      }
+
+      // ── USERS ──
       async function renderUsers() {
         ui.clear(panel);
-        const units = await db.getAll('units');
-        const unitName = (k) => (units.find(u => u.key === k) || {}).name || (k ? k : '—');
-
-        panel.appendChild(ui.el('button', { class: 'btn btn--primary', onclick: () => userForm(null, units) }, '+ Add User'));
-
-        const users = await db.getAll('users');
+        const [{ users }, units] = await Promise.all([api.get('/admin/users'), allUnits()]);
+        const unitName = (k) => (units.find(u => u.key === k) || {}).name || k;
+        panel.appendChild(el('div', { class: 'toolbar' }, [
+          el('button', { class: 'btn btn--primary', onclick: () => userForm(null, units) }, '+ Add User')
+        ]));
         panel.appendChild(ui.table(
           [
+            { label: 'Name', value: u => [u.title, u.fullName].filter(Boolean).join(' ') },
             { label: 'Username', key: 'username' },
-            { label: 'Full Name', key: 'fullName' },
             { label: 'Role', value: u => u.role === 'admin' ? 'Administrator' : 'Unit User' },
-            { label: 'Unit', value: u => u.role === 'admin' ? 'All' : unitName(u.unitKey) },
-            { label: 'Privileges', value: u => u.role === 'admin' ? 'Full' : ((u.privileges || []).join(', ') || 'none') }
+            { label: 'Units', value: u => u.role === 'admin' ? 'All' : (u.unitKeys.length ? u.unitKeys.map(unitName).join(', ') : (u.signerRoles.length ? 'All' : 'None')) },
+            { label: 'Privileges', value: u => u.role === 'admin' ? 'Full' : (u.privileges.join(', ') || 'none') },
+            { label: 'Signs As', value: u => u.signerRoles.map(r => meta.signerRoles[r]).join(', ') || '—' },
+            { label: 'Signature', value: u => u.signerRoles.length ? (u.hasSignature && u.hasSigningPin ? 'Ready' : 'Not set up') : '—' },
+            { label: 'Status', node: u => el('span', { class: 'badge ' + (u.active ? 'badge--final' : 'badge--revoked') }, u.active ? 'Active' : 'Inactive') }
           ],
           users,
           [
             { label: 'Edit', onClick: u => userForm(u, units) },
-            { label: 'Reset PW', onClick: u => resetPw(u) },
-            { label: 'Delete', class: 'btn--danger', show: u => u.username !== auth.current().username, onClick: u => delUser(u) }
+            { label: 'Reset Password', onClick: async u => {
+              if (!confirm(`Give ${u.username} a new one time password?`)) return;
+              try { const r = await api.post(`/admin/users/${u.id}/reset-password`); showTempPassword(u.username, r.tempPassword); }
+              catch (e) { ui.toast(e.message, 'error'); }
+            } },
+            { label: 'Reset PIN', show: u => u.hasSigningPin, onClick: async u => {
+              if (!confirm(`Clear ${u.username}'s signing PIN? They will set a new one under My Signature.`)) return;
+              try { await api.post(`/admin/users/${u.id}/reset-pin`); ui.toast('Signing PIN cleared.', 'success'); renderUsers(); }
+              catch (e) { ui.toast(e.message, 'error'); }
+            } },
+            { label: u => u.active ? 'Deactivate' : 'Activate', class: 'btn--danger', onClick: async u => {
+              if (u.active && !confirm(`Deactivate ${u.username}? They will no longer be able to sign in. Documents they signed stay valid.`)) return;
+              try {
+                if (u.active) await api.del('/admin/users/' + u.id); else await api.patch('/admin/users/' + u.id, { active: true });
+                renderUsers();
+              } catch (e) { ui.toast(e.message, 'error'); }
+            } }
           ]
         ));
       }
 
       async function userForm(existing, units) {
-        const wrap = ui.el('div', { class: 'form-grid' });
-        const v = existing || {};
+        const v = existing || { role: 'user', unitKeys: [], privileges: ['view', 'create', 'edit', 'finalize', 'print'], signerRoles: [] };
+        const username = el('input', { type: 'text', value: v.username || '', autocapitalize: 'none' });
+        if (existing) username.disabled = true;
+        const fullName = el('input', { type: 'text', value: v.fullName || '' });
+        const title = el('input', { type: 'text', value: v.title || '', placeholder: 'e.g. Hon. Justice' });
+        const role = el('select', null, [el('option', { value: 'user' }, 'Unit User'), el('option', { value: 'admin' }, 'Administrator')]);
+        role.value = v.role;
+        const unitBox = checkboxes(units.map(u => [u.key, u.name]), v.unitKeys);
+        const privBox = checkboxes(meta.privileges.map(p => [p, p]), v.privileges);
+        const signBox = checkboxes(Object.entries(meta.signerRoles), v.signerRoles);
 
-        const username = ui.el('input', { type: 'text', value: v.username || '', disabled: existing ? 'disabled' : null });
-        const fullName = ui.el('input', { type: 'text', value: v.fullName || '' });
-        const role = ui.el('select', null, [ui.el('option', { value: 'user' }, 'Unit User'), ui.el('option', { value: 'admin' }, 'Administrator')]);
-        role.value = v.role || 'user';
-        const unitSel = ui.el('select', null, units.map(u => ui.el('option', { value: u.key }, u.name)));
-        if (v.unitKey) unitSel.value = v.unitKey;
+        const unitRow = ui.field('Units', unitBox.node, 'Leave all unticked for a signer who serves every unit (for example the Chief Registrar).');
+        const privRow = ui.field('Privileges', privBox.node, '"finalize" lets the user submit forms for signature or finalise them.');
+        const signRow = ui.field('Signs as', signBox.node, 'The signing roles this person holds. Each judge should be ticked to their own court.');
+        const sync = () => { const user = role.value === 'user'; unitRow.hidden = !user; privRow.hidden = !user; };
+        role.addEventListener('change', sync);
+        sync();
 
-        // Privilege checkboxes
-        const privBoxes = {};
-        const privWrap = ui.el('div', { class: 'checks' });
-        permissions.ACTIONS.forEach(a => {
-          const cb = ui.el('input', { type: 'checkbox' });
-          if ((v.privileges || []).includes(a)) cb.checked = true;
-          privBoxes[a] = cb;
-          privWrap.appendChild(ui.el('label', { class: 'check' }, [cb, ' ' + a]));
-        });
+        const body = el('div', { class: 'form-grid' }, [
+          el('label', { class: 'form-field' }, [el('span', { class: 'form-field__label' }, 'Username'), username]),
+          el('label', { class: 'form-field' }, [el('span', { class: 'form-field__label' }, 'Role'), role]),
+          el('label', { class: 'form-field' }, [el('span', { class: 'form-field__label' }, 'Full Name'), fullName]),
+          el('label', { class: 'form-field' }, [el('span', { class: 'form-field__label' }, 'Title (printed with signature)'), title]),
+          unitRow, privRow, signRow
+        ]);
 
-        const unitRow = ui.el('label', { class: 'form-field form-field--full' }, [ui.el('span', { class: 'form-field__label' }, 'Assigned Unit'), unitSel]);
-        const privRow = ui.el('label', { class: 'form-field form-field--full' }, [ui.el('span', { class: 'form-field__label' }, 'Privileges (within unit)'), privWrap]);
-
-        function syncRole() { const show = role.value === 'user'; unitRow.style.display = show ? '' : 'none'; privRow.style.display = show ? '' : 'none'; }
-        role.addEventListener('change', syncRole);
-
-        [['Username', username], ['Full Name', fullName], ['Role', role]].forEach(([label, input]) =>
-          wrap.appendChild(ui.el('label', { class: 'form-field' }, [ui.el('span', { class: 'form-field__label' }, label), input])));
-        wrap.appendChild(unitRow); wrap.appendChild(privRow);
-        if (!existing) wrap.appendChild(ui.el('p', { class: 'muted form-field--full' }, 'Default password will be "changeme" — user is prompted to change it on first login.'));
-        syncRole();
-
-        const formData = await ui.modal(existing ? 'Edit User' : 'Add User', wrap, {
-          confirmText: 'Save User',
-          onConfirm: () => {
-            const uname = username.value.trim();
-            const fname = fullName.value.trim();
-            if (!uname || !fname) { ui.toast('Username and full name required.', 'error'); return undefined; }
-            const r = role.value;
-            return {
-              username:   uname,
-              fullName:   fname,
-              role:       r,
-              unitKey:    r === 'user' ? unitSel.value : null,
-              privileges: r === 'user' ? permissions.ACTIONS.filter(a => privBoxes[a].checked) : []
-            };
+        await ui.modal(existing ? 'Edit User' : 'Add User', body, {
+          confirmText: existing ? 'Save' : 'Create User',
+          onConfirm: async () => {
+            const payload = { fullName: fullName.value, title: title.value, role: role.value, unitKeys: unitBox.values(), privileges: privBox.values(), signerRoles: signBox.values() };
+            if (existing) {
+              await api.patch('/admin/users/' + existing.id, payload);
+              ui.toast('User updated.', 'success');
+            } else {
+              const r = await api.post('/admin/users', { ...payload, username: username.value });
+              showTempPassword(r.user.username, r.tempPassword);
+            }
+            renderUsers();
+            return true;
           }
         });
-        if (!formData) return;
-
-        try {
-          if (existing) {
-            existing.fullName   = formData.fullName;
-            existing.role       = formData.role;
-            existing.unitKey    = formData.unitKey;
-            existing.privileges = formData.privileges;
-            await db.put('users', existing);
-            ui.toast('User updated.', 'success');
-          } else {
-            await db.add('users', {
-              username:        formData.username,
-              fullName:        formData.fullName,
-              role:            formData.role,
-              unitKey:         formData.unitKey,
-              privileges:      formData.privileges,
-              passwordHash:    await auth.sha256('changeme'),
-              mustChangePassword: true,
-              createdAt:       Date.now()
-            });
-            ui.toast('User created. Default password: changeme', 'success');
-          }
-          renderUsers();
-        } catch (err) {
-          ui.toast('Error saving user: ' + (err.message || String(err)), 'error');
-        }
       }
 
-      async function resetPw(u) {
-        if (!confirm(`Reset ${u.username}'s password to "changeme"?`)) return;
-        u.passwordHash = await auth.sha256('changeme'); u.mustChangePassword = true;
-        await db.put('users', u); ui.toast('Password reset.', 'success');
-      }
-      async function delUser(u) {
-        if (!confirm(`Delete user ${u.username}?`)) return;
-        await db.remove('users', u.id); ui.toast('User deleted.', 'info'); renderUsers();
-      }
-
-      // ---------- UNITS ----------
+      // ── UNITS ──
       async function renderUnits() {
         ui.clear(panel);
-        const units = await db.getAll('units');
-        panel.appendChild(ui.el('button', { class: 'btn btn--primary', onclick: () => addCourt(units) }, '+ Add Court Registry'));
+        const units = await allUnits();
+        panel.appendChild(el('div', { class: 'toolbar' }, [
+          el('button', { class: 'btn btn--primary', onclick: addCourt }, '+ Add Court Registry')
+        ]));
         panel.appendChild(ui.table(
           [
             { label: 'Unit', key: 'name' },
-            { label: 'Type', value: u => ({ registry: 'Court Registry', appeals: 'Appeals', execution: 'Execution/Bailiffs' }[u.type]) },
+            { label: 'Type', value: u => TYPE_LABELS[u.type] || u.type },
             { label: 'Key', key: 'key' }
           ],
-          units, null
+          units,
+          [{ label: 'Rename', onClick: async u => {
+            const name = prompt('New name for ' + u.name, u.name);
+            if (!name || name === u.name) return;
+            try { await api.patch('/admin/units/' + u.key, { name }); ui.toast('Renamed.', 'success'); await router.buildNav(); renderUnits(); }
+            catch (e) { ui.toast(e.message, 'error'); }
+          } }]
         ));
       }
-      async function addCourt(units) {
-        const nums = units.filter(u => u.type === 'registry').map(u => parseInt((u.key.match(/\d+/) || [0])[0], 10));
-        const next = (Math.max(0, ...nums) + 1);
-        const wrap = ui.el('div', { class: 'form-grid' });
-        const name = ui.el('input', { type: 'text', value: `High Court ${next} Registry` });
-        wrap.appendChild(ui.el('label', { class: 'form-field form-field--full' }, [ui.el('span', { class: 'form-field__label' }, 'Registry Name'), name]));
-        const ok = await ui.modal('Add Court Registry', wrap, { confirmText: 'Add' });
-        if (!ok) return;
-        await db.put('units', { key: 'hc' + next, type: 'registry', name: name.value.trim(), courtNo: next });
-        ui.toast('Registry added.', 'success'); renderUnits();
+      async function addCourt() {
+        const name = el('input', { type: 'text', placeholder: 'e.g. High Court 10 Registry' });
+        await ui.modal('Add Court Registry', el('div', { class: 'form-grid' }, [ui.field('Registry Name', name)]), {
+          confirmText: 'Add',
+          onConfirm: async () => {
+            if (!name.value.trim()) { ui.toast('Enter a name.', 'error'); return undefined; }
+            await api.post('/admin/units', { type: 'registry', name: name.value.trim() });
+            ui.toast('Registry added.', 'success');
+            await router.buildNav();
+            renderUnits();
+            return true;
+          }
+        });
       }
 
-      // ---------- FORM ACCESS ----------
+      // ── FORM ACCESS ──
       async function renderFormAccess() {
         ui.clear(panel);
-        const units = await db.getAll('units');
-
-        panel.appendChild(ui.el('p', { class: 'muted' }, [
-          'Configure which forms each unit can access. By default each unit sees only its own module\'s forms. ',
-          'You can grant any unit access to forms from other modules — for example giving the Appeals Registry access to Hearing Notice.'
-        ]));
-
+        const units = await allUnits();
+        panel.appendChild(el('p', { class: 'muted' }, 'By default each unit uses its own module\'s forms. You can also give a unit forms from other modules, for example a Hearing Notice for the Appeals Registry.'));
         panel.appendChild(ui.table(
           [
             { label: 'Unit', key: 'name' },
-            { label: 'Type', value: u => ({ registry: 'Court Registry', appeals: 'Appeals', execution: 'Execution' }[u.type] || u.type) },
-            { label: 'Form Access', value: u => u.allowedForms
-                ? `${u.allowedForms.length} form(s) configured`
-                : 'Default (module forms only)' }
+            { label: 'Type', value: u => TYPE_LABELS[u.type] || u.type },
+            { label: 'Form Access', value: u => u.allowedForms ? `${u.allowedForms.length} form(s) chosen` : 'Default (own module)' }
           ],
           units,
           [
-            { label: 'Configure', onClick: u => configureFormAccess(u, units) },
-            { label: 'Reset', class: 'btn--ghost',
-              show: u => !!u.allowedForms,
-              onClick: async u => {
-                if (!confirm(`Reset ${u.name} to default forms only?`)) return;
-                u.allowedForms = null;
-                await db.put('units', u);
-                ui.toast('Reset to defaults.', 'success');
-                renderFormAccess();
-              }
-            }
+            { label: 'Configure', onClick: u => configureFormAccess(u) },
+            { label: 'Reset', class: 'btn--ghost', show: u => !!u.allowedForms, onClick: async u => {
+              if (!confirm(`Reset ${u.name} to its default forms?`)) return;
+              await api.patch('/admin/units/' + u.key, { allowedForms: null });
+              ui.toast('Reset to defaults.', 'success'); renderFormAccess();
+            } }
           ]
         ));
       }
-
       async function configureFormAccess(unit) {
-        const allByModule = window.App.allFormsByModule || {};
-        const typeToModule = { registry: 'Registry', execution: 'Execution', appeals: 'Appeals' };
-        const unitModuleName = typeToModule[unit.type] || '';
-
-        const wrap = ui.el('div', { class: 'form-grid' });
-        wrap.appendChild(ui.el('p', { class: 'muted form-field--full' },
-          `Tick the forms ${unit.name} should be able to use. Forms from its own module are ticked by default.`));
-
-        const checkboxes = {};
-
-        Object.entries(allByModule).forEach(([moduleName, moduleForms]) => {
-          wrap.appendChild(ui.el('div', { class: 'form-section form-field--full' }, moduleName + ' Forms'));
-          const moduleWrap = ui.el('div', { class: 'checks form-field--full' });
-
-          Object.entries(moduleForms).forEach(([key, def]) => {
-            const cb = ui.el('input', { type: 'checkbox' });
-            if (unit.allowedForms) {
-              cb.checked = unit.allowedForms.includes(key);
-            } else {
-              // Default: pre-tick unit's own module forms
-              cb.checked = (moduleName === unitModuleName);
-            }
-            checkboxes[key] = cb;
-            moduleWrap.appendChild(ui.el('label', { class: 'check' }, [cb, '\u00a0' + def.label]));
-          });
-          wrap.appendChild(moduleWrap);
+        const byModule = window.App.allFormsByModule || {};
+        const boxes = {};
+        const body = el('div', { class: 'form-grid' });
+        Object.entries(byModule).forEach(([moduleName, forms]) => {
+          body.appendChild(el('div', { class: 'form-section' }, moduleName + ' Forms'));
+          body.appendChild(el('div', { class: 'checks form-field--full' }, Object.entries(forms).map(([key, def]) => {
+            const cb = el('input', { type: 'checkbox' });
+            cb.checked = unit.allowedForms ? unit.allowedForms.includes(key) : moduleName === MODULE_OF[unit.type];
+            boxes[key] = cb;
+            return el('label', { class: 'check check--plain' }, [cb, ' ' + def.label]);
+          })));
         });
-
-        const result = await ui.modal('Form Access: ' + unit.name, wrap, {
-          confirmText: 'Save',
-          onConfirm: () => {
-            const selected = Object.entries(checkboxes)
-              .filter(([, cb]) => cb.checked).map(([k]) => k);
-            if (!selected.length) {
-              ui.toast('Please select at least one form.', 'error');
-              return undefined;
-            }
-            return { forms: selected };
+        await ui.modal('Form Access: ' + unit.name, body, {
+          confirmText: 'Save', wide: true,
+          onConfirm: async () => {
+            const selected = Object.entries(boxes).filter(([, cb]) => cb.checked).map(([k]) => k);
+            if (!selected.length) { ui.toast('Select at least one form.', 'error'); return undefined; }
+            await api.patch('/admin/units/' + unit.key, { allowedForms: selected });
+            ui.toast(`Saved: ${selected.length} form(s) for ${unit.name}.`, 'success');
+            renderFormAccess();
+            return true;
           }
         });
-
-        if (!result) return;
-        unit.allowedForms = result.forms;
-        await db.put('units', unit);
-        ui.toast(`Form access saved: ${result.forms.length} form(s) for ${unit.name}.`, 'success');
-        renderFormAccess();
       }
 
-      // ── Build tabs AFTER all functions declared — avoids any hoisting ambiguity ──
-      const tabDefs = [
-        { name: 'Users',       fn: renderUsers },
-        { name: 'Units',       fn: renderUnits },
-        { name: 'Form Access', fn: renderFormAccess }
-      ];
-      tabDefs.forEach(({ name, fn }, i) => {
-        const btn = ui.el('button', {
-          class: 'tab' + (i === 0 ? ' is-active' : ''),
-          onclick: () => {
-            tabsBar.querySelectorAll('.tab').forEach(t => t.classList.remove('is-active'));
-            btn.classList.add('is-active');
-            fn();
+      // ── SIGNING RULES ──
+      async function renderSigning() {
+        ui.clear(panel);
+        const { forms } = await api.get('/catalogue/forms');
+        panel.appendChild(el('p', { class: 'muted' }, 'Who signs each form. A form with no signature line is signed by hand outside the system (deponent, surety, counsel); finalising it still locks it and issues a QR code. If the person submitting holds the signing role, they sign it themselves when they finalise.'));
+        ['registry', 'appeals', 'execution'].forEach(type => {
+          const list = forms.filter(f => f.unitType === type);
+          panel.appendChild(el('h3', { class: 'settings-group' }, TYPE_LABELS[type]));
+          panel.appendChild(ui.table(
+            [
+              { label: 'Form', key: 'label' },
+              { label: 'Signed By', value: f => f.signers.length ? f.signers.map(s => `${s.label} (${meta.signerRoles[s.role]})`).join(' + ') : 'By hand (outside the system)' }
+            ],
+            list,
+            [{ label: 'Change', onClick: f => editSigners(f) }]
+          ));
+        });
+      }
+      async function editSigners(form) {
+        const rows = el('div', { class: 'signer-rows' });
+        function addRow(line) {
+          const role = el('select', null, Object.entries(meta.signerRoles).map(([k, v]) => el('option', { value: k }, v)));
+          const label = el('input', { type: 'text', placeholder: 'Printed label, e.g. Judge' });
+          role.value = line ? line.role : 'judge';
+          label.value = line ? line.label : meta.signerRoles[role.value];
+          role.addEventListener('change', () => { if (!label.value || Object.values(meta.signerRoles).includes(label.value)) label.value = meta.signerRoles[role.value]; });
+          const row = el('div', { class: 'signer-row' }, [role, label, el('button', { class: 'btn btn--ghost btn--small', type: 'button', onclick: () => row.remove() }, '✕')]);
+          row.get = () => ({ role: role.value, label: label.value.trim() });
+          rows.appendChild(row);
+        }
+        form.signers.forEach(addRow);
+        const body = el('div', null, [
+          el('p', { class: 'muted' }, 'Add one line per signature on the printed form. Remove every line if the form is signed by hand.'),
+          rows,
+          el('button', { class: 'btn btn--ghost btn--small', type: 'button', onclick: () => (rows.children.length < 4 ? addRow() : ui.toast('At most 4 signature lines.', 'error')) }, '+ Add signature line')
+        ]);
+        await ui.modal('Signing Rule: ' + form.label, body, {
+          confirmText: 'Save',
+          onConfirm: async () => {
+            const signers = Array.from(rows.children).map(r => r.get());
+            if (signers.some(s => !s.label)) { ui.toast('Every line needs a label.', 'error'); return undefined; }
+            await api.put(`/admin/forms/${form.formType}/signers`, { signers });
+            await window.App.workflow.meta(true);
+            ui.toast('Signing rule saved.', 'success');
+            renderSigning();
+            return true;
           }
-        }, name);
+        });
+      }
+
+      // ── AUDIT LOG ──
+      async function renderAudit() {
+        ui.clear(panel);
+        const username = el('input', { type: 'search', class: 'search-input', placeholder: 'Filter by username' });
+        const action = el('select', { class: 'sort-select' }, ['', 'login', 'login_failed', 'record_created', 'record_submitted', 'record_approved', 'record_finalized', 'record_returned', 'record_revoked', 'record_printed', 'record_deleted', 'user_created', 'user_updated', 'password_reset', 'signature_registered', 'form_signers_updated', 'backup_exported']
+          .map(a => el('option', { value: a }, a ? a.replace(/_/g, ' ') : 'All actions')));
+        const out = el('div');
+        async function load() {
+          const { entries } = await api.get('/admin/audit' + api.qs({ username: username.value.trim(), action: action.value, limit: 300 }));
+          ui.clear(out);
+          if (!entries.length) { out.appendChild(ui.empty('No entries.')); return; }
+          out.appendChild(ui.table([
+            { label: 'When', value: e => ui.fmtDate(e.at) },
+            { label: 'User', value: e => e.username || '—' },
+            { label: 'Action', value: e => e.action.replace(/_/g, ' ') },
+            { label: 'Unit', value: e => e.unitKey || '' },
+            { label: 'Details', value: e => e.details ? Object.entries(e.details).filter(([k]) => !['slots', 'signers'].includes(k)).map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`).join(' · ') : '' },
+            { label: 'IP', value: e => e.ip || '' }
+          ], entries, null));
+        }
+        username.addEventListener('change', load);
+        action.addEventListener('change', load);
+        panel.append(el('div', { class: 'filter-bar' }, [username, action]), out);
+        load();
+      }
+
+      const tabDefs = [
+        ['Users', renderUsers], ['Units', renderUnits], ['Form Access', renderFormAccess],
+        ['Signing Rules', renderSigning], ['Audit Log', renderAudit]
+      ];
+      tabDefs.forEach(([name, fn], i) => {
+        const btn = el('button', { class: 'tab' + (i === 0 ? ' is-active' : ''), role: 'tab', onclick: () => {
+          tabsBar.querySelectorAll('.tab').forEach(t => t.classList.remove('is-active'));
+          btn.classList.add('is-active');
+          fn().catch(e => ui.toast(e.message, 'error'));
+        } }, name);
         tabsBar.appendChild(btn);
       });
-      renderUsers();
+      await renderUsers();
     }
   };
 })();
