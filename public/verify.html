@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0b5d33" />
+  <title>Document Verification · GSHC</title>
+  <link rel="icon" href="/icons/icon-192.png" />
+  <link rel="stylesheet" href="/css/verify.css" />
+</head>
+<body>
+  <main class="v-card">
+    <header class="v-head">
+      <img src="/assets/highcourt.png" alt="" class="v-emblem" />
+      <div>
+        <h1>Gombe State High Court of Justice</h1>
+        <p>Document Verification</p>
+      </div>
+    </header>
+
+    <form id="v-form" class="v-form" autocomplete="off">
+      <label for="v-code">Verification code printed on the document</label>
+      <div class="v-row">
+        <input id="v-code" name="code" placeholder="GSHC-XXXX-XXXX-XXXX" maxlength="40" required />
+        <button type="submit">Check</button>
+      </div>
+    </form>
+
+    <section id="v-result" class="v-result" hidden></section>
+
+    <footer class="v-foot">Directorate of ICT · Gombe State High Court of Justice</footer>
+  </main>
+  <script src="/js/verify.js"></script>
+</body>
+</html>

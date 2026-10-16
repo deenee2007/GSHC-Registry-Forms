@@ -1,0 +1,22 @@
+# Render Blueprint. Secrets marked sync: false are entered in the Render
+# dashboard when the service is created; they are never stored here.
+services:
+  - type: web
+    name: gshc-registry
+    runtime: node
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: MONGODB_URI
+        sync: false
+      - key: CLOUDINARY_URL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: PUBLIC_BASE_URL
+        sync: false
