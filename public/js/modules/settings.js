@@ -142,7 +142,7 @@
         const signBox = checkboxes(Object.entries(meta.signerRoles), v.signerRoles);
 
         const unitRow = ui.field('Units', unitBox.node, 'Leave all unticked for a signer who serves every unit (for example the Chief Registrar).');
-        const privRow = ui.field('Privileges', privBox.node, '"finalize" lets the user submit forms for signature or finalise them.');
+        const privRow = ui.field('Privileges', privBox.node, '"finalize" lets the user submit forms for signature or finalise them. "reports" shows the Reports page for their own unit.');
         const signRow = ui.field('Signs as', signBox.node, 'The signing roles this person holds. Each judge should be ticked to their own court.');
         const sync = () => { const user = role.value === 'user'; unitRow.hidden = !user; privRow.hidden = !user; };
         role.addEventListener('change', sync);

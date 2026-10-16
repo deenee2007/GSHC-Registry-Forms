@@ -5,7 +5,7 @@ const mongoose = require('mongoose');
 const { Schema } = mongoose;
 const { SIGNER_ROLES } = require('../forms/signers');
 
-const PRIVILEGES = ['view', 'create', 'edit', 'finalize', 'delete', 'print'];
+const PRIVILEGES = ['view', 'create', 'edit', 'finalize', 'delete', 'print', 'reports'];
 
 // Where a signature image lives: Cloudinary (production) or inline in
 // MongoDB (local development without Cloudinary).

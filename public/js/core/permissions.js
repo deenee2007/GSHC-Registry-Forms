@@ -6,7 +6,7 @@
   window.App = window.App || {};
   const auth = () => window.App.auth;
 
-  const ACTIONS = ['view', 'create', 'edit', 'finalize', 'delete', 'print'];
+  const ACTIONS = ['view', 'create', 'edit', 'finalize', 'delete', 'print', 'reports'];
 
   function isAdmin(user) {
     user = user || auth().current();

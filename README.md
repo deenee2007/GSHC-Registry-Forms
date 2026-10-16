@@ -117,6 +117,18 @@ Email is sent through Brevo. Set `BREVO_API_KEY` (an API key, starting
 `xkeysib-`) and `MAIL_FROM` (a sender address verified in Brevo) on Render.
 Without them, the email features are hidden and everything else works.
 
+## Reports
+**📊 Reports** in the menu shows what happened in a period: forms created,
+submitted, signed, returned and revoked, forms awaiting signature now, and
+approval times, broken down by form, by court (administrators) and by
+signer, with the list of documents signed (or forms created).
+* Filters: period (today, this week, this month, last month, this year or
+  any dates), form, current status and signer.
+* Administrators see every court and unit and can filter by court. Other
+  users need the **reports** privilege and see only their own unit.
+* **Print** gives an A4 report with the court masthead; **Download for
+  Excel** saves a CSV file that opens in Excel.
+
 ## Email alerts
 When email is set up, people are emailed when a form waits for their
 signature, and when a form they submitted is approved, returned or revoked.

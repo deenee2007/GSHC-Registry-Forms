@@ -512,3 +512,15 @@ button.dash-card:hover { border-color: var(--green-500); }
   .dash-welcome h1 { font-size: 1.2rem; }
 }
 .alert-switch { margin-left: auto; background: #fff; border: 1px solid var(--line); }
+
+/* Reports */
+.report-filters { display: flex; flex-wrap: wrap; gap: .7rem; align-items: flex-end; background: #fff; border: 1px solid var(--line);
+  border-radius: 12px; padding: .8rem 1rem; margin-bottom: 1rem; box-shadow: var(--shadow); }
+.report-filter { display: flex; flex-direction: column; gap: .25rem; }
+.report-filter select, .report-filter input { padding: .45rem .6rem; border: 1px solid var(--line); border-radius: 8px; font: inherit; font-size: .88rem; background: #fff; }
+.report-actions { display: flex; gap: .5rem; margin-left: auto; }
+.report-head { margin: 0 0 .8rem; }
+.report-total td { font-weight: 700; background: var(--green-50); }
+.report-print h3 { font-size: 12pt; margin: 14px 0 4px; }
+.report-print .doc-table { font-size: 9.5pt; }
+@media (max-width: 720px) { .report-filter { flex: 1 1 45%; } .report-actions { margin-left: 0; width: 100%; } }
