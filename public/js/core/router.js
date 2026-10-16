@@ -70,6 +70,10 @@
       setBadge('inbox', stats.inbox);
       setBadge('approved', stats.approvedUnprinted);
       setBadge('notifications', notes.unread);
+      // Phones: the menu button shows whether anything waits inside the menu.
+      const menu = document.getElementById('menu-badge');
+      const waiting = stats.inbox + stats.approvedUnprinted + notes.unread;
+      if (menu) { menu.textContent = waiting > 99 ? '99+' : String(waiting); menu.hidden = !waiting; }
     } catch (e) { /* offline: keep the last numbers */ }
   }
 

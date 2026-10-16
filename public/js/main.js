@@ -150,7 +150,29 @@
     const roleText = user.role === 'admin' ? 'Administrator'
       : (user.signerRoles || []).length ? user.signerRoles.map(r => App.workflow.roleLabel(r)).join(', ') : 'Unit User';
 
+    // Phones: the sidebar becomes a drawer opened from a top bar.
+    const menuBadge = ui.el('span', { class: 'topbar__badge', id: 'menu-badge', hidden: 'hidden' }, '');
+    const menuBtn = ui.el('button', { class: 'topbar__menu', type: 'button', 'aria-label': 'Open menu', 'aria-expanded': 'false', onclick: () => toggleMenu() }, ['☰', menuBadge]);
+    const topbar = ui.el('header', { class: 'topbar' }, [
+      menuBtn,
+      ui.el('img', { class: 'sidebar__emblem', src: '/assets/highcourt.png', alt: '' }),
+      ui.el('span', { class: 'topbar__title' }, 'GSHC Registry')
+    ]);
+    const backdrop = ui.el('div', { class: 'menu-backdrop', onclick: () => toggleMenu(false) });
+    function toggleMenu(open) {
+      open = open === undefined ? !document.body.classList.contains('menu-open') : open;
+      document.body.classList.toggle('menu-open', open);
+      menuBtn.setAttribute('aria-expanded', String(open));
+      menuBtn.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+    }
+    // Choosing a page closes the drawer.
+    nav.addEventListener('click', (e) => { if (e.target.closest('.nav-item')) toggleMenu(false); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') toggleMenu(false); });
+    toggleMenu(false);
+
     root.appendChild(ui.el('div', { class: 'shell' }, [
+      topbar,
+      backdrop,
       ui.el('aside', { class: 'sidebar' }, [
         ui.el('div', { class: 'sidebar__brand' }, [ui.el('img', { class: 'sidebar__emblem', src: '/assets/highcourt.png', alt: '' }), ui.el('span', null, 'GSHC Registry')]),
         nav,
