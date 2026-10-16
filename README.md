@@ -101,6 +101,22 @@ enter `MONGODB_URI`, `CLOUDINARY_URL` and `ADMIN_PASSWORD` when asked.
 `SESSION_SECRET` is generated automatically. A paid instance is recommended
 for daily use, because free instances sleep when idle.
 
+## Passwords and email
+* **New accounts:** if the user has an email address, the admin can email
+  an invitation link; the user chooses their own password (link valid 24
+  hours, works once). Without email, the admin gets a one time password
+  with a Copy button.
+* **Forgot password:** "Forgot password?" on the sign in screen emails a
+  reset link (valid 60 minutes, works once). The answer is the same whether
+  or not the account exists. Admins can also send a link from Settings.
+* **My Account:** anyone signed in can change their password. Changing or
+  resetting a password signs that user out on every other computer.
+* Every password and PIN field has a show / hide button.
+
+Email is sent through Brevo. Set `BREVO_API_KEY` (an API key, starting
+`xkeysib-`) and `MAIL_FROM` (a sender address verified in Brevo) on Render.
+Without them, the email features are hidden and everything else works.
+
 ## Startup log and admin recovery
 Each start prints the database in use and how many accounts it holds:
 ```

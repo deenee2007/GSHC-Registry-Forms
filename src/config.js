@@ -50,6 +50,17 @@ const config = {
   // account's password to ADMIN_PASSWORD and unlocks it (see seed.js).
   adminReset: /^(1|true|yes)$/i.test((process.env.ADMIN_RESET || '').trim()),
 
+  // Email through Brevo's transactional API. MAIL_FROM must be a sender
+  // address verified in Brevo. Without BREVO_API_KEY, invitations and reset
+  // links are not offered and admins hand out one time passwords instead.
+  brevoApiKey: (process.env.BREVO_API_KEY || '').trim(),
+  mailFrom: (process.env.MAIL_FROM || '').trim(),
+  mailFromName: (process.env.MAIL_FROM_NAME || 'GSHC Registry').trim(),
+  // 'memory' keeps messages in a list (tests); 'console' prints them (local development).
+  mailTransport: (process.env.MAIL_TRANSPORT || (env === 'test' ? 'memory' : '')).trim(),
+  inviteHours: 24,
+  resetMinutes: 60,
+
   loginMaxAttempts: 5,
   loginLockMinutes: 15,
   pinMaxAttempts: 5,

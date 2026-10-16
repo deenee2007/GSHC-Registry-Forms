@@ -8,6 +8,8 @@ const { User, Unit, FormConfig, AuditLog, PRIVILEGES } = require('../models');
 const { SIGNER_ROLES } = require('../forms/signers');
 const catalogue = require('../forms/catalogue');
 const pw = require('../services/passwords');
+const mail = require('../services/mail');
+const links = require('../services/passwordLinks');
 const audit = require('../services/audit');
 const { HttpError, requireLogin, requireAdmin } = require('../middleware/auth');
 
@@ -27,6 +29,11 @@ async function cleanUserInput(body, units) {
     if (!out.fullName) throw new HttpError(400, 'Full name is required.');
   }
   if (body.title !== undefined) out.title = String(body.title).trim().slice(0, 80);
+  if (body.email !== undefined) {
+    const email = String(body.email || '').trim().toLowerCase();
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, 'Enter a valid email address.');
+    out.email = email || undefined;
+  }
   if (body.role !== undefined) {
     if (!['admin', 'user'].includes(body.role)) throw new HttpError(400, 'Invalid role.');
     out.role = body.role;
@@ -50,7 +57,7 @@ async function cleanUserInput(body, units) {
 
 // ── Reference data for the Settings screens ──
 router.get('/meta', (req, res) => {
-  res.json({ privileges: PRIVILEGES, signerRoles: SIGNER_ROLES });
+  res.json({ privileges: PRIVILEGES, signerRoles: SIGNER_ROLES, mailEnabled: mail.enabled() });
 });
 
 // ── Users ──
@@ -66,16 +73,52 @@ router.post('/users', wrap(async (req, res) => {
   if (await User.exists({ username })) throw new HttpError(409, 'That username is already taken.');
   const fields = await cleanUserInput(req.body, units);
   if (!fields.fullName) throw new HttpError(400, 'Full name is required.');
-  const tempPassword = pw.temporaryPassword();
-  const user = await User.create({ ...fields, username, passwordHash: await pw.hash(tempPassword), mustChangePassword: true });
-  await audit.log(req, 'user_created', { details: { username } });
+  if (fields.email && await User.exists({ email: fields.email })) throw new HttpError(409, 'Another account already uses that email address.');
+  const invite = !!req.body.sendInvite && !!fields.email && mail.enabled();
+  // An invited user chooses their own password from the email link, so the
+  // stored one is random and never shown to anyone.
+  const tempPassword = invite ? null : pw.temporaryPassword();
+  const user = await User.create({
+    ...fields, username,
+    passwordHash: await pw.hash(tempPassword || require('crypto').randomBytes(24).toString('base64url')),
+    mustChangePassword: true
+  });
+  await audit.log(req, 'user_created', { details: { username, invited: invite } });
+  if (invite) {
+    try {
+      await links.sendLink(req, user, 'invite');
+      await audit.log(req, 'invite_sent', { details: { username } });
+    } catch (e) {
+      // Account exists; fall back to a one time password the admin can hand over.
+      const fallback = pw.temporaryPassword();
+      user.passwordHash = await pw.hash(fallback);
+      await user.save();
+      return res.status(201).json({ user: user.toSafeJSON(), tempPassword: fallback, emailError: e.message });
+    }
+    return res.status(201).json({ user: user.toSafeJSON(), invited: true });
+  }
   res.status(201).json({ user: user.toSafeJSON(), tempPassword });
+}));
+
+// Email a link to choose a new password (an invitation if they never signed in).
+router.post('/users/:id/send-link', wrap(async (req, res) => {
+  const user = await User.findById(oid(req.params.id));
+  if (!user) throw new HttpError(404, 'User not found.');
+  if (!user.active) throw new HttpError(400, 'Activate the account first.');
+  if (!mail.enabled()) throw new HttpError(503, 'Email is not set up on this server.');
+  const kind = user.lastLoginAt ? 'reset' : 'invite';
+  await links.sendLink(req, user, kind);
+  await audit.log(req, kind === 'invite' ? 'invite_sent' : 'password_reset_link_sent', { details: { username: user.username } });
+  res.json({ ok: true, email: user.email, kind });
 }));
 
 router.patch('/users/:id', wrap(async (req, res) => {
   const user = await User.findById(oid(req.params.id));
   if (!user) throw new HttpError(404, 'User not found.');
   const fields = await cleanUserInput(req.body, await Unit.find());
+  if (fields.email && await User.exists({ email: fields.email, _id: { $ne: user._id } })) {
+    throw new HttpError(409, 'Another account already uses that email address.');
+  }
   if (String(user._id) === String(req.user._id) && (fields.role === 'user' || fields.active === false)) {
     throw new HttpError(400, 'You cannot remove your own administrator access.');
   }
@@ -92,6 +135,7 @@ router.post('/users/:id/reset-password', wrap(async (req, res) => {
   user.passwordHash = await pw.hash(tempPassword);
   user.mustChangePassword = true; user.failedLogins = 0; user.lockedUntil = null;
   await user.save();
+  await links.endSessions(user._id);
   await audit.log(req, 'password_reset', { details: { username: user.username } });
   res.json({ user: user.toSafeJSON(), tempPassword });
 }));

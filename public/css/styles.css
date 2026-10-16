@@ -473,3 +473,16 @@ button.dash-card:hover { border-color: var(--green-500); }
 .row-actions { flex-wrap: wrap; }
 .filter-btns { flex-wrap: wrap; }
 @media (max-width: 720px) { .sidebar__nav { max-height: 40vh; } }
+
+/* Password show / hide */
+.pw-wrap { position: relative; display: block; width: 100%; }
+.pw-wrap > input { width: 100%; padding-right: 2.6rem !important; }
+.pw-toggle { position: absolute; right: .35rem; top: 50%; transform: translateY(-50%); background: none; border: 0;
+  cursor: pointer; font-size: 1rem; line-height: 1; padding: .3rem; border-radius: 6px; opacity: .7; }
+.pw-toggle:hover, .pw-toggle:focus-visible { opacity: 1; background: var(--green-50); }
+.login__card .pw-wrap { margin-bottom: .7rem; }
+.login__card .pw-wrap > input { margin-bottom: 0; }
+.login__link { background: none; border: 0; color: var(--green-700); cursor: pointer; font-size: .85rem;
+  margin-top: .8rem; text-decoration: underline; }
+.temp-pw-row { display: flex; gap: .5rem; align-items: stretch; margin-top: .6rem; }
+.temp-pw-row .temp-pw { flex: 1; margin-top: 0; }
