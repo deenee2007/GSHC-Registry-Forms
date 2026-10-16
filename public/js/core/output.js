@@ -857,26 +857,34 @@
   /* 4 ── Writ of Possession of Child/Children Form M */
   function writPossessionChildren(d, u, r) {
     const cd = splitDate(d.courtDate), is = splitDate(d.issueDate);
+    // Parties are Judgment Creditor / Judgment Debtor unless the form says
+    // Plaintiff / Defendant (drafts made before the choice existed).
+    const judgmentTerms = d.partyTerms ? d.partyTerms === 'judgment' : false;
+    const creditor = judgmentTerms ? 'Judgment Creditor' : 'Plaintiff';
+    const debtor   = judgmentTerms ? 'Judgment Debtor' : 'Defendant';
+    const entitled = d.entitledParty === 'debtor' ? debtor : creditor;
+    const entitledName = d.entitledParty === 'debtor' ? d.defendant : d.plaintiff;
     return shell(u,
       formRef('IN THE GOMBE JUDICIAL DIVISION<br>HOLDEN AT GOMBE') +
       formRef('FORM M') +
-      title('WRIT OF POSSESSION OF CHILD/CHILDREN') +
-      parties(d.plaintiff, 'Plaintiff', d.defendant, 'Defendant') +
+      title('WRIT OF POSSESSION OF CUSTODY OF CHILD/CHILDREN') +
+      parties(d.plaintiff, creditor, d.defendant, debtor) +
       `<p><strong>WHEREAS</strong> at the Court Holden at Gombe ${onDayLine(cd)}, it was adjudged that
-      the Plaintiff is entitled to possession of the Child/Children living in ${L(d.childrenResidence)}.</p>
+      the ${esc(entitled)} is entitled to possession of the Child/Children living in ${L(d.childrenResidence)}.</p>
       <p>The Child/Children ordered that:</p>
       <ol>
-        <li>The Defendant and/or any person (in custody) of the said Child/Children.</li>
-        <li>The Defendant and/or any person claiming through him/her is enjoined from custody or further
-        interfering with the ${L(d.plaintiff)}'s Possession of the said Child/Children custody.</li>
+        <li>The ${esc(debtor)} and/or any person (in custody) of the said Child/Children.</li>
+        <li>The ${esc(debtor)} and/or any person claiming through him/her is enjoined from custody or further
+        interfering with the ${L(entitledName)}'s Possession of the said Child/Children custody.</li>
       </ol>
-      <p><strong>AND WHEREAS</strong> the Defendant to wit ${L(d.defendantPerson)} has not obeyed the said order.</p>
+      <p><strong>AND WHEREAS</strong> the ${esc(debtor)} to wit ${L(d.defendantPerson)} has not obeyed the said order.</p>
       <p>These are therefore to authorise and require you forthwith to give possession of the said
       Child/Children to the ${L(d.custodyReceiver)}.</p>
       <p>Dated ${dayLine(is)}.</p>` +
       sign('JUDGE'),
       r);
   }
+
 
   /* 5 ── Writ of Possession of Premises Form M */
   function writPossessionPremises(d, u, r) {
@@ -987,7 +995,7 @@
     return shell(u,
       letterMeta(d) +
       letterTo(d.recipientName, d.recipientAddress) +
-      letterSubject(`STATUTORY NOTICE FOR PUBLIC AUCTION: ${esc(d.suitTitle)}`) +
+      letterSubject(`STATUTORY NOTICE FOR PUBLIC AUCTION (MOVABLE/IMMOVABLE): ${esc(d.suitTitle)}`) +
       letterBody(
         `You may recall that your ${esc(d.propertyCategory === 'movable' ? 'movable property' : 'immovable property')} was attached in compliance with the Judgment of ${L(d.courtName)}.`,
         `Take notice that you are hereby given ${L(d.noticeDays)} days to come and satisfy the judgment sum
@@ -1001,10 +1009,8 @@
   /* 9 & 11 ── Request for Security Personnel (NSCDC / Police — shared renderer) */
   function requestSecurityPersonnel(d, u, r) {
     const isPolice = r.formType === 'request-police-assistance';
-    const count    = d.personnelCount ? esc(d.personnelCount) + ' ' : '';
-    const subject  = isPolice
-      ? `REQUEST FOR ${count}POLICE PERSONNEL ASSISTANCE`
-      : `REQUEST FOR ${count}PERSONNEL WITH ARMS`;
+    const count    = d.personnelCount ? esc(String(d.personnelCount).toUpperCase()) + ' ' : '';
+    const subject  = `REQUEST FOR ${count}PERSONNEL`;
     return shell(u,
       letterMeta(d) +
       letterTo(
@@ -1029,7 +1035,7 @@
   function publicAuctionReceipt(d, u, r) {
     const rd = splitDate(d.receiptDate);
     return shell(u,
-      title('PUBLIC AUCTION RECEIPT') +
+      title('HIGH COURT PUBLIC AUCTION RECEIPT') +
       `<p>Received from ${L(d.receivedFrom)}</p>
       <p>The sum of ${L(d.sumAmount)}</p>
       <p>Being payment for ${L(d.beingPaymentFor)}</p>
@@ -1065,10 +1071,13 @@
   function writAttachmentGoods(d, u, r) {
     const jd = splitDate(d.judgmentDate), dd = splitDate(d.defaultDate),
           is = splitDate(d.issueDate);
+    // The field holds the division's name ("Gombe"); older drafts may hold
+    // "Gombe Judicial Division", which must not print the words twice.
+    const division = String(d.judicialDivision || '').replace(/\s*judicial\s+division\s*$/i, '');
     return shell(u,
       formRef('JUDGMENTS FORM 4, 5, 6 AND 27') +
       title('WRIT OF ATTACHMENT AND SALE OF GOODS') +
-      `<p>In the High Court of Justice of the ${L(d.judicialDivision)} Judicial Division.</p>` +
+      `<p>In the High Court of Justice of the ${L(division)} Judicial Division.</p>` +
       parties(d.plaintiff, 'Plaintiff', d.defendant, 'Defendant') +
       caseLine('Plaint/Suit No.', d.suitNo) +
       `<p><strong>WHEREAS</strong> on the ${dayLine(jd)} ${fmt(d.judgmentDetails)}</p>
@@ -1077,9 +1086,9 @@
       <p>Ordered that execution should issue for sum of N: ${L(d.executionSumNaira)} : k: ${L(d.executionSumKobo)}
       being part of the sum of N: ${L(d.totalSumNaira)} : k: ${L(d.totalSumKobo)} remaining unpaid.</p>
       <p>These are therefore to require and order you forthwith to make and levy the amount due to the
-      ${L(d.creditorName)} under the said judgment/order together with the costs of the writ and the costs
-      of executing the same, by distress and sale of the goods and chattels of the ${L(d.debtorName)}
-      wheresoever they may be found within the ${L(d.judicialDivision)} Judicial Division (except the
+      ${L(d.creditorName)} (Judgment Creditor) under the said judgment/order together with the cost of the writ and the cost
+      of executing the same, by distress and sale of the goods and chattels of the ${L(d.debtorName)} (Judgment Debtor)
+      wheresoever they may be found within the ${L(division)} Judicial Division (except the
       wearing apparel and bedding of him, his family, and the tools and implements of his trade, to the
       value of five pounds) and also by seizing and taking to the any money, bank notes, cheques, bills
       of exchange, promissory notes, bonds or securities for money belonging to the ${L(d.debtorName)}.</p>
