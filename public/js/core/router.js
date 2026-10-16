@@ -46,7 +46,8 @@
     if (list.length) group('Units');
     list.forEach(u => _nav.appendChild(navItem(u.name, () => loadUnit(u), { 'data-unit': u.key })));
 
-    if (permissions.isSigner(user) || permissions.isAdmin(user)) group('Account');
+    group('Account');
+    _nav.appendChild(navItem('🔑  My Account', () => loadModule('account'), { 'data-nav': 'account' }));
     if (permissions.isSigner(user)) _nav.appendChild(navItem('🖊  My Signature', () => loadModule('signature'), { 'data-nav': 'signature' }));
     if (permissions.isAdmin(user)) _nav.appendChild(navItem('⚙  Settings', () => loadModule('settings'), { 'data-nav': 'settings' }));
 

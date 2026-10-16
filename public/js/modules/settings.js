@@ -36,11 +36,25 @@
         return { node: wrap, values: () => Object.entries(map).filter(([, cb]) => cb.checked).map(([v]) => v) };
       };
 
-      function showTempPassword(username, pw) {
+      function showTempPassword(username, pw, note) {
+        const copyBtn = el('button', { class: 'btn btn--primary', type: 'button', onclick: async () => {
+          const ok = await ui.copyText(pw);
+          copyBtn.textContent = ok ? '✔ Copied' : 'Select and copy';
+          ui.toast(ok ? 'Password copied. Paste it into your message to the user.' : 'Could not copy automatically; select the password and copy it.', ok ? 'success' : 'error');
+        } }, '📋 Copy');
         ui.modal('Temporary Password', el('div', null, [
+          note ? el('div', { class: 'notice notice--warn' }, note) : null,
           el('p', null, `Give this one time password to ${username}. They must change it when they first sign in. It will not be shown again.`),
-          el('div', { class: 'temp-pw' }, pw)
+          el('div', { class: 'temp-pw-row' }, [el('div', { class: 'temp-pw' }, pw), copyBtn])
         ]), { confirmText: 'Done', cancelText: 'Close' });
+      }
+
+      async function emailLink(u) {
+        if (!confirm(`Email a link to ${u.email} so ${u.fullName} can choose a new password?`)) return;
+        try {
+          const r = await api.post(`/admin/users/${u.id}/send-link`);
+          ui.toast(r.kind === 'invite' ? `Invitation sent to ${r.email}.` : `Reset link sent to ${r.email}.`, 'success', 5000);
+        } catch (e) { ui.toast(e.message, 'error'); }
       }
 
       // ── USERS ──
@@ -55,6 +69,7 @@
           [
             { label: 'Name', value: u => [u.title, u.fullName].filter(Boolean).join(' ') },
             { label: 'Username', key: 'username' },
+            { label: 'Email', value: u => u.email || '—' },
             { label: 'Role', value: u => u.role === 'admin' ? 'Administrator' : 'Unit User' },
             { label: 'Units', value: u => u.role === 'admin' ? 'All' : (u.unitKeys.length ? u.unitKeys.map(unitName).join(', ') : (u.signerRoles.length ? 'All' : 'None')) },
             { label: 'Privileges', value: u => u.role === 'admin' ? 'Full' : (u.privileges.join(', ') || 'none') },
@@ -65,7 +80,8 @@
           users,
           [
             { label: 'Edit', onClick: u => userForm(u, units) },
-            { label: 'Reset Password', onClick: async u => {
+            { label: 'Email Reset Link', show: u => meta.mailEnabled && u.email && u.active, onClick: u => emailLink(u) },
+            { label: u => meta.mailEnabled && u.email ? 'One Time Password' : 'Reset Password', onClick: async u => {
               if (!confirm(`Give ${u.username} a new one time password?`)) return;
               try { const r = await api.post(`/admin/users/${u.id}/reset-password`); showTempPassword(u.username, r.tempPassword); }
               catch (e) { ui.toast(e.message, 'error'); }
@@ -92,6 +108,14 @@
         if (existing) username.disabled = true;
         const fullName = el('input', { type: 'text', value: v.fullName || '' });
         const title = el('input', { type: 'text', value: v.title || '', placeholder: 'e.g. Hon. Justice' });
+        const email = el('input', { type: 'email', value: v.email || '', placeholder: 'name@example.com', autocomplete: 'off' });
+        const invite = el('input', { type: 'checkbox' });
+        invite.checked = true;
+        const inviteRow = el('label', { class: 'check check--plain form-field--full' }, [invite,
+          ' Email an invitation link so they choose their own password (instead of showing a one time password here)']);
+        const syncInvite = () => { inviteRow.hidden = !(meta.mailEnabled && !existing && email.value.trim()); };
+        email.addEventListener('input', syncInvite);
+        syncInvite();
         const role = el('select', null, [el('option', { value: 'user' }, 'Unit User'), el('option', { value: 'admin' }, 'Administrator')]);
         role.value = v.role;
         const unitBox = checkboxes(units.map(u => [u.key, u.name]), v.unitKeys);
@@ -110,19 +134,22 @@
           el('label', { class: 'form-field' }, [el('span', { class: 'form-field__label' }, 'Role'), role]),
           el('label', { class: 'form-field' }, [el('span', { class: 'form-field__label' }, 'Full Name'), fullName]),
           el('label', { class: 'form-field' }, [el('span', { class: 'form-field__label' }, 'Title (printed with signature)'), title]),
+          el('label', { class: 'form-field form-field--full' }, [el('span', { class: 'form-field__label' }, 'Email (for invitations and password reset)'), email]),
+          inviteRow,
           unitRow, privRow, signRow
         ]);
 
         await ui.modal(existing ? 'Edit User' : 'Add User', body, {
           confirmText: existing ? 'Save' : 'Create User',
           onConfirm: async () => {
-            const payload = { fullName: fullName.value, title: title.value, role: role.value, unitKeys: unitBox.values(), privileges: privBox.values(), signerRoles: signBox.values() };
+            const payload = { fullName: fullName.value, title: title.value, email: email.value, role: role.value, unitKeys: unitBox.values(), privileges: privBox.values(), signerRoles: signBox.values() };
             if (existing) {
               await api.patch('/admin/users/' + existing.id, payload);
               ui.toast('User updated.', 'success');
             } else {
-              const r = await api.post('/admin/users', { ...payload, username: username.value });
-              showTempPassword(r.user.username, r.tempPassword);
+              const r = await api.post('/admin/users', { ...payload, username: username.value, sendInvite: !inviteRow.hidden && invite.checked });
+              if (r.invited) ui.toast(`Invitation sent to ${r.user.email}. The link expires in 24 hours.`, 'success', 6000);
+              else showTempPassword(r.user.username, r.tempPassword, r.emailError ? `The invitation email could not be sent (${r.emailError}). Give this password to the user instead.` : null);
             }
             renderUsers();
             return true;

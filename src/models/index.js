@@ -20,6 +20,7 @@ const UserSchema = new Schema({
   username:     { type: String, required: true, unique: true, lowercase: true, trim: true },
   fullName:     { type: String, required: true, trim: true },
   title:        { type: String, trim: true, default: '' },     // e.g. "Hon. Justice", printed under a signature
+  email:        { type: String, trim: true, lowercase: true },  // for invitations and password reset links
   passwordHash: { type: String, required: true },
   role:         { type: String, enum: ['admin', 'user'], default: 'user' },
   unitKeys:     { type: [String], default: [] },               // empty = every unit (admins, Chief Registrar)
@@ -37,9 +38,12 @@ const UserSchema = new Schema({
   lastLoginAt:  Date
 }, { timestamps: true });
 
+// An email address belongs to one account, so a reset link always reaches the right person.
+UserSchema.index({ email: 1 }, { unique: true, partialFilterExpression: { email: { $type: 'string' } } });
+
 UserSchema.methods.toSafeJSON = function () {
   return {
-    id: String(this._id), username: this.username, fullName: this.fullName, title: this.title,
+    id: String(this._id), username: this.username, fullName: this.fullName, title: this.title, email: this.email || '',
     role: this.role, unitKeys: this.unitKeys, privileges: this.privileges, signerRoles: this.signerRoles,
     hasSignature: !!this.signature, hasSigningPin: !!this.signingPinHash,
     mustChangePassword: this.mustChangePassword, active: this.active,
@@ -135,6 +139,18 @@ const NotificationSchema = new Schema({
   read:    { type: Boolean, default: false }
 }, { timestamps: true });
 
+// One time links for setting a password: an invitation for a new account,
+// or a reset. Only a hash of the token is stored; MongoDB deletes expired
+// ones by itself.
+const PasswordTokenSchema = new Schema({
+  user:      { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  kind:      { type: String, enum: ['invite', 'reset'], required: true },
+  tokenHash: { type: String, required: true, unique: true },
+  expiresAt: { type: Date, required: true },
+  usedAt:    Date
+}, { timestamps: true });
+PasswordTokenSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+
 module.exports = {
   PRIVILEGES, STATUSES,
   User:         mongoose.model('User', UserSchema),
@@ -142,5 +158,6 @@ module.exports = {
   FormConfig:   mongoose.model('FormConfig', FormConfigSchema),
   Record:       mongoose.model('Record', RecordSchema),
   AuditLog:     mongoose.model('AuditLog', AuditLogSchema),
-  Notification: mongoose.model('Notification', NotificationSchema)
+  Notification: mongoose.model('Notification', NotificationSchema),
+  PasswordToken: mongoose.model('PasswordToken', PasswordTokenSchema)
 };

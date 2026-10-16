@@ -223,5 +223,44 @@
 
   function empty(text) { return el('p', { class: 'muted empty' }, text); }
 
-  window.App.ui = { el, clear, toast, modal, form, table, statusBadge, STATUS_LABELS, field, fmtDate, empty };
+  // ── Show / hide for every password and PIN field ──
+  // Any <input type="password"> added anywhere gets an eye button, so each
+  // screen does not have to remember to add one.
+  function addReveal(input) {
+    if (input.dataset.reveal) return;
+    input.dataset.reveal = '1';
+    const btn = el('button', { type: 'button', class: 'pw-toggle', 'aria-label': 'Show password', title: 'Show' }, '👁');
+    btn.addEventListener('click', () => {
+      const show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      btn.textContent = show ? '🙈' : '👁';
+      btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+      btn.title = show ? 'Hide' : 'Show';
+      input.focus();
+    });
+    const wrap = el('span', { class: 'pw-wrap' });
+    input.parentNode.insertBefore(wrap, input);
+    wrap.append(input, btn);
+  }
+  function revealAll(root) {
+    if (root.matches && root.matches('input[type=password]')) addReveal(root);
+    if (root.querySelectorAll) root.querySelectorAll('input[type=password]').forEach(addReveal);
+  }
+  new MutationObserver(list => list.forEach(m => m.addedNodes.forEach(n => { if (n.nodeType === 1) revealAll(n); })))
+    .observe(document.documentElement, { childList: true, subtree: true });
+
+  // Copy text, with a fallback for browsers that block the clipboard API.
+  async function copyText(text) {
+    try { await navigator.clipboard.writeText(text); return true; }
+    catch (e) {
+      const ta = el('textarea', { style: 'position:fixed;opacity:0' });
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      let ok = false;
+      try { ok = document.execCommand('copy'); } catch (e2) { ok = false; }
+      ta.remove();
+      return ok;
+    }
+  }
+
+  window.App.ui = { el, clear, toast, modal, form, table, statusBadge, STATUS_LABELS, field, fmtDate, empty, copyText };
 })();

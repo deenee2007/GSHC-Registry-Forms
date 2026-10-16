@@ -4,8 +4,10 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const config = require('../config');
-const { User } = require('../models');
+const { User, PasswordToken } = require('../models');
 const pw = require('../services/passwords');
+const mail = require('../services/mail');
+const links = require('../services/passwordLinks');
 const audit = require('../services/audit');
 const { HttpError, requireLogin, allowTempPassword } = require('../middleware/auth');
 
@@ -76,8 +78,65 @@ router.post('/change-password', allowTempPassword, requireLogin, wrap(async (req
   req.user.passwordHash = await pw.hash(newPassword);
   req.user.mustChangePassword = false;
   await req.user.save();
+  await links.endSessions(req.user._id, req.sessionID); // sign out other browsers
   await audit.log(req, 'password_changed');
   res.json({ user: req.user.toSafeJSON() });
+}));
+
+// What the sign in screen may offer (no sign in needed).
+router.get('/options', (req, res) => res.json({ forgotPassword: mail.enabled() }));
+
+const forgotLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, limit: 5, standardHeaders: 'draft-7', legacyHeaders: false,
+  message: { error: 'Too many reset requests. Please wait a few minutes and try again.' }
+});
+
+// The answer is the same whether or not an account matched, so this cannot
+// be used to find out which usernames or emails exist.
+const FORGOT_REPLY = 'If an account with an email address matches, a reset link has been sent to it. The link expires in ' +
+  `${config.resetMinutes} minutes. If no email arrives, ask the administrator to reset your password.`;
+
+router.post('/forgot', forgotLimiter, wrap(async (req, res) => {
+  if (!mail.enabled()) throw new HttpError(503, 'Password reset by email is not available. Ask the administrator to reset your password.');
+  const who = String(req.body.username || '').trim().toLowerCase();
+  if (!who) throw new HttpError(400, 'Enter your username or email address.');
+  const user = await User.findOne(who.includes('@') ? { email: who } : { username: who });
+  if (user && user.active && user.email) {
+    try {
+      await links.sendLink(req, user, 'reset');
+      await audit.log({ ip: req.ip }, 'password_reset_requested', { details: { username: user.username } });
+    } catch (e) { console.error('Reset email failed:', e.message); }
+  }
+  res.json({ message: FORGOT_REPLY });
+}));
+
+// Check a link before showing the "choose a password" screen.
+router.get('/reset/:token', wrap(async (req, res) => {
+  const rec = await links.findValid(req.params.token);
+  if (!rec) return res.json({ valid: false });
+  res.json({ valid: true, kind: rec.kind, username: rec.user.username, fullName: rec.user.fullName });
+}));
+
+const resetLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, limit: 10, standardHeaders: 'draft-7', legacyHeaders: false,
+  message: { error: 'Too many attempts. Please wait a few minutes and try again.' }
+});
+
+router.post('/reset', resetLimiter, wrap(async (req, res) => {
+  const rec = await links.findValid(req.body.token);
+  if (!rec) throw new HttpError(400, 'This link has expired or has already been used. Ask for a new one.');
+  const problem = pw.checkPassword(req.body.newPassword);
+  if (problem) throw new HttpError(400, problem);
+  const user = await User.findById(rec.user._id);
+  user.passwordHash = await pw.hash(req.body.newPassword);
+  user.mustChangePassword = false; user.failedLogins = 0; user.lockedUntil = null;
+  await user.save();
+  rec.usedAt = new Date();
+  await rec.save();
+  await PasswordToken.deleteMany({ user: user._id, usedAt: null });
+  await links.endSessions(user._id);
+  await audit.log({ ip: req.ip, user }, rec.kind === 'invite' ? 'invite_accepted' : 'password_reset_completed', { details: { username: user.username } });
+  res.json({ ok: true, username: user.username });
 }));
 
 module.exports = router;
