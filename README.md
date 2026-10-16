@@ -1,75 +1,109 @@
 # GSHC Registry & Units Forms Automation System
 
-Offline forms-automation app for the **Gombe State High Court of Justice**.
+Online forms system for the **Gombe State High Court of Justice**.
 *Directorate of ICT.*
 
-A local Node server hosts the app on `localhost`; **all data is stored in the
-browser's IndexedDB on the same machine** — no remote server, no MySQL, works
-fully offline (same model as before).
+Registry staff fill in official court forms, judges and registrars sign them
+digitally, and the printed document carries a QR code anyone can scan to
+confirm it is genuine.
 
-## Units in this build
-- **Court Registries — High Court 1 to 9** (one reusable module, nine units)
-- **Appeals Registry**
-- **Execution / Bailiffs Unit**
-- **Settings** (admin only)
+> **Status:** the online backend (this phase) is complete and tested. The
+> browser screens still use the earlier offline storage and will be
+> connected to the new API in the next phase.
 
-## Setup
-1. Install [Node.js](https://nodejs.org) (LTS) on the machine.
-2. In this folder, run:
+## Units
+* **Court Registries:** High Court 1 to 9 (one shared module, 15 forms)
+* **Appeals Registry** (4 forms)
+* **Execution / Bailiffs Unit** (14 forms)
+* **Settings** (administrators only)
+
+## How signing works
+1. A staff member fills a form and saves it as a **draft**.
+2. On **Submit**, each signature line on the form is handled:
+   * if the submitter holds that signing role (for example a Registrar on a
+     hearing notice), they confirm with their signing PIN and their signature
+     is placed at once;
+   * otherwise the form goes to the person chosen to sign (the court's judge,
+     the Chief Registrar, the Chief Bailiff and so on).
+3. The signer sees it in their **inbox**, previews it, and either **approves**
+   with their PIN (their signature is placed automatically) or **returns** it
+   with comments.
+4. When every line is signed, the record is **final** and locked. It returns
+   to the submitter under **Approved**, ready to print.
+5. For appeal panels, the submitter chooses the judges and whether **any one**
+   or **all** of them must approve.
+6. A signed document can be **revoked** with a reason; it is never deleted.
+
+Who signs which form is set per form in Settings. Forms signed by people
+outside the system (deponents, sureties, counsel) have no digital signature
+line; finalising them still locks them and issues a verification code.
+
+## Verification
+Every final document gets a code such as `GSHC-7KQ4-9XM2-AB3D`, a QR code
+linking to `/verify/<code>`, and a SHA-256 fingerprint of its content. The
+public page at `/verify` shows whether a document is **genuine**, **revoked**,
+**altered** or **not found**, with the form type, reference, court and
+signers, but not the document's contents.
+
+QR links use the address the app was opened from (the Render address during
+testing, the court's domain later). Set `PUBLIC_BASE_URL` to pin them to one
+domain.
+
+## Security
+* Passwords hashed with bcrypt; minimum 8 characters with letters and numbers.
+* Sessions held on the server (MongoDB), in secure cookies, with automatic
+  sign out after inactivity.
+* Every permission and every record lock is enforced by the server.
+* Accounts lock for 15 minutes after 5 failed sign ins; signing locks after
+  5 wrong PINs.
+* Signature images are private Cloudinary assets, served only to users who
+  can view the record.
+* Every action is written to an audit log.
+
+## Running locally
+1. Install [Node.js](https://nodejs.org) 20 or later and have a MongoDB
+   available (local, or an Atlas connection string).
+2. Copy `.env.example` to `.env` and fill it in.
+3. Run:
    ```
    npm install
    npm start
    ```
-3. Open `http://localhost:3100`.
+4. Open `http://localhost:3100`. On first start the server creates the admin
+   account (password from `ADMIN_PASSWORD`, or a random one printed in the
+   log) and asks for a new password at first sign in.
 
-On Windows, double-click **`start.vbs`** to launch silently and open the browser
-automatically. (Make a desktop/startup shortcut to it if you want auto-start.)
+Tests: `npm test` (needs a MongoDB at `TEST_MONGODB_URI`, default
+`mongodb://127.0.0.1:27017/gshc_registry_test`).
 
-## First login
-- Username: `admin`  ·  Password: `admin`
-- You'll be forced to set a new password immediately.
-- Then go to **Settings → Users** to create staff accounts, assign each to a
-  unit, and tick their privileges (view / create / edit / finalize / delete / print).
+## Deploying on Render
+The repository includes `render.yaml`. Create the service from it, then
+enter `MONGODB_URI`, `CLOUDINARY_URL` and `ADMIN_PASSWORD` when asked.
+`SESSION_SECRET` is generated automatically. A paid instance is recommended
+for daily use, because free instances sleep when idle.
 
-## How it's organised (modular)
+## Project layout
 ```
-server.js                     local host only
+server.js                 entry point: connect, first run setup, listen
+src/
+  config.js               settings from environment variables
+  app.js                  Express app, security headers, sessions, routes
+  models/index.js         MongoDB collections
+  forms/catalogue.js      reads the form definitions from public/js/modules
+  forms/signers.js        signing roles and default signer per form
+  middleware/auth.js      sign in and permission checks
+  routes/                 auth, me (signature, PIN), admin, catalogue,
+                          records (workflow), notifications, verify
+  services/               audit, passwords, seed, signature storage,
+                          verification codes and QR
 public/
-  index.html
-  css/styles.css              official green theme
-  js/
-    main.js                   bootstrap, login, first-run seeding
-    core/
-      db.js                   IndexedDB data layer (one store per unit type)
-      auth.js                 SHA-256 login + sessions
-      permissions.js          role + per-action privilege checks
-      ui.js                   shared DOM/modal/table/form helpers
-      recordEngine.js         shared draft->finalize/lock workflow
-      router.js               builds nav from a user's accessible units
-    modules/
-      registry.js             Court Registry (HC 1-9)
-      appeals.js              Appeals Registry
-      execution.js            Execution / Bailiffs
-      settings.js             admin: users, units, privileges
+  index.html, css/, js/   browser app (forms, print templates, screens)
+  verify.html             public verification page
+test/                     end to end API tests
 ```
 
-## Adding the real forms
-Each unit module has a `forms` object near the top. A form is just a
-**label + field schema**, e.g.:
-```js
-my_form: {
-  label: 'Form Name',
-  schema: [
-    { name: 'fieldKey', label: 'Field Label', type: 'text', required: true },
-    { name: 'notes', label: 'Notes', type: 'textarea', full: true }
-  ]
-}
-```
-The starter forms are placeholders — replace them with the actual registry,
-appeals and execution forms. No other code changes needed; the engine renders
-them, handles drafts, locking, viewing, editing and deleting automatically.
-
-## Adding another court later
-Settings → Units → **+ Add Court Registry** (or add to `SEED_UNITS` in
-`main.js`). New record stores only need adding to `STORES` in `core/db.js`
-(+ bump `DB_VERSION`) if you introduce a brand-new *type* of unit.
+## Adding or changing forms
+Form fields are defined once, in `public/js/modules/registry.js`,
+`appeals.js` and `execution.js`; the server reads the same definitions.
+Printed layouts are in `public/js/core/output.js`. A new form also needs a
+signing rule, which an administrator sets in Settings.

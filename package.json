@@ -4,12 +4,27 @@
   "description": "Gombe State High Court of Justice — Registry & Units Forms Automation (offline)",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test --test-concurrency=1 test/*.test.js"
   },
   "author": "Directorate of ICT, Gombe State High Court of Justice",
   "license": "UNLICENSED",
   "private": true,
   "dependencies": {
-    "express": "^4.19.2"
+    "bcryptjs": "^3.0.3",
+    "cloudinary": "^2.11.0",
+    "connect-mongo": "^6.0.0",
+    "dotenv": "^18.0.8",
+    "express": "^4.19.2",
+    "express-rate-limit": "^8.7.1",
+    "express-session": "^1.19.0",
+    "helmet": "^8.3.0",
+    "mongoose": "^9.11.2",
+    "multer": "^2.4.0",
+    "qrcode": "^1.5.4"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

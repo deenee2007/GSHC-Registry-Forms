@@ -1,35 +1,27 @@
 /*
- * GSHC Registry — Local Server
- * Serves the offline app on http://localhost:PORT.
- * This is ONLY a local host for the front-end. All data lives in the
- * browser's IndexedDB on the same machine. No remote server, no MySQL.
+ * GSHC Registry — server entry point.
+ * Connects to MongoDB, runs first run setup, then serves the app and API.
  */
-const express = require('express');
-const path = require('path');
+const mongoose = require('mongoose');
+const config = require('./src/config');
+const { createApp } = require('./src/app');
+const { seedAll } = require('./src/services/seed');
 
-const app = express();
-const PORT = process.env.PORT || 3100; // distinct from HotelDesk (3000)
+async function main() {
+  await mongoose.connect(config.mongoUri, { serverSelectionTimeoutMS: 15000 });
+  await seedAll();
+  const app = createApp();
+  app.listen(config.port, () => {
+    console.log('====================================================');
+    console.log('  Gombe State High Court — Registry Forms System');
+    console.log('  Directorate of ICT');
+    console.log('----------------------------------------------------');
+    console.log(`  Running on port ${config.port} (${config.env})`);
+    console.log('====================================================');
+  });
+}
 
-// Serve the app — no-store so the browser never caches JS/CSS; updates always load fresh
-app.use(express.static(path.join(__dirname, 'public'), {
-  etag: false,
-  lastModified: false,
-  setHeaders: (res) => {
-    res.setHeader('Cache-Control', 'no-store');
-  }
-}));
-
-// Single-page fallback so deep links still load index.html
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-app.listen(PORT, () => {
-  console.log('====================================================');
-  console.log('  Gombe State High Court — Registry Forms System');
-  console.log('  Directorate of ICT');
-  console.log('----------------------------------------------------');
-  console.log(`  Running at:  http://localhost:${PORT}`);
-  console.log('  Press Ctrl+C to stop.');
-  console.log('====================================================');
+main().catch(err => {
+  console.error('Failed to start:', err.message);
+  process.exit(1);
 });
