@@ -5,7 +5,7 @@
  * when online. The last good copy of each page, script and API answer is
  * kept, and used only when the network fails.
  */
-const SHELL = 'gshc-shell-v4';
+const SHELL = 'gshc-shell-v5';
 const API = 'gshc-api';
 
 const SHELL_FILES = [
@@ -14,7 +14,7 @@ const SHELL_FILES = [
   '/js/core/api.js', '/js/core/db.js', '/js/core/auth.js', '/js/core/permissions.js',
   '/js/core/ui.js', '/js/core/output.js', '/js/core/workflow.js', '/js/core/recordEngine.js',
   '/js/core/router.js', '/js/modules/dashboard.js', '/js/modules/registry.js',
-  '/js/modules/appeals.js', '/js/modules/execution.js', '/js/modules/inbox.js',
+  '/js/modules/appeals.js', '/js/modules/execution.js', '/js/modules/general.js', '/js/modules/inbox.js',
   '/js/modules/submissions.js', '/js/modules/signature.js', '/js/modules/account.js', '/js/modules/settings.js',
   '/js/main.js'
 ];

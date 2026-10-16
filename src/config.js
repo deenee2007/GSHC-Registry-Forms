@@ -6,6 +6,10 @@
 require('dotenv').config({ quiet: true });
 
 const env = process.env.NODE_ENV || 'development';
+
+// Dates on documents and emails are written in the court's time zone,
+// whatever zone the hosting server runs in.
+process.env.TZ = (process.env.APP_TIMEZONE || 'Africa/Lagos').trim();
 const isProd = env === 'production';
 
 function required(name) {

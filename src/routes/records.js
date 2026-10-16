@@ -18,6 +18,7 @@ const catalogue = require('../forms/catalogue');
 const verification = require('../services/verification');
 const store = require('../services/signatureStore');
 const audit = require('../services/audit');
+const documentCopy = require('../services/documentCopy');
 const { notify } = require('../services/notify');
 const { verifyPin } = require('./me');
 const { HttpError, requireLogin, canAccessUnit, can, isAdmin } = require('../middleware/auth');
@@ -212,6 +213,19 @@ router.get('/:id/signatures/:slot/:idx', wrap(async (req, res) => {
   res.set('Content-Type', img.contentType).set('Cache-Control', 'private, max-age=86400').send(img.buffer);
 }));
 
+// The saved copy of the signed document, as a standalone file.
+router.get('/:id/copy', wrap(async (req, res) => {
+  const rec = await loadRecord(req.params.id);
+  if (!canView(req.user, rec)) throw new HttpError(403, 'You do not have access to this record.');
+  if (!['final', 'revoked'].includes(rec.status)) throw new HttpError(409, 'Only signed documents have a saved copy.');
+  const html = await documentCopy.get(rec);
+  await audit.log(req, 'copy_downloaded', { record: rec });
+  res.set('Content-Type', 'text/html; charset=utf-8');
+  res.set('Content-Disposition', `attachment; filename="${documentCopy.fileName(rec)}"`);
+  res.set('Cache-Control', 'private, no-store');
+  res.send(html);
+}));
+
 router.get('/:id/history', wrap(async (req, res) => {
   const rec = await loadRecord(req.params.id);
   if (!canView(req.user, rec)) throw new HttpError(403, 'You do not have access to this record.');
@@ -315,12 +329,13 @@ router.post('/:id/submit', signLimiter, wrap(async (req, res) => {
   if (allDone(rec)) {
     await finalize(req, rec);
     await saveRecord(rec);
+    await documentCopy.save(rec);
     await audit.log(req, 'record_finalized', { record: rec, details: { verifyCode: rec.verifyCode, selfSigned: selfSign } });
   } else {
     rec.status = 'pending';
     await saveRecord(rec);
     const waiting = rec.slots.filter(s => !slotDone(s)).flatMap(s => s.approvers);
-    await notify(waiting, 'submitted', rec, `${catalogue.get(rec.formType).label} ${rec.ref || ''} is waiting for your signature.`.trim());
+    await notify(waiting, 'submitted', rec, `${catalogue.get(rec.formType).label} ${rec.ref || ''} is waiting for your signature.`.trim(), req);
     await audit.log(req, 'record_submitted', { record: rec, details: { slots: rec.slots.map(s => ({ label: s.label, rule: s.rule, approvers: s.approvers.map(String) })) } });
   }
   await rec.populate(POPULATE);
@@ -340,13 +355,14 @@ router.post('/:id/approve', signLimiter, wrap(async (req, res) => {
   const complete = allDone(rec);
   if (complete) await finalize(req, rec);
   await saveRecord(rec);
+  if (complete) await documentCopy.save(rec);
   await audit.log(req, complete ? 'record_approved' : 'record_signed', { record: rec, details: { lines: mySlots.map(s => s.label), verifyCode: rec.verifyCode } });
 
   const label = catalogue.get(rec.formType).label;
   if (complete) {
-    await notify(rec.submittedBy, 'approved', rec, `${label} ${rec.ref || ''} has been approved and signed. It is ready to print.`.trim());
+    await notify(rec.submittedBy, 'approved', rec, `${label} ${rec.ref || ''} has been approved and signed. It is ready to print.`.trim(), req);
   } else {
-    await notify(rec.submittedBy, 'signed', rec, `${req.user.fullName} signed ${label} ${rec.ref || ''}. Waiting for the remaining signatures.`.trim());
+    await notify(rec.submittedBy, 'signed', rec, `${req.user.fullName} signed ${label} ${rec.ref || ''}. Waiting for the remaining signatures.`.trim(), req);
   }
   await rec.populate(POPULATE);
   res.json({ record: serialize(rec) });
@@ -365,7 +381,7 @@ router.post('/:id/return', wrap(async (req, res) => {
   rec.returnedAt = new Date();
   await saveRecord(rec);
   await audit.log(req, 'record_returned', { record: rec, details: { comment } });
-  await notify(rec.submittedBy, 'returned', rec, `${catalogue.get(rec.formType).label} ${rec.ref || ''} was returned by ${req.user.fullName}: ${comment}`);
+  await notify(rec.submittedBy, 'returned', rec, `${catalogue.get(rec.formType).label} ${rec.ref || ''} was returned by ${req.user.fullName}: ${comment}`, req);
   res.json({ record: serialize(rec) });
 }));
 
@@ -394,7 +410,7 @@ router.post('/:id/revoke', wrap(async (req, res) => {
   rec.revokeReason = reason;
   await saveRecord(rec);
   await audit.log(req, 'record_revoked', { record: rec, details: { reason } });
-  await notify(rec.submittedBy, 'revoked', rec, `${catalogue.get(rec.formType).label} ${rec.ref || ''} was revoked: ${reason}`);
+  await notify(rec.submittedBy, 'revoked', rec, `${catalogue.get(rec.formType).label} ${rec.ref || ''} was revoked: ${reason}`, req);
   res.json({ record: serialize(rec) });
 }));
 

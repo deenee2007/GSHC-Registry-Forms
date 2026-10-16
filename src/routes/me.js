@@ -51,6 +51,15 @@ router.post('/signing-pin', requireSigner, wrap(async (req, res) => {
   res.json({ user: req.user.toSafeJSON() });
 }));
 
+// The user's own choices, e.g. { emailAlerts: false }. Open to every user,
+// signer or not.
+router.patch('/preferences', wrap(async (req, res) => {
+  if (req.body.emailAlerts !== undefined) req.user.emailAlerts = !!req.body.emailAlerts;
+  await req.user.save();
+  await audit.log(req, 'preferences_updated', { details: { emailAlerts: req.user.emailAlerts } });
+  res.json({ user: req.user.toSafeJSON() });
+}));
+
 // Used by the workflow before any signature is placed.
 async function verifyPin(user, pin) {
   if (!user.signingPinHash) throw new HttpError(400, 'Set your signing PIN first (My Signature).');

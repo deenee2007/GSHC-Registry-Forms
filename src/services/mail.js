@@ -28,7 +28,8 @@ async function send({ to, name, subject, text, html }) {
       sender: { name: config.mailFromName, email: config.mailFrom },
       to: [{ email: to, name: name || to }],
       subject, textContent: text, htmlContent: html
-    })
+    }),
+    signal: AbortSignal.timeout(15000)
   });
   if (!res.ok) {
     const detail = await res.text().catch(() => '');
@@ -86,4 +87,16 @@ function resetMessage(user, link, minutes) {
   };
 }
 
-module.exports = { enabled, send, inviteMessage, resetMessage, sent };
+function alertMessage(user, subject, message, link) {
+  return {
+    subject: `GSHC Registry: ${subject}`,
+    ...layout({
+      heading: subject,
+      paragraphs: [`Dear ${user.fullName},`, message],
+      button: 'Open GSHC Registry', link,
+      footer: 'You can switch these emails off under My Account. Directorate of ICT, Gombe State High Court of Justice.'
+    })
+  };
+}
+
+module.exports = { enabled, send, inviteMessage, resetMessage, alertMessage, sent };

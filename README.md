@@ -12,7 +12,7 @@ confirm it is genuine.
 > QR verification and offline drafts.
 
 ## Units
-* **Court Registries:** High Court 1 to 9 (one shared module, 15 forms)
+* **Court Registries:** High Court 1 to 9 (one shared module, 15 forms); more can be added
 * **Appeals Registry** (4 forms)
 * **Execution / Bailiffs Unit** (14 forms)
 * **Settings** (administrators only)
@@ -116,6 +116,26 @@ for daily use, because free instances sleep when idle.
 Email is sent through Brevo. Set `BREVO_API_KEY` (an API key, starting
 `xkeysib-`) and `MAIL_FROM` (a sender address verified in Brevo) on Render.
 Without them, the email features are hidden and everything else works.
+
+## Email alerts
+When email is set up, people are emailed when a form waits for their
+signature, and when a form they submitted is approved, returned or revoked.
+* Each user can switch alerts off under **My Account**.
+* The administrator can switch them off for one user (Edit user) or for
+  everybody (Settings → Users). In app notifications continue either way.
+
+## Saved copies
+When a document is signed, the server keeps a copy exactly as signed: one
+HTML file containing its styles, signatures and QR code. **Download Copy**
+(in the document view and My Submissions) saves it; it opens and prints in
+any browser, even offline. Revoked documents download with a REVOKED notice.
+
+## Units
+Settings → Units → **+ Add Unit** adds either another **Court Registry**
+(numbered automatically, with the registry forms) or an **Other Unit**
+(Probate, Accounts, Open Registry and so on), which starts with no forms;
+choose its forms under Form Access. Its own forms and workflow can be added
+to the system later as a new module.
 
 ## Startup log and admin recovery
 Each start prints the database in use and how many accounts it holds:

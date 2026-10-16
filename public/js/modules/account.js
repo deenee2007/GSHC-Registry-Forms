@@ -30,6 +30,25 @@
         ])
       ]));
 
+      // Email alerts
+      const alerts = el('input', { type: 'checkbox' });
+      alerts.checked = user.emailAlerts;
+      let why = '';
+      if (!user.email) why = 'Add an email address (ask the administrator) to receive alerts.';
+      else if (user.emailAlertsBlocked) why = 'The administrator has switched email alerts off for your account.';
+      alerts.disabled = !!why;
+      alerts.addEventListener('change', async () => {
+        try {
+          await api.patch('/me/preferences', { emailAlerts: alerts.checked });
+          ui.toast(alerts.checked ? 'Email alerts on.' : 'Email alerts off. You will still see notifications in the app.', 'success');
+        } catch (e) { alerts.checked = !alerts.checked; ui.toast(e.offline ? 'This needs an internet connection.' : e.message, 'error'); }
+      });
+      container.appendChild(el('section', { class: 'card' }, [
+        el('h2', { class: 'card__title' }, 'Email Alerts'),
+        el('label', { class: 'check check--plain' }, [alerts, ' Email me when a form is waiting for my signature, and when forms I submitted are approved, returned or revoked']),
+        why ? el('p', { class: 'muted' }, why) : null
+      ]));
+
       const current = el('input', { type: 'password', autocomplete: 'current-password' });
       const p1 = el('input', { type: 'password', autocomplete: 'new-password' });
       const p2 = el('input', { type: 'password', autocomplete: 'new-password' });
