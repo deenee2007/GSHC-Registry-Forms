@@ -352,3 +352,124 @@ h1 { font-size: 1.35rem; margin: 0; }
 .co-party-names { white-space: pre-line; }
 .co-party-role { font-weight: 700; padding-left: 16px; white-space: nowrap; align-self: flex-end; }
 .doc-cl-judge-name { font-weight: 700; font-size: 11pt; margin: 2px 0 2px 20px; }
+
+/* ============================================================
+   Online workflow (Phase 2)
+   ============================================================ */
+.login__emblem { width: 72px; height: 72px; object-fit: contain; }
+.login__msg--info { color: var(--green-700); }
+.sidebar__emblem { width: 28px; height: 28px; object-fit: contain; }
+.nav-item { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.nav-group { font-size: .68rem; text-transform: uppercase; letter-spacing: .08em; color: #7fae93;
+  padding: .9rem .8rem .3rem; }
+.nav-badge { background: var(--gold); color: var(--green-900); font-size: .7rem; font-weight: 700;
+  border-radius: 999px; padding: .05rem .45rem; min-width: 1.3rem; text-align: center; }
+.sync-status { font-size: .75rem; padding: .5rem 1.2rem; border-top: 1px solid rgba(255,255,255,.1); }
+.sync-status--online { color: #8fd6aa; }
+.sync-status--offline { color: #f4c76b; }
+
+/* Status badges */
+.badge--pending  { background: #e8f0fe; color: #1a4fb4; }
+.badge--returned { background: #fdeceb; color: var(--danger); }
+.badge--revoked  { background: #f1f1f1; color: #555; text-decoration: line-through; }
+.badge--offline  { background: #fff4e0; color: #9a6b00; border: 1px dashed #c4831a; }
+.badge--new      { background: var(--gold); color: var(--green-900); }
+
+.notice { border-radius: 10px; padding: .8rem 1rem; margin-bottom: 1rem; display: flex; gap: .8rem;
+  align-items: center; flex-wrap: wrap; font-size: .9rem; }
+.notice--warn { background: #fff4e0; color: #6b4a00; border: 1px solid #f1d49a; }
+.empty { padding: 1rem 0; }
+.toolbar { flex-wrap: wrap; }
+
+/* Cards (My Signature) */
+.card { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 1.2rem 1.4rem;
+  margin-bottom: 1.2rem; box-shadow: var(--shadow); max-width: 760px; }
+.card__title { font-size: 1rem; margin: 0 0 .6rem; color: var(--green-900); }
+.card__actions { display: flex; justify-content: flex-end; margin-top: 1rem; }
+.card .form-field { margin-top: .8rem; }
+.sig-status { border-radius: 10px; padding: .7rem 1rem; margin-bottom: 1rem; max-width: 760px; font-size: .9rem; }
+.sig-status--ok { background: var(--green-50); color: var(--green-700); }
+.sig-status--warn { background: #fff4e0; color: #6b4a00; }
+.sig-current { margin-bottom: .8rem; display: flex; flex-direction: column; gap: .3rem; }
+.sig-current__img { max-width: 260px; max-height: 110px; object-fit: contain; background:
+  repeating-linear-gradient(45deg, #fafafa, #fafafa 6px, #f2f2f2 6px, #f2f2f2 12px); border: 1px solid var(--line);
+  border-radius: 8px; padding: 6px; }
+.sig-pane { margin-top: .8rem; }
+.sig-pad { width: 100%; max-width: 600px; aspect-ratio: 3 / 1; background: #fff; border: 2px dashed var(--line);
+  border-radius: 10px; touch-action: none; cursor: crosshair; display: block; margin-bottom: .5rem; }
+
+/* Submit dialog */
+.signer-box { border: 1px solid var(--line); border-radius: 10px; padding: .8rem 1rem; margin-bottom: .8rem; }
+.signer-box__title { font-weight: 700; color: var(--green-900); margin-bottom: .3rem; }
+.signer-box__self { color: var(--green-700); margin: .2rem 0; }
+.signer-list { display: flex; flex-direction: column; gap: .35rem; align-items: flex-start; }
+.signer-option { text-transform: none; }
+.signer-rule { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin-top: .6rem; }
+.check--plain { text-transform: none; }
+.signer-rows { display: flex; flex-direction: column; gap: .5rem; margin-bottom: .6rem; }
+.signer-row { display: grid; grid-template-columns: 200px 1fr auto; gap: .5rem; }
+.signer-row select, .signer-row input { padding: .5rem .6rem; border: 1px solid var(--line); border-radius: 8px; font: inherit; }
+.settings-group { font-size: .9rem; color: var(--green-700); margin: 1.4rem 0 .5rem; }
+.temp-pw { font-family: ui-monospace, Consolas, monospace; font-size: 1.4rem; letter-spacing: .08em; text-align: center;
+  background: var(--green-50); border-radius: 10px; padding: .8rem; margin-top: .6rem; user-select: all; }
+
+/* Document viewer status panel */
+.doc-status { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: .7rem 1rem;
+  margin-bottom: .7rem; font-size: .88rem; display: flex; flex-direction: column; gap: .35rem; }
+.doc-status__head { display: flex; gap: .7rem; align-items: center; }
+.doc-status__note { border-radius: 8px; padding: .5rem .7rem; }
+.doc-status__note--warn { background: #fff4e0; }
+.doc-status__note--bad { background: #fdeceb; }
+.doc-preview__actions { flex-wrap: wrap; }
+.history { margin: 0; padding-left: 1.2rem; display: flex; flex-direction: column; gap: .5rem; font-size: .9rem; }
+
+/* Dashboard */
+button.dash-card { cursor: pointer; font: inherit; }
+button.dash-card:hover { border-color: var(--green-500); }
+.notes { display: flex; flex-direction: column; gap: .4rem; }
+.notes__head { display: flex; justify-content: flex-end; margin-bottom: .4rem; }
+.note { display: grid; grid-template-columns: 120px 1fr auto; gap: .8rem; align-items: center; text-align: left;
+  background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: .6rem .8rem; cursor: pointer; font: inherit; font-size: .88rem; }
+.note--unread { border-left: 4px solid var(--gold); font-weight: 600; }
+.note__kind { font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; font-weight: 700; color: var(--muted); }
+.note__kind--approved { color: var(--ok); }
+.note__kind--returned, .note__kind--revoked { color: var(--danger); }
+.note__kind--submitted { color: #1a4fb4; }
+.note__time { font-size: .75rem; white-space: nowrap; }
+
+/* Signatures, QR and watermark on the court document */
+.doc-sign-block { width: 240px; text-align: center; }
+.doc-sign-block .doc-sign { width: 100%; }
+.doc-sig-img { display: block; max-width: 200px; max-height: 70px; margin: 0 auto -4px; object-fit: contain; }
+.doc-sig-meta { font-size: 8pt; color: #333; line-height: 1.3; margin-top: 2px; }
+.doc-sign-wrap .doc-sign-block { margin-top: -30px; }
+.doc-esign { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 28px; margin-top: 24px; }
+.doc-verify { display: flex; gap: 12px; align-items: center; margin-top: 18px; padding: 8px 10px;
+  border: 1px solid #999; font-size: 8.5pt; line-height: 1.35; page-break-inside: avoid; }
+.doc-qr { width: 25mm; height: 25mm; flex: 0 0 auto; }
+.doc-verify__text { overflow-wrap: anywhere; }
+.court-doc--marked { position: relative; overflow: hidden; }
+.court-doc--marked::before { content: attr(data-watermark); position: absolute; top: 45%; left: 50%;
+  transform: translate(-50%, -50%) rotate(-30deg); font-size: 46pt; font-weight: 700; color: rgba(179, 38, 30, .13);
+  white-space: nowrap; pointer-events: none; letter-spacing: .05em; }
+@media print {
+  body.is-printing .court-doc--marked::before { color: rgba(179, 38, 30, .18); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+
+/* Phones: tables become stacked cards */
+@media (max-width: 720px) {
+  .content { padding: 1rem; }
+  .data-table thead { display: none; }
+  .data-table, .data-table tbody, .data-table tr, .data-table td { display: block; width: 100%; }
+  .data-table tr { border-top: 1px solid var(--line); padding: .4rem 0; }
+  .data-table td { border: none; padding: .25rem .9rem; }
+  .data-table td[data-label]::before { content: attr(data-label) ": "; font-weight: 600; color: var(--muted); font-size: .78rem; }
+  .row-actions { flex-wrap: wrap; }
+  .note { grid-template-columns: 1fr; gap: .2rem; }
+  .signer-row { grid-template-columns: 1fr; }
+}
+.table-scroll { overflow-x: auto; border-radius: var(--radius); box-shadow: var(--shadow); }
+.table-scroll .data-table { box-shadow: none; }
+.row-actions { flex-wrap: wrap; }
+.filter-btns { flex-wrap: wrap; }
+@media (max-width: 720px) { .sidebar__nav { max-height: 40vh; } }

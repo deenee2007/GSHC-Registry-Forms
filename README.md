@@ -7,9 +7,9 @@ Registry staff fill in official court forms, judges and registrars sign them
 digitally, and the printed document carries a QR code anyone can scan to
 confirm it is genuine.
 
-> **Status:** the online backend (this phase) is complete and tested. The
-> browser screens still use the earlier offline storage and will be
-> connected to the new API in the next phase.
+> **Status:** online backend and screens complete. Tested end to end in a
+> browser: admin setup, judge signature, submission, approval, printing,
+> QR verification and offline drafts.
 
 ## Units
 * **Court Registries:** High Court 1 to 9 (one shared module, 15 forms)
@@ -37,6 +37,25 @@ confirm it is genuine.
 Who signs which form is set per form in Settings. Forms signed by people
 outside the system (deponents, sureties, counsel) have no digital signature
 line; finalising them still locks them and issues a verification code.
+
+## Screens
+* **Home:** what needs your attention, quick links to each form, notifications.
+* **Awaiting My Signature** (signers): forms sent to you; review, approve
+  with your PIN, or return with comments.
+* **My Submissions:** forms you submitted, under Approved (ready to print),
+  Awaiting Signature, Returned and Revoked.
+* **Unit pages:** each unit's records, with search and status filters.
+* **My Signature** (signers): draw or upload your signature, set your PIN.
+* **Settings** (administrators): users, units, form access, signing rules,
+  audit log. The dashboard also offers a full JSON backup of records.
+
+## Working offline
+The app keeps working when the internet drops. It still opens, shows the
+last loaded lists, and lets staff fill in and save drafts, which are kept on
+that computer and sent to the server automatically when the connection
+returns (the sidebar shows how many are waiting). Submitting, approving and
+signing need a connection, because they must be recorded centrally for the
+QR check to work. Signing never stores a PIN on the computer.
 
 ## Verification
 Every final document gets a code such as `GSHC-7KQ4-9XM2-AB3D`, a QR code

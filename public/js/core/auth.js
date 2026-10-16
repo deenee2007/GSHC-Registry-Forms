@@ -1,75 +1,69 @@
 /*
- * core/auth.js — authentication & session
- * SHA-256 password hashing via Web Crypto. Session held in memory +
- * sessionStorage so a refresh keeps the user logged in but closing the
- * browser logs them out.
+ * core/auth.js — the signed in user.
+ * The server keeps the session (an httpOnly cookie); the browser only keeps
+ * a copy of the user's profile so screens can decide which buttons to show.
+ * The server checks every action again, so editing this copy grants nothing.
+ * The copy is kept in localStorage so the app can still open offline.
  */
 (function () {
   window.App = window.App || {};
-  const db = () => window.App.db;
+  const api = () => window.App.api;
+  const KEY = 'gshc_user';
+  let _user = null;
 
-  const SESSION_KEY = 'gshc_session';
-
-  async function sha256(text) {
-    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+  function remember(user) {
+    _user = user;
+    try { if (user) localStorage.setItem(KEY, JSON.stringify(user)); else localStorage.removeItem(KEY); } catch (e) { /* storage blocked */ }
   }
 
-  // On very first run, create a default admin so setup can begin.
-  async function ensureSeedAdmin() {
-    const users = await db().getAll('users');
-    if (users.length === 0) {
-      await db().add('users', {
-        username: 'admin',
-        fullName: 'System Administrator',
-        passwordHash: await sha256('admin'),   // CHANGE ON FIRST LOGIN
-        role: 'admin',
-        unitKey: null,
-        privileges: [],
-        mustChangePassword: true,
-        createdAt: Date.now()
-      });
-      return true;
+  function cached() {
+    try { return JSON.parse(localStorage.getItem(KEY)); } catch (e) { return null; }
+  }
+
+  // Returns { user, offline }. user is null when not signed in.
+  async function restore() {
+    try {
+      const { user } = await api().get('/auth/me');
+      remember(user);
+      return { user, offline: false };
+    } catch (e) {
+      if (e.offline) { _user = cached(); return { user: _user, offline: true }; }
+      remember(null);
+      return { user: null, offline: false };
     }
-    return false;
   }
 
   async function login(username, password) {
-    const matches = await db().getByIndex('users', 'username', username.trim());
-    const user = matches && matches[0];
-    if (!user) throw new Error('Unknown username.');
-    const hash = await sha256(password);
-    if (hash !== user.passwordHash) throw new Error('Incorrect password.');
-    const session = {
-      id: user.id, username: user.username, fullName: user.fullName,
-      role: user.role, unitKey: user.unitKey, privileges: user.privileges || [],
-      mustChangePassword: !!user.mustChangePassword
-    };
-    sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
-    return session;
+    const previous = cached();
+    const { user } = await api().post('/auth/login', { username, password });
+    if (previous && previous.id !== user.id) await clearCaches();
+    remember(user);
+    return user;
   }
 
-  function current() {
-    try { return JSON.parse(sessionStorage.getItem(SESSION_KEY)); }
-    catch { return null; }
+  async function logout() {
+    try { await api().post('/auth/logout'); } catch (e) { /* offline: the session expires on its own */ }
+    remember(null);
+    await clearCaches();
   }
 
-  function logout() {
-    sessionStorage.removeItem(SESSION_KEY);
+  async function changePassword(currentPassword, newPassword) {
+    const { user } = await api().post('/auth/change-password', { currentPassword, newPassword });
+    remember(user);
+    return user;
   }
 
-  async function changePassword(userId, newPassword) {
-    const user = await db().get('users', userId);
-    if (!user) throw new Error('User not found.');
-    user.passwordHash = await sha256(newPassword);
-    user.mustChangePassword = false;
-    await db().put('users', user);
-    const sess = current();
-    if (sess && sess.id === userId) {
-      sess.mustChangePassword = false;
-      sessionStorage.setItem(SESSION_KEY, JSON.stringify(sess));
-    }
+  async function refresh() {
+    const { user } = await api().get('/auth/me');
+    remember(user);
+    return user;
   }
 
-  window.App.auth = { sha256, ensureSeedAdmin, login, current, logout, changePassword };
+  // Cached API answers belong to whoever was signed in; drop them.
+  async function clearCaches() {
+    if (!('caches' in window)) return;
+    try { await caches.delete('gshc-api'); } catch (e) { /* ignore */ }
+  }
+
+  window.App.auth = { restore, login, logout, changePassword, refresh, current: () => _user, set: remember };
 })();

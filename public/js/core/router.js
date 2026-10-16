@@ -1,99 +1,123 @@
 /*
- * core/router.js — navigation & module loading
- * Units (the 9 courts, appeals, execution) each have a `type` that maps to
- * a registered module. The router shows only the units a user may access,
- * and hands the chosen unit's config to that module's render().
+ * core/router.js — the sidebar and which screen is showing.
+ * The menu shows only what the signed in user can use: their units, the
+ * signing inbox for signers, My Submissions, My Signature, and Settings
+ * for administrators. Badges show what is waiting.
  */
 (function () {
   window.App = window.App || {};
-  window.App.modules = window.App.modules || {};   // modules register here
+  window.App.modules = window.App.modules || {};
 
-  let _nav, _content;
+  let _nav, _content, _opts = {}, _current = null, _units = null, _badgeTimer = null;
+  const badges = {};
 
-  function deps() {
-    return { ui: window.App.ui, auth: window.App.auth, permissions: window.App.permissions, db: window.App.db };
+  function deps(extra) {
+    const A = window.App;
+    return { ui: A.ui, api: A.api, auth: A.auth, permissions: A.permissions, workflow: A.workflow, router: A.router, user: A.auth.current(), offline: _opts.offline, ...extra };
+  }
+
+  async function units(force) {
+    if (_units && !force) return _units;
+    try { _units = (await window.App.api.get('/catalogue/units')).units; }
+    catch (e) { _units = _units || []; }
+    return _units;
+  }
+  function unitName(key) { const u = (_units || []).find(x => x.key === key); return u ? u.name : key; }
+
+  function navItem(label, onclick, attrs, badgeKey) {
+    const { ui } = deps();
+    const badge = badgeKey ? ui.el('span', { class: 'nav-badge', hidden: 'hidden' }, '') : null;
+    if (badgeKey) badges[badgeKey] = badge;
+    return ui.el('button', { class: 'nav-item', onclick, ...attrs }, [ui.el('span', null, label), badge]);
   }
 
   async function buildNav() {
-    const { ui, auth, permissions, db } = deps();
-    const user = auth.current();
-    const units = await db.getAll('units');
+    const { ui, permissions, user } = deps();
     ui.clear(_nav);
+    const list = await units(true);
+    const group = (title) => _nav.appendChild(ui.el('div', { class: 'nav-group' }, title));
 
-    // Home — always first
-    _nav.appendChild(ui.el('button', {
-      class: 'nav-item', 'data-nav': 'home', onclick: loadDashboard
-    }, '\uD83C\uDFE0  Home'));
-
-    // Unit links the user can access
-    const accessible = units.filter(u => permissions.canAccessUnit(u.key, user));
-    accessible.forEach(u => {
-      _nav.appendChild(ui.el('button', {
-        class: 'nav-item', 'data-unit': u.key, onclick: () => loadUnit(u)
-      }, u.name));
-    });
-
-    // Settings is admin-only
-    if (permissions.isAdmin(user)) {
-      _nav.appendChild(ui.el('button', {
-        class: 'nav-item nav-item--settings',
-        onclick: () => loadModule('settings', null)
-      }, '\u2699  Settings'));
+    _nav.appendChild(navItem('🏠  Home', loadDashboard, { 'data-nav': 'home' }, 'notifications'));
+    if (permissions.isSigner(user)) _nav.appendChild(navItem('✍  Awaiting My Signature', () => loadModule('inbox'), { 'data-nav': 'inbox' }, 'inbox'));
+    if (permissions.isAdmin(user) || permissions.can('finalize', user)) {
+      _nav.appendChild(navItem('📤  My Submissions', () => loadModule('submissions'), { 'data-nav': 'submissions' }, 'approved'));
     }
 
-    // Land on dashboard
-    loadDashboard();
+    if (list.length) group('Units');
+    list.forEach(u => _nav.appendChild(navItem(u.name, () => loadUnit(u), { 'data-unit': u.key })));
+
+    if (permissions.isSigner(user) || permissions.isAdmin(user)) group('Account');
+    if (permissions.isSigner(user)) _nav.appendChild(navItem('🖊  My Signature', () => loadModule('signature'), { 'data-nav': 'signature' }));
+    if (permissions.isAdmin(user)) _nav.appendChild(navItem('⚙  Settings', () => loadModule('settings'), { 'data-nav': 'settings' }));
+
+    refreshBadges();
+    clearInterval(_badgeTimer);
+    _badgeTimer = setInterval(refreshBadges, 60000);
   }
 
-  function loadDashboard() {
-    const { ui, auth, permissions, db } = deps();
-    _nav.querySelectorAll('.nav-item').forEach(n => n.classList.remove('is-active'));
-    const homeBtn = _nav.querySelector('[data-nav="home"]');
-    if (homeBtn) homeBtn.classList.add('is-active');
-    ui.clear(_content);
-    if (window.App.dashboard) {
-      window.App.dashboard.render(_content, { unit: null, user: auth.current(), ui, db, permissions, auth });
-    }
+  function setBadge(key, n) {
+    const b = badges[key];
+    if (!b) return;
+    if (n > 0) { b.textContent = n > 99 ? '99+' : String(n); b.removeAttribute('hidden'); }
+    else b.setAttribute('hidden', 'hidden');
   }
 
-  function setActive(node) {
+  async function refreshBadges() {
+    const { api } = deps();
+    try {
+      const [stats, notes] = await Promise.all([api.get('/records/stats'), api.get('/notifications?unread=1')]);
+      setBadge('inbox', stats.inbox);
+      setBadge('approved', stats.approvedUnprinted);
+      setBadge('notifications', notes.unread);
+    } catch (e) { /* offline: keep the last numbers */ }
+  }
+
+  function setActive(sel) {
     _nav.querySelectorAll('.nav-item').forEach(n => n.classList.remove('is-active'));
+    const node = sel && _nav.querySelector(sel);
     if (node) node.classList.add('is-active');
   }
 
-  async function loadUnit(unit) {
+  async function show(fn) {
+    _current = fn;
+    window.App.ui.clear(_content);
+    _content.scrollTop = 0;
+    try { await fn(); }
+    catch (e) {
+      console.error(e);
+      _content.appendChild(window.App.ui.empty(e.offline ? 'This page is not available offline yet.' : 'Could not load this page: ' + e.message));
+    }
+  }
+
+  function loadDashboard() {
+    setActive('[data-nav="home"]');
+    return show(() => window.App.dashboard.render(_content, deps()));
+  }
+
+  function loadUnit(unit, initialFormKey) {
     const mod = window.App.modules[unit.type];
     if (!mod) { window.App.ui.toast('Module not found: ' + unit.type, 'error'); return; }
-    setActive(_nav.querySelector(`[data-unit="${unit.key}"]`));
-    await render(mod, unit);
+    setActive(`[data-unit="${unit.key}"]`);
+    return show(() => mod.render(_content, deps({ unit, initialFormKey })));
   }
 
-  async function loadUnitWithForm(unit, formKey) {
-    const mod = window.App.modules[unit.type];
-    if (!mod) return;
-    setActive(_nav.querySelector(`[data-unit="${unit.key}"]`));
-    const { ui, auth, permissions, db } = deps();
-    ui.clear(_content);
-    await mod.render(_content, { unit, user: auth.current(), ui, db, permissions, auth, initialFormKey: formKey });
-  }
+  function loadUnitWithForm(unit, formKey) { return loadUnit(unit, formKey); }
 
-  async function loadModule(name, unit) {
+  function loadModule(name, extra) {
     const mod = window.App.modules[name];
     if (!mod) { window.App.ui.toast('Module not found: ' + name, 'error'); return; }
-    setActive(null);
-    await render(mod, unit);
+    setActive(`[data-nav="${name}"]`);
+    return show(() => mod.render(_content, deps(extra)));
   }
 
-  async function render(mod, unit) {
-    const { ui, auth, permissions, db } = deps();
-    ui.clear(_content);
-    await mod.render(_content, { unit, user: auth.current(), ui, db, permissions, auth });
+  function refresh() { refreshBadges(); if (_current) show(_current); }
+
+  function mount(navEl, contentEl, opts) {
+    _nav = navEl; _content = contentEl; _opts = opts || {};
+    window.App.workflow.meta().catch(() => {});
+    window.App.workflow.onChange(refreshBadges);
+    buildNav().then(loadDashboard);
   }
 
-  function mount(navEl, contentEl) {
-    _nav = navEl; _content = contentEl;
-    buildNav();
-  }
-
-  window.App.router = { mount, buildNav, loadUnit, loadUnitWithForm, loadModule, loadDashboard };
+  window.App.router = { mount, buildNav, loadUnit, loadUnitWithForm, loadModule, loadDashboard, refresh, refreshBadges, units, unitName };
 })();

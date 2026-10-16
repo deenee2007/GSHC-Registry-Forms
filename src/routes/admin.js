@@ -171,6 +171,34 @@ router.put('/forms/:formType/signers', wrap(async (req, res) => {
   res.json({ formType, signers: cfg.signers });
 }));
 
+// ── Overview and backup ──
+router.get('/stats', wrap(async (req, res) => {
+  const { Record } = require('../models');
+  const [users, activeUsers, signers, units, byStatus] = await Promise.all([
+    User.countDocuments(), User.countDocuments({ active: true }),
+    User.countDocuments({ active: true, 'signerRoles.0': { $exists: true } }),
+    Unit.countDocuments({ active: true }),
+    Record.aggregate([{ $group: { _id: '$status', n: { $sum: 1 } } }])
+  ]);
+  res.json({ users, activeUsers, signers, units, records: Object.fromEntries(byStatus.map(r => [r._id, r.n])) });
+}));
+
+// Full JSON backup of records (signature images are not included; they
+// stay in Cloudinary). Atlas also keeps its own automatic backups.
+router.get('/export', wrap(async (req, res) => {
+  const { Record } = require('../models');
+  await audit.log(req, 'backup_exported');
+  res.set('Content-Type', 'application/json');
+  res.set('Content-Disposition', `attachment; filename="gshc_records_${new Date().toISOString().slice(0, 10)}.json"`);
+  res.write('[');
+  let first = true;
+  for await (const r of Record.find().sort({ createdAt: 1 }).select('-slots.signatures.image').lean().cursor()) {
+    res.write((first ? '' : ',') + JSON.stringify(r));
+    first = false;
+  }
+  res.end(']');
+}));
+
 // ── Audit log ──
 router.get('/audit', wrap(async (req, res) => {
   const q = {};

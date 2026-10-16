@@ -156,6 +156,24 @@ router.get('/submitted', wrap(async (req, res) => {
   res.json({ records: recs.map(r => serialize(r, false)) });
 }));
 
+// Counts by unit and status, for the units this user can see.
+router.get('/stats', wrap(async (req, res) => {
+  const units = await Unit.find({ active: true });
+  const keys = units.map(u => u.key).filter(k => canAccessUnit(req.user, k));
+  const rows = await Record.aggregate([
+    { $match: { unitKey: { $in: keys } } },
+    { $group: { _id: { unitKey: '$unitKey', status: '$status' }, n: { $sum: 1 } } }
+  ]);
+  const byUnit = {};
+  keys.forEach(k => { byUnit[k] = { draft: 0, pending: 0, returned: 0, final: 0, revoked: 0 }; });
+  rows.forEach(r => { byUnit[r._id.unitKey][r._id.status] = r.n; });
+  const [inbox, approvedUnprinted] = await Promise.all([
+    Record.countDocuments({ status: 'pending', slots: { $elemMatch: { approvers: req.user._id, 'signatures.user': { $ne: req.user._id } } } }),
+    Record.countDocuments({ status: 'final', submittedBy: req.user._id, printCount: 0 })
+  ]);
+  res.json({ byUnit, inbox, approvedUnprinted });
+}));
+
 // ── One record ──
 router.get('/:id', wrap(async (req, res) => {
   const rec = await loadRecord(req.params.id);

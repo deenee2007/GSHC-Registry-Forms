@@ -23,11 +23,11 @@
 
   function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); return node; }
 
-  function toast(message, type) {
-    const t = el('div', { class: 'toast toast--' + (type || 'info') }, message);
+  function toast(message, type, ms) {
+    const t = el('div', { class: 'toast toast--' + (type || 'info'), role: 'status' }, message);
     document.body.appendChild(t);
     setTimeout(() => t.classList.add('toast--show'), 10);
-    setTimeout(() => { t.classList.remove('toast--show'); setTimeout(() => t.remove(), 300); }, 3000);
+    setTimeout(() => { t.classList.remove('toast--show'); setTimeout(() => t.remove(), 300); }, ms || 3500);
   }
 
   // Modal returning a Promise (resolves with form data on save, null on cancel)
@@ -36,21 +36,29 @@
     return new Promise((resolve) => {
       const overlay = el('div', { class: 'modal-overlay' });
       const close = (val) => { overlay.remove(); resolve(val); };
+      const confirmBtn = el('button', { class: 'btn ' + (opts.confirmClass || 'btn--primary'), onclick: async () => {
+        confirmBtn.disabled = true;
+        try {
+          const result = opts.onConfirm ? await opts.onConfirm() : true;
+          if (result !== undefined && result !== null && result !== false) close(result);
+        } catch (e) {
+          toast(e.message || 'Something went wrong.', 'error');
+        } finally { confirmBtn.disabled = false; }
+      } }, opts.confirmText || 'Save');
       const footer = el('div', { class: 'modal__footer' }, [
         el('button', { class: 'btn btn--ghost', onclick: () => close(null) }, opts.cancelText || 'Cancel'),
-        el('button', { class: 'btn btn--primary', onclick: () => {
-          const result = opts.onConfirm ? opts.onConfirm() : true;
-          if (result !== undefined && result !== null && result !== false) close(result);
-        } }, opts.confirmText || 'Save')
+        confirmBtn
       ]);
-      const box = el('div', { class: 'modal' }, [
+      const box = el('div', { class: 'modal' + (opts.wide ? ' modal--wide' : '') }, [
         el('div', { class: 'modal__header' }, title),
         el('div', { class: 'modal__body' }, bodyNode),
         opts.noFooter ? null : footer
       ]);
       overlay.appendChild(box);
-      overlay.addEventListener('click', (e) => { if (e.target === overlay) close(null); });
+      overlay.addEventListener('click', (e) => { if (e.target === overlay && !opts.noBackdropClose) close(null); });
+      overlay.close = () => close(null);
       document.body.appendChild(overlay);
+      if (opts.onOpen) opts.onOpen(overlay, close);
     });
   }
 
@@ -179,20 +187,41 @@
     const head = el('tr', null, columns.map(c => el('th', null, c.label)));
     if (actions) head.appendChild(el('th', null, 'Actions'));
     const body = rows.map(r => {
-      const tr = el('tr', null, columns.map(c => el('td', null, String(c.value ? c.value(r) : (r[c.key] ?? '')))));
+      const tr = el('tr', null, columns.map(c => el('td', c.label ? { 'data-label': c.label } : null,
+        c.node ? c.node(r) : String(c.value ? c.value(r) : (r[c.key] ?? '')))));
       if (actions) {
         const cell = el('td', { class: 'row-actions' });
-        actions.forEach(a => { if (!a.show || a.show(r)) cell.appendChild(el('button', { class: 'btn btn--small ' + (a.class || ''), onclick: () => a.onClick(r) }, a.label)); });
+        actions.forEach(a => { if (!a.show || a.show(r)) cell.appendChild(el('button', { class: 'btn btn--small ' + (a.class || ''), onclick: () => a.onClick(r) }, typeof a.label === 'function' ? a.label(r) : a.label)); });
         tr.appendChild(cell);
       }
       return tr;
     });
-    return el('table', { class: 'data-table' }, [el('thead', null, head), el('tbody', null, body)]);
+    return el('div', { class: 'table-scroll' }, [el('table', { class: 'data-table' }, [el('thead', null, head), el('tbody', null, body)])]);
   }
 
+  const STATUS_LABELS = {
+    draft: 'Draft', pending: 'Awaiting Signature', returned: 'Returned',
+    final: 'Signed', revoked: 'Revoked', offline: 'Not Synced'
+  };
   function statusBadge(status) {
-    return el('span', { class: 'badge badge--' + (status || 'draft') }, (status || 'draft').toUpperCase());
+    status = status || 'draft';
+    return el('span', { class: 'badge badge--' + status }, STATUS_LABELS[status] || status);
   }
 
-  window.App.ui = { el, clear, toast, modal, form, table, statusBadge };
+  // Labelled input for small dialogs.
+  function field(label, input, help) {
+    return el('label', { class: 'form-field form-field--full' }, [
+      el('span', { class: 'form-field__label' }, label), input,
+      help ? el('span', { class: 'form-field__help' }, help) : null
+    ]);
+  }
+
+  function fmtDate(v) {
+    if (!v) return '';
+    return new Date(v).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  }
+
+  function empty(text) { return el('p', { class: 'muted empty' }, text); }
+
+  window.App.ui = { el, clear, toast, modal, form, table, statusBadge, STATUS_LABELS, field, fmtDate, empty };
 })();

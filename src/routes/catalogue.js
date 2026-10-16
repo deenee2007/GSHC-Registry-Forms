@@ -13,7 +13,9 @@ const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).cat
 router.use(requireLogin);
 
 router.get('/units', wrap(async (req, res) => {
-  const units = await Unit.find({ active: true }).sort({ type: 1, courtNo: 1, name: 1 });
+  const ORDER = { registry: 0, appeals: 1, execution: 2 };
+  const units = (await Unit.find({ active: true })).sort((a, b) =>
+    (ORDER[a.type] - ORDER[b.type]) || ((a.courtNo || 0) - (b.courtNo || 0)) || a.name.localeCompare(b.name));
   const visible = units.filter(u => canAccessUnit(req.user, u.key));
   res.json({ units: visible.map(u => ({ key: u.key, type: u.type, name: u.name, courtNo: u.courtNo, allowedForms: u.allowedForms, forms: catalogue.formsForUnit(u) })) });
 }));
@@ -32,8 +34,9 @@ router.get('/signers', wrap(async (req, res) => {
   const role = String(req.query.role || '');
   const unitKey = String(req.query.unitKey || '');
   if (!SIGNER_ROLES[role]) throw new HttpError(400, 'Invalid signing role.');
-  const users = await User.find({ active: true, signerRoles: role });
-  const eligible = users.filter(u => !u.unitKeys.length || u.unitKeys.includes(unitKey));
+  const users = await User.find({ active: true, signerRoles: role }).sort({ fullName: 1 });
+  // all=1 lists every holder of the role (appeal panels draw judges from all courts)
+  const eligible = req.query.all === '1' ? users : users.filter(u => !u.unitKeys.length || u.unitKeys.includes(unitKey));
   res.json({
     signers: eligible.map(u => ({ id: String(u._id), fullName: u.fullName, title: u.title, unitKeys: u.unitKeys, ready: !!(u.signature && u.signingPinHash) }))
   });
