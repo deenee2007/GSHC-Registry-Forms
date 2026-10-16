@@ -1,0 +1,27 @@
+# Dependencies (reinstall with: npm install)
+node_modules/
+
+# Environment and secrets (MongoDB, Cloudinary, session keys)
+.env
+.env.*
+!.env.example
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Build, test and temporary output
+dist/
+build/
+coverage/
+tmp/
+uploads/
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
