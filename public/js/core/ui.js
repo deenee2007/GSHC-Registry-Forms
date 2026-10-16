@@ -1,0 +1,198 @@
+/*
+ * core/ui.js — shared UI helpers used by every module.
+ * Keeps modules small: they describe data, ui.js renders it.
+ */
+(function () {
+  window.App = window.App || {};
+
+  // Tiny DOM builder: el('div', {class:'x'}, [child, 'text'])
+  function el(tag, attrs, children) {
+    const node = document.createElement(tag);
+    if (attrs) Object.entries(attrs).forEach(([k, v]) => {
+      if (k === 'class') node.className = v;
+      else if (k === 'html') node.innerHTML = v;
+      else if (k.startsWith('on') && typeof v === 'function') node.addEventListener(k.slice(2), v);
+      else if (v !== null && v !== undefined) node.setAttribute(k, v);
+    });
+    (Array.isArray(children) ? children : [children]).forEach(c => {
+      if (c === null || c === undefined) return;
+      node.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+    });
+    return node;
+  }
+
+  function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); return node; }
+
+  function toast(message, type) {
+    const t = el('div', { class: 'toast toast--' + (type || 'info') }, message);
+    document.body.appendChild(t);
+    setTimeout(() => t.classList.add('toast--show'), 10);
+    setTimeout(() => { t.classList.remove('toast--show'); setTimeout(() => t.remove(), 300); }, 3000);
+  }
+
+  // Modal returning a Promise (resolves with form data on save, null on cancel)
+  function modal(title, bodyNode, opts) {
+    opts = opts || {};
+    return new Promise((resolve) => {
+      const overlay = el('div', { class: 'modal-overlay' });
+      const close = (val) => { overlay.remove(); resolve(val); };
+      const footer = el('div', { class: 'modal__footer' }, [
+        el('button', { class: 'btn btn--ghost', onclick: () => close(null) }, opts.cancelText || 'Cancel'),
+        el('button', { class: 'btn btn--primary', onclick: () => {
+          const result = opts.onConfirm ? opts.onConfirm() : true;
+          if (result !== undefined && result !== null && result !== false) close(result);
+        } }, opts.confirmText || 'Save')
+      ]);
+      const box = el('div', { class: 'modal' }, [
+        el('div', { class: 'modal__header' }, title),
+        el('div', { class: 'modal__body' }, bodyNode),
+        opts.noFooter ? null : footer
+      ]);
+      overlay.appendChild(box);
+      overlay.addEventListener('click', (e) => { if (e.target === overlay) close(null); });
+      document.body.appendChild(overlay);
+    });
+  }
+
+  // Build a form from a schema: [{name,label,type,options?,required?}]
+  // Returns { node, getValues(), setValues(obj), validate() }
+  function form(schema, initial) {
+    const fields = {};
+    const tableCtrls = {};   // holds table controllers for type:'table' fields
+    const wrap = el('div', { class: 'form-grid' });
+
+    schema.forEach(f => {
+      if (!f.name && f.section) {
+        wrap.appendChild(el('div', { class: 'form-section' }, f.section));
+        return;
+      }
+
+      // ── Dynamic repeating table (e.g. cause list entries) ──
+      if (f.type === 'table') {
+        const cols = f.columns || [];
+        const tbody = el('tbody');
+
+        function addRow(vals) {
+          const cells = cols.map(c => {
+            const inp = el('input', { type: 'text', placeholder: c.label, class: 'ft-inp' });
+            if (vals && vals[c.name] !== undefined) inp.value = vals[c.name];
+            return el('td', null, [inp]);
+          });
+          const snCell = el('td', { class: 'ft-sn' }, String(tbody.children.length + 1));
+          const delBtn = el('button', { class: 'btn btn--ghost btn--small ft-del', type: 'button',
+            onclick: () => { row.remove(); reNumber(); }
+          }, '✕');
+          const row = el('tr', null, [snCell, ...cells, el('td', null, [delBtn])]);
+          tbody.appendChild(row);
+        }
+
+        function reNumber() {
+          Array.from(tbody.rows).forEach((r, i) => { r.cells[0].textContent = String(i + 1); });
+        }
+
+        // seed with initial values or one blank row
+        let initRows = [];
+        if (initial && initial[f.name]) {
+          try { initRows = Array.isArray(initial[f.name]) ? initial[f.name] : JSON.parse(initial[f.name]); } catch(e) { initRows = []; }
+        }
+        if (initRows.length) initRows.forEach(r => addRow(r));
+        else addRow();
+
+        const thead = el('thead', null, [
+          el('tr', null, [
+            el('th', { class: 'ft-sn' }, 'S/N'),
+            ...cols.map(c => el('th', null, c.label)),
+            el('th', { class: 'ft-sn' }, '')
+          ])
+        ]);
+
+        const tbl = el('table', { class: 'ft-table' }, [thead, tbody]);
+        const addBtn = el('button', { class: 'btn btn--ghost btn--small', type: 'button',
+          onclick: () => addRow()
+        }, '+ Add Row');
+
+        const container = el('div', { class: 'form-field form-field--full' }, [
+          el('span', { class: 'form-field__label' }, f.label + (f.required ? ' *' : '')),
+          tbl,
+          el('div', { class: 'ft-add' }, [addBtn])
+        ]);
+        wrap.appendChild(container);
+
+        tableCtrls[f.name] = {
+          getValues() {
+            return Array.from(tbody.rows).map((row, i) => {
+              const obj = { sn: String(i + 1) };
+              cols.forEach((c, ci) => { obj[c.name] = row.cells[ci + 1].querySelector('input').value.trim(); });
+              return obj;
+            });
+          },
+          validate() {
+            if (f.required && tbody.rows.length === 0) { toast('Please add at least one entry to ' + f.label, 'error'); return false; }
+            return true;
+          }
+        };
+        return;
+      }
+
+      // ── Standard fields ──
+      let input;
+      if (f.type === 'textarea') input = el('textarea', { rows: f.rows || 3 });
+      else if (f.type === 'select') {
+        input = el('select');
+        (f.options || []).forEach(o => input.appendChild(el('option', { value: o.value !== undefined ? o.value : o }, o.label || o)));
+      } else input = el('input', { type: f.type || 'text' });
+      input.name = f.name;
+      const init = (initial && initial[f.name] !== undefined) ? initial[f.name]
+                 : (f.defaultValue !== undefined ? f.defaultValue : '');
+      if (init !== '') input.value = init;
+      fields[f.name] = input;
+      const isFull = f.full || f.type === 'textarea';
+      const cell = el('label', { class: 'form-field' + (isFull ? ' form-field--full' : '') }, [
+        el('span', { class: 'form-field__label' }, f.label + (f.required ? ' *' : '')),
+        input,
+        f.help ? el('span', { class: 'form-field__help' }, f.help) : null
+      ]);
+      wrap.appendChild(cell);
+    });
+
+    return {
+      node: wrap,
+      getValues() {
+        const o = {};
+        Object.entries(fields).forEach(([k, i]) => o[k] = i.value.trim ? i.value.trim() : i.value);
+        Object.entries(tableCtrls).forEach(([k, ctrl]) => o[k] = ctrl.getValues());
+        return o;
+      },
+      validate() {
+        for (const f of schema) {
+          if (!f.name) continue;
+          if (f.type === 'table') { if (!tableCtrls[f.name].validate()) return false; continue; }
+          if (f.required && !fields[f.name].value.trim()) { toast('Please fill: ' + f.label, 'error'); fields[f.name].focus(); return false; }
+        }
+        return true;
+      }
+    };
+  }
+
+  // Render a records table with optional row actions
+  function table(columns, rows, actions) {
+    const head = el('tr', null, columns.map(c => el('th', null, c.label)));
+    if (actions) head.appendChild(el('th', null, 'Actions'));
+    const body = rows.map(r => {
+      const tr = el('tr', null, columns.map(c => el('td', null, String(c.value ? c.value(r) : (r[c.key] ?? '')))));
+      if (actions) {
+        const cell = el('td', { class: 'row-actions' });
+        actions.forEach(a => { if (!a.show || a.show(r)) cell.appendChild(el('button', { class: 'btn btn--small ' + (a.class || ''), onclick: () => a.onClick(r) }, a.label)); });
+        tr.appendChild(cell);
+      }
+      return tr;
+    });
+    return el('table', { class: 'data-table' }, [el('thead', null, head), el('tbody', null, body)]);
+  }
+
+  function statusBadge(status) {
+    return el('span', { class: 'badge badge--' + (status || 'draft') }, (status || 'draft').toUpperCase());
+  }
+
+  window.App.ui = { el, clear, toast, modal, form, table, statusBadge };
+})();

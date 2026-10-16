@@ -1,0 +1,13 @@
+{
+  "name": "GSHC Registry Forms System",
+  "short_name": "GSHC Registry",
+  "description": "Gombe State High Court of Justice — Registry & Units Forms Automation",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#07351d",
+  "theme_color": "#0b5d33",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

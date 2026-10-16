@@ -1,0 +1,15 @@
+{
+  "name": "gshc-registry",
+  "version": "1.0.0",
+  "description": "Gombe State High Court of Justice — Registry & Units Forms Automation (offline)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "author": "Directorate of ICT, Gombe State High Court of Justice",
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
