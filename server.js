@@ -5,11 +5,12 @@
 const mongoose = require('mongoose');
 const config = require('./src/config');
 const { createApp } = require('./src/app');
-const { seedAll } = require('./src/services/seed');
+const { seedAll, report } = require('./src/services/seed');
 
 async function main() {
   await mongoose.connect(config.mongoUri, { serverSelectionTimeoutMS: 15000 });
   await seedAll();
+  await report();
   const app = createApp();
   app.listen(config.port, () => {
     console.log('====================================================');

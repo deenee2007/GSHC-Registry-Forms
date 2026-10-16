@@ -101,6 +101,23 @@ enter `MONGODB_URI`, `CLOUDINARY_URL` and `ADMIN_PASSWORD` when asked.
 `SESSION_SECRET` is generated automatically. A paid instance is recommended
 for daily use, because free instances sleep when idle.
 
+## Startup log and admin recovery
+Each start prints the database in use and how many accounts it holds:
+```
+  Database: GSHC_DB  ·  users: 12  ·  active administrators: 1
+```
+It warns if the database contains accounts this app did not create, which
+means `MONGODB_URI` points at another application's database. In production
+the app refuses to start if `MONGODB_URI` names no database at all.
+
+If the admin password is lost or the account is locked:
+1. On Render, set `ADMIN_PASSWORD` to a temporary password and add
+   `ADMIN_RESET` = `true`.
+2. Restart the service. The log confirms the reset.
+3. Sign in as `admin` with that password and choose a new one.
+4. Remove `ADMIN_RESET`. (Leaving it on does no harm: it acts only once for
+   each `ADMIN_PASSWORD` value.)
+
 ## Project layout
 ```
 server.js                 entry point: connect, first run setup, listen

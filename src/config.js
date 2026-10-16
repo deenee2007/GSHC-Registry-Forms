@@ -14,6 +14,14 @@ function required(name) {
   return v;
 }
 
+// The database name is the part of the connection string between the host
+// and the "?". Without one, MongoDB silently uses a database called "test",
+// so production refuses to start rather than share or guess a database.
+function databaseName(uri) {
+  const m = /^mongodb(?:\+srv)?:\/\/[^/]+\/([^?]*)/.exec(uri || '');
+  return m && m[1] ? decodeURIComponent(m[1]) : '';
+}
+
 const config = {
   env,
   isProd,
@@ -34,8 +42,13 @@ const config = {
 
   // First run admin account. If ADMIN_PASSWORD is not set a random one is
   // generated and printed once to the server log.
-  adminUsername: (process.env.ADMIN_USERNAME || 'admin').toLowerCase(),
-  adminPassword: process.env.ADMIN_PASSWORD || '',
+  // Spaces around a value pasted into a hosting dashboard are removed.
+  adminUsername: (process.env.ADMIN_USERNAME || 'admin').trim().toLowerCase(),
+  adminPassword: (process.env.ADMIN_PASSWORD || '').trim(),
+
+  // Recovery: with ADMIN_RESET=true, the next start resets the admin
+  // account's password to ADMIN_PASSWORD and unlocks it (see seed.js).
+  adminReset: /^(1|true|yes)$/i.test((process.env.ADMIN_RESET || '').trim()),
 
   loginMaxAttempts: 5,
   loginLockMinutes: 15,
@@ -43,4 +56,11 @@ const config = {
   pinLockMinutes: 15
 };
 
+config.databaseName = databaseName(config.mongoUri);
+if (isProd && !config.databaseName) {
+  throw new Error('MONGODB_URI does not name a database. Add it after the host, for example ' +
+    'mongodb+srv://USER:PASSWORD@cluster0.xxxxx.mongodb.net/GSHC_DB?retryWrites=true&w=majority');
+}
+
 module.exports = config;
+module.exports.databaseName = databaseName;
