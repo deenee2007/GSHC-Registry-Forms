@@ -940,7 +940,7 @@
     ]
   },
   "subpoena-ad-testificandum": {
-    "label": "Subpoena and Testification",
+    "label": "Subpoena ad Testificandum",
     "description": "Commands a witness to attend and testify.",
     "schema": [
       {
@@ -952,6 +952,13 @@
         "type": "text",
         "required": true,
         "defaultValue": "High Court of Justice of Gombe State of Nigeria, Holden at Gombe"
+      },
+      {
+        "name": "division",
+        "label": "Judicial Division",
+        "type": "text",
+        "required": true,
+        "defaultValue": "Gombe Judicial Division"
       },
       {
         "name": "suitNumber",

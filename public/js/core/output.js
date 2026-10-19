@@ -246,7 +246,7 @@
       `<p>To: ${L(d.officerAddressed, "long")}</p>
        <p>WHEREAS ${L(d.accusedName)} ${d.accusedAddress ? "of " + L(d.accusedAddress, "long") : ""} stands charged
        with the offence of ${L(d.offenceDescription, "long")}${placeTxt}${dateTxt}.</p>
-       <p>You are hereby commanded forthwith to arrest the said ${L(d.accusedName)} and to bring him before
+       <p>You are hereby commanded forthwith to arrest the said ${L(d.accusedName)} and to bring him/her before
        ${L(d.courtToBringBefore, "long")} to be dealt with according to law.</p>
        <p>Issued at ${L(d.issuedAt)} ${dayLine(is)}.</p>` +
       sign("Signature or Seal"),
@@ -261,23 +261,20 @@
       parties(d.complainant, "COMPLAINANT", d.defendant, "DEFENDANT") +
       title("BOND AND BAIL UNDER CHAPTER XXIX") +
       `<section class="doc-block">
-        <p>I, ${L(d.accusedName)} of ${L(d.accusedAddress, "long")}, being arrested or brought before
-        ${L(d.appearanceCourt)}, accused of the offence of ${L(d.offenceDescription, "long")}.</p>
-        ${d.policeStation ? `<p>Police Station / Place of Arrest: ${L(d.policeStation)}</p>` : ""}
-        <p>And being required to give security for my attendance, do hereby bind myself to attend at
+        <p>I, ${L(d.accusedName)} of ${L(d.accusedAddress, "long")}, having been arrested${d.policeStation ? ` at ${L(d.policeStation)}` : ""}
+        or brought before ${L(d.appearanceCourt)}, accused of the offence of ${L(d.offenceDescription, "long")},
+        and being required to give security for my attendance, do hereby bind myself to attend at
         ${L(d.appearanceCourt)} ${onDayLine(ap)} at ${L(d.appearanceTime, "short")} o'clock and to continue
-        so to attend until otherwise directed.</p>
-        <p>And in case of my making default herein, I bind myself to forfeit to the Government the sum of ₦
-        ${L(d.accusedBondAmount, "medium")}.</p>
+        so to attend until otherwise directed; and in case of my making default herein, I bind myself to
+        forfeit to the Government the sum of ₦ ${L(d.accusedBondAmount, "medium")}.</p>
         <p>Dated ${dayLine(is)}.</p>
         ${sign("Signature or Seal")}
       </section>
       <section class="doc-block">
-        <p>I hereby declare myself surety for the said ${L(d.accusedName)}.</p>
-        <p>That he shall attend at ${L(d.appearanceCourt)} ${onDayLine(ap)} and shall continue so to attend
-        until otherwise directed.</p>
-        <p>I, ${L(d.suretyName)} of ${L(d.suretyAddress, "long")}, bind myself to forfeit to the Government the
-        sum of ₦ ${L(d.suretyBondAmount, "medium")} in case of default.</p>
+        <p>I, ${L(d.suretyName)} of ${L(d.suretyAddress, "long")}, hereby declare myself surety for the said
+        ${L(d.accusedName)} that he/she shall attend at ${L(d.appearanceCourt)} ${onDayLine(ap)} and shall
+        continue so to attend until otherwise directed; and in case of his/her making default therein, I bind
+        myself to forfeit to the Government the sum of ₦ ${L(d.suretyBondAmount, "medium")}.</p>
         <p>Dated ${dayLine(is)}.</p>
         ${sign("Signature or Seal")}
       </section>`,
@@ -313,8 +310,7 @@
   function affidavitOfMeans(d, u, r) {
     const sw = splitDate(d.swornDate), rc = splitDate(d.receiptDate);
     return shell(u,
-      formRef("AFFIDAVIT OF MEANS") +
-      (d.caseNumber ? caseLine("Case No.", d.caseNumber) : "") +
+            (d.caseNumber ? caseLine("Case No.", d.caseNumber) : "") +
       title("AFFIDAVIT OF MEANS") +
       `<p>I, ${L(d.declarantName)} of ${L(d.declarantAddress, "long")}${d.stateOfOrigin ? ", a native of " + L(d.stateOfOrigin) : ""},
        do hereby make oath and state as follows:</p>
@@ -332,7 +328,7 @@
        <section class="doc-receipt">
         <p>Fee paid in words: ${L(d.feeWords, "long")}</p>
         <p>Amount: ₦ ${L(d.feeAmount, "short")} &nbsp; Receipt No: ${L(d.receiptNumber)}
-        ${d.receiptDate ? "&nbsp; Date: " + L(rc.day, "short") + " " + L(rc.month, "medium") + " 20" + L(rc.year2, "short") : ""}</p>
+        ${d.receiptDate ? "&nbsp; Date: " + L(`${rc.day} ${rc.month} ${rc.year4}`) : ""}</p>
        </section>`,
       r);
   }
@@ -340,7 +336,7 @@
   function subpoenaTestification(d, u, r) {
     const at = splitDate(d.attendanceDate), is = splitDate(d.issueDate);
     return shell(u,
-      formRef("FORM 40<br>HOLDEN AT GOMBE") +
+      formRef(`FORM 40<br>IN THE ${esc((d.division || "GOMBE JUDICIAL DIVISION").toUpperCase())}<br>HOLDEN AT GOMBE`) +
       caseLine("Suit No.", d.suitNumber) +
       parties(d.plaintiff, "PLAINTIFF / APPLICANT", d.defendant, "DEFENDANT / RESPONDENT") +
       title("SUBPOENA AD TESTIFICANDUM") +
@@ -397,7 +393,7 @@
   function remandWarrant(d, u, r) {
     const ret = splitDate(d.returnDate), is = splitDate(d.issueDate);
     return shell(u,
-      formRef("JUDICIAL (N.R.) FORM 25 · Section 255, C.P.C.") +
+      formRef("JUDICIAL (GMS) FORM 25 · Section 255, C.P.C.") +
       caseLine("Case No.", d.caseNumber) +
       parties(d.complainant, "COMPLAINANT", d.defendant, "DEFENDANT") +
       title("WARRANT OF COMMITMENT TO PRISON ON REMAND") +
@@ -406,10 +402,10 @@
        <p>To the official in charge of the prison at ${L(d.prisonLocation, "long")}</p>
        <p>WHEREAS the above-named person has been arrested and brought before me accused of the offence of
        ${L(d.offenceDescription, "long")}.</p>
-       <p>You are hereby authorised and required to receive him and detain him in custody until further order,
-       provided that, if no further order has been made as to his disposal before the ${L(ret.day, "short")} day of
-       ${L(ret.month, "medium")} 20${L(ret.year2, "short")}, you shall bring him before me with this warrant for an
-       order as to his disposal.</p>
+       <p>You are hereby authorised and required to receive him/her and detain him/her in custody until further order,
+       provided that, if no further order has been made as to his/her disposal before the ${L(ret.day, "short")} day of
+       ${L(ret.month, "medium")} 20${L(ret.year2, "short")}, you shall bring him/her before me with this warrant for an
+       order as to his/her disposal.</p>
        <p>Dated ${dayLine(is)}.</p>` +
       sign("Signature or Seal"),
       r);
@@ -425,11 +421,11 @@
       `<table class="doc-table"><thead><tr><th>Name</th><th>Race</th><th>Residence</th><th>Offence</th><th>Court</th></tr></thead>
        <tbody><tr><td>${fmt(d.prisonerName)}</td><td>${fmt(d.race)}</td><td>${fmt(d.residence)}</td><td>${fmt(d.offence)}</td><td>${fmt(d.sentencingCourt)}</td></tr></tbody></table>
        <p>To the official in charge of the prison at ${L(d.prisonLocation, "long")}</p>
-       <p>Whereas ${onDayLine(cv)} the above-named prisoner was convicted of the above-stated offence,</p>
-       <p>And ordered to pay a fine of ₦ ${L(d.fineAmount, "medium")}, and in default of payment of the said fine
-       to imprisonment for a term of ${L(d.imprisonmentTerm, "medium")};</p>
-       <p>And whereas he has failed to pay the said fine: this is to authorise and require you to receive him into
-       your custody and carry out the sentence of imprisonment ${d.reducedTerm ? "(" + L(d.reducedTerm, "medium") + ")" : ""}.</p>
+       <p>WHEREAS ${onDayLine(cv)} the above-named prisoner was convicted of the above-stated offence and
+       ordered to pay a fine of ₦ ${L(d.fineAmount, "medium")}, and in default of payment of the said fine, to
+       imprisonment for a term of ${L(d.imprisonmentTerm, "medium")};</p>
+       <p>AND WHEREAS he/she has failed to pay the said fine, this is to authorise and require you to receive
+       him/her into your custody and carry out the said sentence of imprisonment${d.reducedTerm ? `, reduced to a term of ${L(d.reducedTerm, "medium")} on account of part payment of the fine` : ""}.</p>
        <p>Dated ${dayLine(is)}.</p>` +
       sign("Signature or Seal"),
       r);
@@ -549,7 +545,7 @@
       Appeal Registry on the ${L(ad.day ? ad.day : '')} day of ${L(ad.month ? ad.month : '')}
       20${L(ad.year2 ? ad.year2 : '')} at the hour of ${L(d.attendanceTime)} O'clock in the
       forenoon to proceed with settling of the record of the appeal therein.</p>
-      <p>Dated At ${L(d.datedAt)} ${dayLine(is)}.</p>` +
+      <p>Dated at ${L(d.datedAt)} ${dayLine(is)}.</p>` +
       sign('Appeal Registrar'),
       r);
   }
@@ -559,7 +555,11 @@
     const ld = d.letterDate ? new Date(d.letterDate + 'T00:00:00')
       .toLocaleDateString('en-GB', {day:'numeric',month:'long',year:'numeric'}) : '';
     const od = splitDate(d.originalDecisionDate);
-    const odStr = od.day ? `${od.day}/${od.month}/20${od.year2}` : '';
+    const odStr = od.day ? `${od.day}/${od.monthNum}/${od.year4}` : '';
+    // Older drafts held the hearing date as three text boxes.
+    const hd = splitDate(d.hearingDate);
+    const hearingTxt = hd.day ? onDayLine(hd)
+      : `on the ${L(d.hearingDay)} day of ${L(d.hearingMonth)} ${L(d.hearingYear)}`;
     const amt = esc(d.depositAmount || '100');
     return shell(u,
       `<div class="doc-letter-meta">
@@ -572,38 +572,38 @@
       `<p>${L(d.applicant)} &mdash; Applicant<br>
       <strong>VS</strong><br>
       ${L(d.respondent)} &mdash; Respondent</p>` +
-      `<p>I have to inform you that a Notice of Appeal has been fixed in this Hon. Court on
-      the ${L(d.hearingDay)} day of ${L(d.hearingMonth)} ${L(d.hearingYear)}.</p>
-      <p>Against the decision of your Court on ${L(odStr)} in Case/Suit No. ${L(d.lowerCourtSuitNo)}</p>
+      `<p>I have to inform you that a Notice of Appeal has been fixed in this Hon. Court
+      ${hearingTxt}.</p>
+      <p>Against the decision of your Court on ${L(odStr)} in Case/Suit No. ${L(d.lowerCourtSuitNo)}:</p>
       <p>${L(d.lowerApplicant)} Vs ${L(d.lowerRespondent)}</p>
       <ol start="2">
-        <li>I have advised the Appellant that he must immediately (a) file a copy(s) of the Notice of
-        Appeal in your Court and at the same time (b) deposit in your Court a sum of
-        N${L(amt)} toward the cost of certified copies of the records.</li>
+        <li>I have advised the Appellant that he/she must immediately (a) file two copies of the Notice
+        of Appeal in your Court and at the same time (b) deposit in your Court the sum of
+        N${L(amt)} towards the cost of certified copies of the record.</li>
         <li>Under Order II Rule 4 of the Gombe State High Court (Appeal from Area Court Rules 1960)
         you are required to take the following steps.</li>
-        <li>Upon receipt of the copy (2) of the Notice of Appeal you are required to serve it
-        immediately upon the Respondent in Civil Case or upon the Hon. Attorney General in
-        Criminal Cases.</li>
-        <li>Upon receipt from the Appellant the deposit of N${L(amt)} for certified copies of the
-        record you are required to forward to the High Court five (5) certified true copies of the
-        record within one month from the date of the receipt of the Notice of Appeal in a file cover
-        in the form set out in Form 2 of the first scheduled of the Gombe State High Court (Appeal
-        from Now Area Court Rule 1960).</li>
-        <li>Please note that, when the Appellant comes to file his copy(s) of the Notice of Appeal
-        you are entitled to depositing in your Court of the same time, the N${L(amt)} for certified
-        copies of the record; also note that you are required to comply strictly with Rules 4(3) of
-        Order II by forwarding within one month from date of the receipt of the Notice of Appeals
-        the number of certified true copies of the records requested herein.</li>
+        <li>Upon receipt of the two copies of the Notice of Appeal, you are required to serve one copy
+        immediately upon the Respondent in civil cases, or upon the Hon. Attorney General in
+        criminal cases.</li>
+        <li>Upon receipt from the Appellant of the deposit of N${L(amt)} for certified copies of the
+        record, you are required to forward to the High Court five (5) certified true copies of the
+        record within one month from the date of receipt of the Notice of Appeal, in a file cover
+        in the form set out in Form 2 of the First Schedule to the Gombe State High Court (Appeal
+        from Area Court Rules 1960).</li>
+        <li>Please note that when the Appellant comes to file his/her copies of the Notice of Appeal,
+        he/she is required to deposit in your Court at the same time the sum of N${L(amt)} for
+        certified copies of the record. Please also note that you are required to comply strictly
+        with Rule 4(3) of Order II by forwarding, within one month from the date of receipt of the
+        Notice of Appeal, the number of certified true copies of the record requested herein.</li>
       </ol>
       <div style="display:flex; justify-content:space-between; margin-top:20px; font-size:10.5pt;">
         <div>
           <strong>COPY TO:</strong><br>
           ${fmt(d.copyTo)}<br><br>
-          <em>Please comply with the Instruction<br>In paragraphs without delay.</em>
+          <em>Please comply with the instructions<br>in the above paragraphs without delay.</em>
         </div>
         <div style="text-align:center;">
-          (REGISTRAR)<br><strong>HIGH COURT REGISTRY<br>GOMBE</strong><br>
+          ${d.registrarName ? fmt(d.registrarName) + '<br>' : ''}(REGISTRAR)<br><strong>HIGH COURT REGISTRY<br>GOMBE</strong><br>
           REF. NO: ${L(d.refNoBottom)}<br>
           GOMBE STATE ${L(d.issueYear)}
         </div>
@@ -783,22 +783,23 @@
       title('AFFIDAVIT OF SERVICE') +
       caseLine('Suit No.', d.suitNumber) +
       parties(d.plaintiff, 'Plaintiff', d.defendant, 'Defendant') +
-      `<p>I, ${L(d.bailiffName)} Bailiff High Court of Justice, Gombe State make oath and say that
-      ${onDayLine(sv)} at ${L(d.serviceTime)} o'clock I serve upon ${L(d.servedUpon)}
-      a ${L(d.processDescription)} in suit No. ${L(d.processSuitNo)} dated ${L(pr.day ? `${pr.day} ${pr.month} ${pr.year4}` : '')},
-      a true copy whereof is hereby unto approved issued out of this court at ${L(d.issuedAt)}
-      upon ${L(d.complaintOf)},
+      `<p>I, ${L(d.bailiffName)}, Bailiff of the High Court of Justice, Gombe State, make oath and say that
+      ${onDayLine(sv)} at ${L(d.serviceTime)} o'clock I served upon ${L(d.servedUpon)}
+      a ${L(d.processDescription)} in Suit No. ${L(d.processSuitNo)} dated ${L(pr.day ? `${pr.day} ${pr.month} ${pr.year4}` : '')},
+      a true copy whereof is hereunto annexed, issued out of this Court at ${L(d.issuedAt)}
+      upon the complaint/application of ${L(d.complaintOf)},
       by delivering the same personally to ${L(d.deliveredTo)}
       of ${L(d.recipientAddress)}
       at ${L(d.placeOfService)}.</p>
       <p>Before the day I served the process, I did not know ${L(d.unknownPerson)}
-      personally, but after He/She was pointed out to me by ${L(d.pointedOutBy)},
-      I asked him/her if he/she were ${L(d.askedIdentity)}
+      personally, but after he/she was pointed out to me by ${L(d.pointedOutBy)},
+      I asked him/her if he/she was ${L(d.askedIdentity)}
       and he/she said that he/she was ${L(d.identityResponse)}.</p>` +
       sign('DEPONENT') +
-      `<p>Sworn to at ${L(d.swornAt)} Registry Gombe</p>
+      `<p>Sworn to at ${L(d.swornAt)}</p>
       <p>${dayLine(sw).replace(/^this/, 'This')}</p>
-      <p style="text-align:center">Before me</p>`,
+      <div class="doc-beforeme">Before me</div>` +
+      sign('Commissioner for Oaths'),
       r);
   }
 
@@ -817,16 +818,17 @@
       `<p><em>(If more than one, all should be named)</em>. To all Bailiffs and Messengers of this Court.</p>
       <p>Whereas the above named ${L(d.judgmentCreditorsName)} obtained a judgment against the above named
       ${L(d.judgmentDebtorName)} in this Court sitting at ${L(d.courtSittingAt)} ${onDayLine(jd)}
-      of N${L(d.installmentAmount)} for every ${L(d.installmentPeriod)}. And subsequent costs have been incurred and
+      for the payment of N${L(d.judgmentSum)}${(d.installmentAmount || d.installmentPeriod) ?
+        ` by instalments of N${L(d.installmentAmount)} for every ${L(d.installmentPeriod)}` : ''}. And subsequent costs have been incurred and
       allowed by the Court amounting to N${L(d.subsequentCosts)}. And whereas default has been made in the
       payment of the sum of N${L(d.defaultSum)} payable by the above named ${L(d.debtorPayableBy)}.
       And whereas a Writ has been issued by this Court for the attachment and sale of the movable property
       of the said ${L(d.movablePropertyDebtor)}, but the execution of such Writ has failed to realise the
-      full amount due from the said ${L(d.movablePropertyDebtor)} for pursuance of the said Judgment/Order.
+      full amount due from the said ${L(d.movablePropertyDebtor)} in pursuance of the said Judgment/Order.
       You are hereby commanded forthwith to levy the sum of N${L(d.levyAmount)} still remaining due to the
       above named ${L(d.remainingDueTo)} under the said Judgment/Order together with the costs of this Writ
       and the costs of executing the same by the attachment of the ${propAdj} property of the said
-      ${L(d.propertyOwner)} whose over such property may be found within the area of jurisdiction of this
+      ${L(d.propertyOwner)} wheresoever such property may be found within the area of jurisdiction of this
       Court and to make a report of what you have done under this Writ immediately upon execution thereof.</p>
       <p>DATED ${dayLine(is)}.</p>` +
       sign('HON. JUDGE'),
@@ -836,22 +838,29 @@
   /* 3 ── Writ of Possession of Property (Ejectment) Form M */
   function writPossessionProperty(d, u, r) {
     const cd = splitDate(d.courtDate), is = splitDate(d.issueDate);
+    // Drafts made before the choice existed: Appellant / Respondent, with
+    // the Respondent entitled.
+    const terms = { judgment: ['Judgment Creditor', 'Judgment Debtor'], suit: ['Plaintiff', 'Defendant'],
+      appeal: ['Appellant', 'Respondent'] }[d.partyTerms] || ['Appellant', 'Respondent'];
+    const firstEntitled = d.entitledParty === 'first';
+    const entitled = firstEntitled ? terms[0] : terms[1];
+    const other = firstEntitled ? terms[1] : terms[0];
     return shell(u,
       formRef('IN THE GOMBE JUDICIAL DIVISION<br>HOLDEN AT GOMBE') +
       formRef('FORM M') +
       title('WRIT OF POSSESSION OF PROPERTY (EJECTMENT)') +
-      parties(d.appellant, 'Appellant', d.respondent, 'Respondent') +
+      parties(d.appellant, terms[0], d.respondent, terms[1]) +
       `<p><strong>WHEREAS</strong> at the Court Holden at Gombe ${onDayLine(cd)}, it was adjudged that the
-      Respondent is entitled to possession of the property situated at ${L(d.propertyAddress)}
-      ${L(d.houseScheme)} house scheme and it was ordered that:</p>
+      ${esc(entitled)} is entitled to possession of the property situated at ${L(d.propertyAddress)}${d.houseScheme ?
+        `, ${L(d.houseScheme)} House Scheme,` : ''} and it was ordered that:</p>
       <ol>
-        <li>The Appellant and/or his tenant (in occupation) be ejected from the said property.</li>
-        <li>The Appellant and/or any person claiming through him is enjoined from trespassing or further
-        interfering with the Plaintiff's possession of the said property.</li>
+        <li>The ${esc(other)} and/or his/her tenant (in occupation) be ejected from the said property.</li>
+        <li>The ${esc(other)} and/or any person claiming through him/her is restrained from trespassing on or
+        further interfering with the ${esc(entitled)}'s possession of the said property.</li>
       </ol>
-      <p><strong>AND WHEREAS</strong> the Appellant/Tenant to wit ${L(d.appellantTenant)} has not obeyed the said order.</p>
-      <p>These are therefore, to authorise and require you forthwith to give up possession of the said
-      premises to the Respondent.</p>
+      <p><strong>AND WHEREAS</strong> the ${esc(other)}/Tenant to wit ${L(d.appellantTenant)} has not obeyed the said order.</p>
+      <p>These are therefore to authorise and require you forthwith to give possession of the said
+      property to the ${esc(entitled)}.</p>
       <p>Dated ${dayLine(is)}.</p>` +
       sign('JUDGE'),
       r);
@@ -893,25 +902,30 @@
   function writPossessionPremises(d, u, r) {
     const jd = splitDate(d.judgmentDate), is = splitDate(d.issueDate);
     const propType = esc(d.propertyType || 'House/Plot/Farmland');
+    // Drafts made before the choice existed print Plaintiff / Defendant.
+    const judgmentTerms = d.partyTerms === 'judgment';
+    const creditor = judgmentTerms ? 'Judgment Creditor' : 'Plaintiff';
+    const debtor   = judgmentTerms ? 'Judgment Debtor' : 'Defendant';
+    const other = d.entitledParty === 'debtor' ? creditor : debtor;
     return shell(u,
       formRef('IN THE GOMBE JUDICIAL DIVISION<br>HOLDEN AT GOMBE') +
       formRef('FORM M') +
       title('WRIT OF POSSESSION OF PREMISES') +
-      parties(d.plaintiff, 'Plaintiff', d.defendant, 'Defendant') +
-      `<p><strong>WHEREAS</strong> at the Court Holden in ${L(d.courtHoldingAt)} ${onDayLine(jd)}
+      parties(d.plaintiff, creditor, d.defendant, debtor) +
+      `<p><strong>WHEREAS</strong> at the Court Holden at ${L(d.courtHoldingAt)} ${onDayLine(jd)}
       it was adjudged that ${L(d.partyEntitled)} is entitled to possession of the property
       (${propType}) situated at ${L(d.propertyAddress)}.</p>
       <p><strong>And it is ordered that:</strong></p>
       <ol>
-        <li>The judgment creditor/judgment debtor and/or his tenant (in occupation) be ejected
-        from the said (${propType}).</li>
-        <li>The judgment creditor/judgment debtor and/or any person claiming through him is
-        restrained from trespassing or further interfering with the ${L(d.partyEntitled)}'s
+        <li>The ${esc(other)} and/or his/her tenant (in occupation) be ejected
+        from the said ${propType.toLowerCase()}.</li>
+        <li>The ${esc(other)} and/or any person claiming through him/her is
+        restrained from trespassing on or further interfering with the ${L(d.partyEntitled)}'s
         possession of the said ${propType.toLowerCase()}.</li>
       </ol>
-      <p><strong>AND WHEREAS THE JUDGMENT CREDITOR/JUDGMENT DEBTOR TO WIT</strong>
-      ${L(d.defaultingParty)} has not obeyed the said order. These are therefore, to authorise and
-      require you forthwith to give up possession of the said premises to the ${L(d.beneficiary)}.</p>
+      <p><strong>AND WHEREAS THE ${esc(other.toUpperCase())} TO WIT</strong>
+      ${L(d.defaultingParty)} has not obeyed the said order. These are therefore to authorise and
+      require you forthwith to give possession of the said ${propType.toLowerCase()} to ${L(d.beneficiary)}.</p>
       <p>Dated ${dayLine(is)}.</p>` +
       sign('JUDGE'),
       r);
@@ -922,7 +936,7 @@
     const ad = splitDate(d.applicationDate), jod = splitDate(d.judgmentOrderDate),
           con = splitDate(d.committedOn);
     return shell(u,
-      formRef('JUDGMENTS 3, 13 AND 55 (PREACIPLE)') +
+      formRef('JUDGMENTS 3, 13 AND 55 (PRAECIPE)') +
       title('JUDGMENT SUMMONS') +
       `<div class="doc-kv"><strong>No. of Plaint/Suit:</strong> ${L(d.suitNo)}</div>
       <div class="doc-kv"><strong>No. of Judgment Summons:</strong> ${L(d.noJudgmentSummons)}</div>
@@ -936,7 +950,7 @@
       <p>I apply for the issue of ${L(d.applicationFor)}.</p>
       <p>I am aware that, if I do not prove to the satisfaction of the Court at the hearing that the
       defendant has, or has had since the date of the judgment/order, the means to pay the sum in
-      respect of which he has made default, I may have to pay the costs of this summons.</p>` +
+      respect of which he/she has made default, I may have to pay the costs of this summons.</p>` +
       sign('Judgment Creditor / Solicitor for Judgment Creditor') +
       `<div class="doc-kv"><strong>Solicitor's Address:</strong><br>${fmt(d.solicitorAddress)}</div>
       <hr style="border:1px solid #ccc; margin:16px 0;">
@@ -960,21 +974,21 @@
   function noticeOfAttachment(d, u, r) {
     const is = splitDate(d.issueDate);
     return shell(u,
-      formRef('JUDICIAL FORM 41 — NOTICE OF ATTACHMENT<br>IN THE GOMBE JUDICIAL DIVISION') +
+      formRef('JUDICIAL FORM 41<br>IN THE GOMBE JUDICIAL DIVISION') +
       title('NOTICE OF ATTACHMENT') +
       caseLine('Suit No.', d.suitNumber) +
       parties(d.plaintiff, 'Plaintiff', d.defendant, 'Defendant') +
       `<p>To the Defendant.</p>
       <p><strong>TAKE NOTICE</strong> that a writ has been issued for the attachment and sale of your
       ${L(d.attachedProperty)} in execution of the judgment/order obtained against you in this action/matter
-      on the amount for which it has been issued is stated below:</p>
+      and the amount for which it has been issued is stated below.</p>
       <p><strong>AND TAKE NOTICE</strong> that your ${L(d.attachedProperty)} is hereby Attached and you are
       prohibited from selling the same or any right or interest therein.</p>
       <p>If you pay to the Bailiff the total amount to be levied, as stated below, within an hour after
       the service of this notice you will incur no further fees or expenses.</p>
-      <p>Therefore, you may be liable to pay the Sheriff a fee of Two kobo daily for keeping possession of
-      the property and also the reasonable expenses, if any feeding animals, until the amount to be levied,
-      together with the amount of such fees and expenses is paid, or the property is sold.</p>
+      <p>Otherwise, you may be liable to pay the Sheriff a fee of ${L(d.possessionFee || 'Two kobo')} daily for keeping possession of
+      the property and also the reasonable expenses, if any, of feeding animals, until the amount to be levied,
+      together with the amount of such fees and expenses, is paid, or the property is sold.</p>
       <p>If you do not pay the amount to be levied and any fees and expenses subsequently incurred, the
       property will be sold; any amount that remains unpaid together with costs of sale will be deducted
       from the proceeds and the balance, if any, will be paid to you.</p>
@@ -1001,8 +1015,8 @@
       letterSubject(`STATUTORY NOTICE FOR PUBLIC AUCTION (MOVABLE/IMMOVABLE): ${esc(d.suitTitle)}`) +
       letterBody(
         `You may recall that your ${esc(d.propertyCategory === 'movable' ? 'movable property' : 'immovable property')} was attached in compliance with the Judgment of ${L(d.courtName)}.`,
-        `Take notice that you are hereby given ${L(d.noticeDays)} days to come and satisfy the judgment sum
-        from the date you are served. Failure to comply with the above notice after the expiration of
+        `Take notice that you are hereby given ${L(d.noticeDays)} days from the date you are served with
+        this notice to come and satisfy the judgment sum. If you fail to do so within the said
         ${L(d.noticeDays)} days, your property shall be sold by public auction.`
       ) +
       letterSign(d.chiefBailiffName || '', 'Chief Bailiff', 'For: Deputy Sheriff'),
@@ -1023,11 +1037,11 @@
       letterSubject(`${subject}: ${esc(d.suitTitle)} — SUIT NO. ${esc(d.suitNumber)}`) +
       letterBody(
         'The above subject matter refers.',
-        `We write to apply for the above underlined subject matter; this is to enable our office enforce
+        `We write to apply for the above underlined subject matter; this is to enable our office to enforce
         the judgment of ${L(d.courtName)}.`,
         `The enforcement is to take place at ${L(d.enforcementLocation)}.`,
-        `Attached herewith ${isPolice ? 'a copy of the Court Orders and writs of attachment' :
-          'a writ of FIFA and Court Order'} for your record purposes.`,
+        `Attached herewith ${isPolice ? 'is a copy of the Court Orders and writs of attachment' :
+          'is a writ of fi. fa. and the Court Order'} for your record purposes.`,
         'Thank you.'
       ) +
       letterSign(d.chiefBailiffName || '', 'Chief Bailiff', 'For: Deputy Sheriff'),
@@ -1059,12 +1073,12 @@
       letterSubject(`RE: CASE OF ${esc(d.caseTitle)}`) +
       letterBody(
         `Pursuant to the judgment given against you for the payment of the sum of
-        N${L(d.judgmentSum)} to the judgment creditor(s) which you failed to make, resulting in the
+        N${L(d.judgmentSum)} to the judgment creditor(s), which you failed to pay, resulting in the
         attachment and sale of your ${propType} located at ${L(d.propertyAddress)}, Gombe State,
-        you are therefore put on notice to vacate the said ${propType} and its appurtenances within
+        you are hereby put on notice to vacate the said ${propType} and its appurtenances within
         ${L(d.noticeDays)} days of the receipt of this notice.`,
         `Take further notice that your failure to comply with the terms of this notice will result
-        in your forceful ejection.`
+        in your forcible ejection.`
       ) +
       letterSign(d.chiefBailiffName || '', 'Chief Bailiff', 'For: Deputy Sheriff'),
       r);
@@ -1092,10 +1106,10 @@
       ${L(d.creditorName)} (Judgment Creditor) under the said judgment/order together with the cost of the writ and the cost
       of executing the same, by distress and sale of the goods and chattels of the ${L(d.debtorName)} (Judgment Debtor)
       wheresoever they may be found within the ${L(division)} Judicial Division (except the
-      wearing apparel and bedding of him, his family, and the tools and implements of his trade, to the
-      value of five pounds) and also by seizing and taking any money, bank notes, cheques, bills
-      of exchange, promissory notes, bonds or securities for money belonging to the ${L(d.debtorName)}.</p>
-      <p>Which may there be found or such part or so much thereof as may be sufficient to satisfy this
+      wearing apparel and bedding of him/her and his/her family, and the tools and implements of his/her
+      trade, to the value of ${L(d.exemptValue || 'five pounds')}) and also by seizing and taking any money, bank notes, cheques, bills
+      of exchange, promissory notes, bonds or securities for money belonging to the ${L(d.debtorName)}
+      which may be found there, or such part or so much thereof as may be sufficient to satisfy this
       execution, and to bring what you shall have so levied into court and to make return of what you have
       done under this writ immediately upon the execution thereof.</p>
       <p>Dated ${dayLine(is)}.</p>` +
@@ -1114,20 +1128,23 @@
   /* 14 ── Writ of Possession of Certificate of Occupancy */
   function writPossessionOccupancy(d, u, r) {
     const cd = splitDate(d.courtDate), is = splitDate(d.issueDate);
+    const suitTerms = d.partyTerms === 'suit';
+    const creditor = suitTerms ? 'Plaintiff' : 'Judgment Creditor';
+    const debtor   = suitTerms ? 'Defendant' : 'Judgment Debtor';
     return shell(u,
-      formRef('IN THE GOMBE STATE JUDICIAL DIVISION<br>HOLDEN AT GOMBE') +
+      formRef('IN THE GOMBE JUDICIAL DIVISION<br>HOLDEN AT GOMBE') +
       title('WRIT OF POSSESSION OF CERTIFICATE OF OCCUPANCY') +
-      parties(d.plaintiff, 'Plaintiff', d.defendant, 'Defendant') +
-      `<p><strong>WHEREAS AT THE COURT</strong> holding in Gombe ${onDayLine(cd)}, it was adjudged that the
-      Judgment Creditor is entitled to possession of the Certificate of Occupancy ${L(d.coDescription)}.</p>
-      <p>Certificate of Occupancy and it was ordered that:</p>
+      parties(d.plaintiff, creditor, d.defendant, debtor) +
+      `<p><strong>WHEREAS</strong> at the Court Holden at Gombe ${onDayLine(cd)}, it was adjudged that the
+      ${esc(creditor)} is entitled to possession of the Certificate of Occupancy ${L(d.coDescription)},
+      and it was ordered that:</p>
       <ol>
-        <li>The Judgment Debtor(s) is/are hereby ordered to release and surrender the Certificate of
-        Occupancy to the Judgment Creditor.</li>
+        <li>The ${esc(debtor)}(s) is/are hereby ordered to release and surrender the Certificate of
+        Occupancy to the ${esc(creditor)}.</li>
       </ol>
-      <p><strong>AND WHEREAS THE JUDGMENT DEBTOR TO WIT</strong> ${L(d.judgmentDebtorName)}
-      has not obeyed the said order. These are therefore, to authorise and require you forthwith to give
-      up possession of the said Certificate of Occupancy to the ${L(d.beneficiary)}.</p>
+      <p><strong>AND WHEREAS THE ${esc(debtor.toUpperCase())} TO WIT</strong> ${L(d.judgmentDebtorName)}
+      has not obeyed the said order. These are therefore to authorise and require you forthwith to deliver
+      the said Certificate of Occupancy to ${L(d.beneficiary)}.</p>
       <p>Dated ${dayLine(is)}.</p>` +
       sign('JUDGE'),
       r);
@@ -1147,12 +1164,11 @@
 
     return shell(u,
       formRef('FORM 97 · ORDER 43 RULE 2') +
-      title(isCriminal ? 'CRIMINAL APPEAL NOTICE OF APPEAL' : 'CIVIL APPEAL NOTICE OF APPEAL') +
+      title(isCriminal ? 'NOTICE OF CRIMINAL APPEAL' : 'NOTICE OF CIVIL APPEAL') +
       `<p>The Registrar,<br>${fmt(d.registrarAddress)}</p>
       <p>This is to give notice of appeal against the decision of the: ${L(d.decisionCourt)},
       details of which are as follows:</p>
-      <p>1. Date of Decision: ${L(dd.day ? dd.day + ' ' + dd.month + ' 20' + dd.year2 : '')}
-      &nbsp;&nbsp; ${L(d.appellant)} &mdash; Appellant</p>
+      <p>1. Date of Decision: ${L(dd.day ? dd.day + ' ' + dd.month + ' ' + dd.year4 : '')}</p>
       <p>2. Name of Parties:</p>` +
       parties(d.appellant, 'Appellant', d.respondent, 'Respondent') +
       `<p>3. Offence (in Criminal case) or Claim (in Civil matters):<br>
@@ -1161,7 +1177,7 @@
       ${fmt(d.sentenceOrOrders)}</p>` +
       `<div style="margin:14px 0"><strong>MY/OUR GROUNDS OF APPEAL ARE:</strong></div>` +
       `<p>${groundsBody}</p>
-      <p>That more grounds will be filed on the receipt of record of proceeding.
+      <p>That more grounds will be filed upon receipt of the record of proceedings.
       ${d.additionalGrounds ? '<br>' + fmt(d.additionalGrounds) : ''}</p>
       <p>DATE: ${dayLine(is)}.</p>
       <div class="doc-twosign">
