@@ -324,6 +324,7 @@
       { section: 'Case Details' },
       { name: 'judicialDivision', label: 'Judicial Division (name only, e.g. Gombe)', required: true,
         defaultValue: 'Gombe', help: 'Printed as "Gombe Judicial Division".' },
+      { name: 'courtNumber', label: 'High Court Number (e.g. 9)', help: 'Printed as "High Court No. 9". Leave empty if not needed.' },
       { name: 'plaintiff', label: 'Plaintiff', required: true, full: true, type: 'textarea' },
       { name: 'suitNo', label: 'Plaint / Suit No.', required: true },
       { name: 'defendant', label: 'Defendant', required: true, type: 'textarea' },

@@ -1110,12 +1110,16 @@
     const jd = splitDate(d.judgmentDate), dd = splitDate(d.defaultDate),
           is = splitDate(d.issueDate);
     // The field holds the division's name ("Gombe"); older drafts may hold
-    // "Gombe Judicial Division", which must not print the words twice.
-    const division = String(d.judicialDivision || '').replace(/\s*judicial\s+division\s*$/i, '');
+    // "Gombe Judicial Division", which must not print the words twice, or a
+    // court number typed in the division box ("No. 9"), which is the court.
+    let division = String(d.judicialDivision || '').replace(/\s*judicial\s+division\s*$/i, '').trim();
+    const courtNo = (v) => String(v || '').trim().replace(/^(high\s*)?(court\s*)?(no\.?\s*)?/i, '').trim();
+    let court = courtNo(d.courtNumber);
+    if (/^(high\s*)?(court\s*)?(no\.?\s*)?\d+$/i.test(division)) { court = court || courtNo(division); division = 'Gombe'; }
     return shell(u,
       formRef('JUDGMENTS FORM 4, 5, 6 AND 27') +
       title('WRIT OF ATTACHMENT AND SALE OF GOODS') +
-      `<p>In the High Court of Justice of the ${L(division)} Judicial Division.</p>` +
+      `<p>In the High Court of Justice of the ${L(division)} Judicial Division${court ? `, High Court No. ${L(court, 'short')}` : ''}.</p>` +
       parties(d.plaintiff, 'Plaintiff', d.defendant, 'Defendant') +
       caseLine('Plaint/Suit No.', d.suitNo) +
       `<p><strong>WHEREAS</strong> ${onDayLine(jd)} ${fmt(d.judgmentDetails)}</p>

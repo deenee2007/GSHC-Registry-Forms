@@ -83,3 +83,12 @@ test('public auction receipt: Chief Bailiff and Deputy Sheriff (Director of Liti
   assert.doesNotMatch(t, /DIRECTOR OF LITIGATION/, 'no separate Director of Litigation line');
   assert.doesNotMatch(html, /doc-esign/, 'no signature left over below the receipt');
 });
+
+test('writ of goods: division and High Court number on the line after the title', () => {
+  const line = (data) => (text('writ-attachment-goods', data).match(/In the High Court of Justice of the .*?(?= BETWEEN)/) || [''])[0].replace(/\s+/g, ' ').trim();
+  assert.equal(line({ courtNumber: '9' }), 'In the High Court of Justice of the Gombe Judicial Division, High Court No. 9 .');
+  assert.equal(line({ courtNumber: 'High Court No. 4' }), 'In the High Court of Justice of the Gombe Judicial Division, High Court No. 4 .', 'no doubled words');
+  assert.equal(line({}), 'In the High Court of Justice of the Gombe Judicial Division.', 'number optional');
+  assert.equal(line({ judicialDivision: 'No. 9' }), 'In the High Court of Justice of the Gombe Judicial Division, High Court No. 9 .', 'older drafts with the number in the division box');
+  assert.match(text('writ-attachment-goods', { judicialDivision: 'No. 9', debtorName: 'Ali' }), /found within the Gombe Judicial Division/);
+});
