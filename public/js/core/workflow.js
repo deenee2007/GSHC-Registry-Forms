@@ -25,7 +25,7 @@
     _meta = { roles: signerRoles, rules: Object.fromEntries(forms.map(f => [f.formType, f.signers])) };
     return _meta;
   }
-  const ROLE_FALLBACK = { judge: 'Judge', chief_registrar: 'Chief Registrar', registrar: 'Registrar', chief_bailiff: 'Chief Bailiff', deputy_sheriff: 'Deputy Sheriff', commissioner_for_oaths: 'Commissioner for Oaths' };
+  const ROLE_FALLBACK = { judge: 'Judge', chief_registrar: 'Chief Registrar', registrar: 'Registrar', chief_bailiff: 'Chief Bailiff', deputy_sheriff: 'Deputy Sheriff', director_of_litigation: 'Director of Litigation', commissioner_for_oaths: 'Commissioner for Oaths' };
   function roleLabel(role) { return (_meta && _meta.roles[role]) || ROLE_FALLBACK[role] || role; }
 
   const formDef = (formType) => (App.allForms || {})[formType];
@@ -65,8 +65,15 @@
     if (!def) { ui().toast('This form is not available.', 'error'); return null; }
     const f = ui().form(def.schema, record ? record.data : null);
     const offlineEntry = record && record.localId ? record : null;
+    // Every save stores every field, so a field missing from a saved draft
+    // was added to the form after the draft was made.
+    const added = record && record.data ? def.schema.filter(x => x.name && !(x.name in record.data)) : [];
+    const body = added.length ? ui().el('div', null, [
+      ui().el('div', { class: 'notice notice--warn' }, `This form has changed since this draft was saved. Please check these boxes before saving: ${added.map(x => x.label).join('; ')}.`),
+      f.node
+    ]) : f.node;
 
-    return ui().modal(def.label, f.node, {
+    return ui().modal(def.label, body, {
       confirmText: 'Save Draft',
       noBackdropClose: true,
       onConfirm: async () => {
@@ -351,9 +358,22 @@
     try {
       if (typeof docOrId === 'string') doc = (await api().get(`/records/${docOrId}/document`)).document;
       def = def || formDef(doc.formType);
-      await App.output.print(doc, doc.unitName, def);
+      await App.output.print(doc, doc.unitName, def, doc.status === 'final' ? await savedCopy(doc.id) : null);
       if (doc.status === 'final') { await api().post(`/records/${doc.id}/printed`); changed(); }
     } catch (e) { ui().toast(e.offline ? 'This document is not available offline.' : e.message, 'error'); }
+  }
+
+  // The document part of the saved copy, so a signed document prints exactly
+  // as it was signed even after a form's wording changes. Null when the copy
+  // cannot be fetched; the document is then drawn from its data as before.
+  async function savedCopy(id) {
+    try {
+      const res = await fetch(`/api/records/${id}/copy?print=1`, { credentials: 'same-origin', headers: { 'X-Requested-With': 'GSHC' } });
+      if (!res.ok) return null;
+      const page = new DOMParser().parseFromString(await res.text(), 'text/html');
+      const article = page.querySelector('article.court-doc');
+      return article ? article.outerHTML : null;
+    } catch (e) { return null; }
   }
 
   // The saved copy of a signed document, as a file the user keeps.

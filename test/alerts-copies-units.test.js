@@ -137,6 +137,11 @@ test('a signed document has a saved, self contained copy to download', async () 
   assert.match(r.headers.get('content-disposition'), /attachment; filename="Civil_Summons_GM-77-2026_GSHC-/);
   const html = r.body;
   assert.ok(html.startsWith('<!DOCTYPE html>'));
+  const { AuditLog } = require('../src/models');
+  const downloads = () => AuditLog.countDocuments({ record: id, action: 'copy_downloaded' });
+  const n = await downloads();
+  assert.equal((await u.clerk.get(`/api/records/${id}/copy?print=1`)).status, 200, 'Print reads the same copy');
+  assert.equal(await downloads(), n, 'fetching it to print is not logged as a download');
   assert.ok(html.includes(rec.verifyCode));
   assert.ok(html.includes('Hon. Justice Judge One'));
   assert.ok(!/src="\/(api|assets)\//.test(html), 'no links back to the server: images are inside the file');

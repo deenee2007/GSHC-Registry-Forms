@@ -150,7 +150,10 @@
         (f.options || []).forEach(o => input.appendChild(el('option', { value: o.value !== undefined ? o.value : o }, o.label || o)));
       } else input = el('input', { type: f.type || 'text' });
       input.name = f.name;
+      // A saved draft made before this field existed takes legacyValue, so
+      // editing it keeps the meaning it printed with.
       const init = (initial && initial[f.name] !== undefined) ? initial[f.name]
+                 : (initial && f.legacyValue !== undefined) ? f.legacyValue
                  : (f.defaultValue !== undefined ? f.defaultValue : '');
       if (init !== '') input.value = init;
       fields[f.name] = input;

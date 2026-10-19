@@ -12,8 +12,8 @@ const DB = (process.env.TEST_MONGODB_URI || 'mongodb://127.0.0.1:27017/gshc_regi
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const { databaseName } = require('../src/config');
-const { resetAdmin, report } = require('../src/services/seed');
-const { User } = require('../src/models');
+const { resetAdmin, report, updateFormConfigs } = require('../src/services/seed');
+const { User, FormConfig } = require('../src/models');
 
 before(async () => { await mongoose.connect(DB); await mongoose.connection.dropDatabase(); });
 after(async () => { await mongoose.connection.dropDatabase(); await mongoose.disconnect(); });
@@ -68,4 +68,28 @@ test('startup report names the database and flags accounts from another app', as
   logs = [];
   await report(m => logs.push(m));
   assert.ok(logs.some(l => /not created by this app/.test(l)));
+});
+
+test('the public auction receipt rule gains the Chief Registrar and Director of Litigation once, unless the admin changed it', async () => {
+  const old = [{ role: 'deputy_sheriff', label: 'Deputy Sheriff' }, { role: 'chief_bailiff', label: 'Chief Bailiff' }];
+  await FormConfig.deleteMany({});
+  await mongoose.connection.collection('appmeta').deleteMany({ _id: /^rule:/ });
+  await FormConfig.create({ formType: 'public-auction-receipt', signers: old });
+  await updateFormConfigs(() => {});
+  let cfg = await FormConfig.findOne({ formType: 'public-auction-receipt' });
+  assert.deepEqual(cfg.signers.map(s => s.role), ['deputy_sheriff', 'chief_bailiff', 'chief_registrar', 'director_of_litigation']);
+
+  // The admin later goes back to two signers; a restart leaves that alone.
+  cfg.signers = old; await cfg.save();
+  await updateFormConfigs(() => {});
+  cfg = await FormConfig.findOne({ formType: 'public-auction-receipt' });
+  assert.equal(cfg.signers.length, 2);
+
+  // A rule the admin had already changed is never replaced.
+  await FormConfig.deleteMany({});
+  await mongoose.connection.collection('appmeta').deleteMany({ _id: /^rule:/ });
+  await FormConfig.create({ formType: 'public-auction-receipt', signers: [{ role: 'chief_bailiff', label: 'Chief Bailiff' }] });
+  await updateFormConfigs(() => {});
+  cfg = await FormConfig.findOne({ formType: 'public-auction-receipt' });
+  assert.deepEqual(cfg.signers.map(s => s.role), ['chief_bailiff']);
 });

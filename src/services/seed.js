@@ -6,7 +6,7 @@ const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const config = require('../config');
 const catalogue = require('../forms/catalogue');
-const { DEFAULT_SIGNERS } = require('../forms/signers');
+const { DEFAULT_SIGNERS, RULE_UPDATES } = require('../forms/signers');
 const mongoose = require('mongoose');
 const { User, Unit, FormConfig, AuditLog } = require('../models');
 
@@ -28,6 +28,22 @@ async function seedFormConfigs() {
   const missing = Object.keys(catalogue.forms).filter(k => !existing.has(k));
   if (missing.length) {
     await FormConfig.insertMany(missing.map(formType => ({ formType, signers: DEFAULT_SIGNERS[formType] || [] })));
+  }
+}
+
+// Bring older databases up to a changed default rule (see RULE_UPDATES).
+async function updateFormConfigs(log = console.log) {
+  const meta = mongoose.connection.collection('appmeta');
+  for (const u of RULE_UPDATES) {
+    if (await meta.findOne({ _id: 'rule:' + u.id })) continue;
+    const cfg = await FormConfig.findOne({ formType: u.formType });
+    const roles = cfg ? cfg.signers.map(s => s.role) : [];
+    if (cfg && roles.length === u.from.length && roles.every((r, i) => r === u.from[i])) {
+      cfg.signers = DEFAULT_SIGNERS[u.formType];
+      await cfg.save();
+      log(`  Signing rule updated: ${u.formType} is now signed by ${cfg.signers.map(s => s.label).join(', ')}.`);
+    }
+    await meta.updateOne({ _id: 'rule:' + u.id }, { $set: { at: new Date() } }, { upsert: true });
   }
 }
 
@@ -107,9 +123,10 @@ async function report(log = console.log) {
 async function seedAll(log = console.log) {
   await seedUnits();
   await seedFormConfigs();
+  await updateFormConfigs(log);
   const created = await seedAdmin(log);
   if (config.adminReset) await resetAdmin({ log });
   return created;
 }
 
-module.exports = { seedAll, resetAdmin, report, SEED_UNITS };
+module.exports = { seedAll, resetAdmin, report, updateFormConfigs, SEED_UNITS };

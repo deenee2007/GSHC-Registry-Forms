@@ -443,6 +443,8 @@ button.dash-card:hover { border-color: var(--green-500); }
 .doc-sig-img { display: block; max-width: 200px; max-height: 70px; margin: 0 auto -4px; object-fit: contain; }
 .doc-sig-meta { font-size: 8pt; color: #333; line-height: 1.3; margin-top: 2px; }
 .doc-sign-wrap .doc-sign-block { margin-top: -30px; }
+.doc-signgrid { display: grid; grid-template-columns: 1fr 1fr; align-items: end; gap: 56px 48px; margin-top: 52px; margin-bottom: 6px; }
+.doc-signgrid .doc-sign-block { width: auto; }
 .doc-esign { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 28px; margin-top: 24px; }
 .doc-verify { display: flex; gap: 12px; align-items: center; margin-top: 18px; padding: 8px 10px;
   border: 1px solid #999; font-size: 8.5pt; line-height: 1.35; page-break-inside: avoid; }

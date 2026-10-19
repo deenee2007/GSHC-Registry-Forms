@@ -42,12 +42,19 @@
     const date = value ? new Date(value) : new Date();
     return date.toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" });
   }
-  function dayLine(s) {
-    return `this ${L(s.day, "short")} day of ${L(s.month, "medium")} 20${L(s.year2, "short")}`;
+  // 1 → 1st, 2 → 2nd, 11 → 11th, 23 → 23rd.
+  function ordinal(day) {
+    const n = parseInt(day, 10);
+    if (!n) return "";
+    const v = n % 100, s = ["th", "st", "nd", "rd"];
+    return n + (s[(v - 20) % 10] || s[v] || s[0]);
   }
-  function onDayLine(s) {
-    return `on the ${L(s.day, "short")} day of ${L(s.month, "medium")} 20${L(s.year2, "short")}`;
+  // "the 15th day of October 2026"; a blank date leaves blanks to fill by hand.
+  function dayOf(s) {
+    return `${L(ordinal(s.day), "short")} day of ${L(s.month, "medium")} ${L(s.year4, "short")}`;
   }
+  function dayLine(s) { return `this ${dayOf(s)}`; }
+  function onDayLine(s) { return `on the ${dayOf(s)}`; }
 
   /* ---- shared building blocks ------------------------------------------ */
 
@@ -92,6 +99,7 @@
     chief_registrar: /registrar/i,
     chief_bailiff: /bailiff/i,
     deputy_sheriff: /sheriff/i,
+    director_of_litigation: /litigation/i,
     commissioner_for_oaths: /commissioner/i
   };
 
@@ -115,6 +123,17 @@
     const sig = claimSignature(label);
     if (!sig) return `<div class="doc-sign-wrap"><div class="doc-sign">${esc(label)}</div></div>`;
     return `<div class="doc-sign-wrap"><div class="doc-sign-block">${sigImage(sig)}<div class="doc-sign">${esc(label)}</div>${sigMeta(sig)}</div></div>`;
+  }
+
+  // Several signature lines side by side, two to a row, each with the name
+  // typed on the form until the digital signature is placed.
+  function signGrid(lines) {
+    return `<div class="doc-signgrid">${lines.map(([label, name]) => {
+      const sig = claimSignature(label);
+      return sig
+        ? `<div class="doc-sign-block">${sigImage(sig)}<div class="doc-sign">${esc(label)}</div>${sigMeta(sig)}</div>`
+        : `<div class="doc-sign-block"><div class="doc-sign">${esc(label)}${name ? `<br>${esc(name)}` : ""}</div></div>`;
+    }).join("")}</div>`;
   }
 
   function leftoverSignatures() {
@@ -403,8 +422,7 @@
        <p>WHEREAS the above-named person has been arrested and brought before me accused of the offence of
        ${L(d.offenceDescription, "long")}.</p>
        <p>You are hereby authorised and required to receive him/her and detain him/her in custody until further order,
-       provided that, if no further order has been made as to his/her disposal before the ${L(ret.day, "short")} day of
-       ${L(ret.month, "medium")} 20${L(ret.year2, "short")}, you shall bring him/her before me with this warrant for an
+       provided that, if no further order has been made as to his/her disposal before the ${dayOf(ret)}, you shall bring him/her before me with this warrant for an
        order as to his/her disposal.</p>
        <p>Dated ${dayLine(is)}.</p>` +
       sign("Signature or Seal"),
@@ -542,8 +560,7 @@
       title('SUMMONS TO PARTIES BY REGISTRAR TO SETTLE RECORD OF APPEAL') +
       parties(d.appellant, 'Appellant', d.respondent, 'Respondent') +
       `<p>TAKE NOTICE that all parties concerned are required to attend before me at the
-      Appeal Registry on the ${L(ad.day ? ad.day : '')} day of ${L(ad.month ? ad.month : '')}
-      20${L(ad.year2 ? ad.year2 : '')} at the hour of ${L(d.attendanceTime)} O'clock in the
+      Appeal Registry on the ${dayOf(ad)} at the hour of ${L(d.attendanceTime)} O'clock in the
       forenoon to proceed with settling of the record of the appeal therein.</p>
       <p>Dated at ${L(d.datedAt)} ${dayLine(is)}.</p>` +
       sign('Appeal Registrar'),
@@ -615,11 +632,7 @@
   function courtOrder(d, u, r) {
     const sd = splitDate(d.sittingDate), is = splitDate(d.issueDate);
 
-    // Ordinal helper
-    function ord(n) {
-      const s = ['TH','ST','ND','RD'], v = n % 100;
-      return n + (s[(v-20)%10] || s[v] || s[0]);
-    }
+    const ord = n => ordinal(n).toUpperCase();
     const DAYS  = ['SUNDAY','MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'];
     const MONTHS= ['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE',
                    'JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'];
@@ -957,14 +970,14 @@
       <div class="doc-preaciple">
         <p><strong><em>To be completed by the Registrar:</em></strong></p>
         <div class="doc-kv"><strong>Ledger Folio:</strong> ${L(d.ledgerFolio)} &nbsp;&nbsp;
-          <strong>Date of Judgment/Order:</strong> ${L(jod.day ? (jod.day + ' ' + jod.month + ' 20' + jod.year2) : '')}</div>
-        <div class="doc-kv">Committed on ${L(d.committedOn ? (con.day + ' ' + con.month + ' 20' + con.year2) : '')}
+          <strong>Date of Judgment/Order:</strong> ${L(jod.day ? (jod.day + ' ' + jod.month + ' ' + jod.year4) : '')}</div>
+        <div class="doc-kv">Committed on ${L(d.committedOn ? (con.day + ' ' + con.month + ' ' + con.year4) : '')}
           for ${L(d.committedFor)}</div>
         <div class="doc-kv">Order Suspended for ${L(d.orderSuspendedFor)}
           on payment of ${L(d.suspendedOnPayment)}</div>
         <div class="doc-kv">Subsistence allowance ${L(d.subsistenceAllowance)} per diem
           ${L(d.paidBeforeWarrant)} to be paid before issue of warrant</div>
-        <div class="doc-kv">Date and time of application: the ${L(ad.day)} day of ${L(ad.month)} 20${L(ad.year2)}
+        <div class="doc-kv">Date and time of application: the ${dayOf(ad)}
           at ${L(d.applicationTime)}</div>
       </div>`,
       r);
@@ -1056,11 +1069,11 @@
       `<p>Received from ${L(d.receivedFrom)}</p>
       <p>The sum of ${L(d.sumAmount)}</p>
       <p>Being payment for ${L(d.beingPaymentFor)}</p>
-      <p>DATED ${L(rd.day)} DAY OF ${L(rd.month)} 20${L(rd.year2)}.</p>` +
-      `<div class="doc-twosign">
-        <div class="doc-sign">DEPUTY SHERIFF<br>${esc(d.deputySheriffName || '')}</div>
-        <div class="doc-sign">CHIEF BAILIFF<br>${esc(d.chiefBailiffName || '')}</div>
-      </div>`,
+      <p>DATED THIS ${dayOf(rd).toUpperCase()}.</p>` +
+      signGrid([
+        ['CHIEF BAILIFF', d.chiefBailiffName], ['DEPUTY SHERIFF', d.deputySheriffName],
+        ['DIRECTOR OF LITIGATION', d.directorLitigationName], ['CHIEF REGISTRAR', d.chiefRegistrarName]
+      ]),
       r);
   }
 
@@ -1210,11 +1223,12 @@
       : new Promise(res => { img.onload = img.onerror = res; setTimeout(res, 8000); }))));
   }
 
-  // Send a record to the printer via the dedicated print root.
-  async function print(record, unitName, def) {
+  // Send a record to the printer via the dedicated print root. A signed
+  // document passes its saved copy as markup, so it prints exactly as signed.
+  async function print(record, unitName, def, markup) {
     let root = document.getElementById("print-root");
     if (!root) { root = document.createElement("div"); root.id = "print-root"; document.body.appendChild(root); }
-    root.innerHTML = render(record, unitName, def);
+    root.innerHTML = markup || render(record, unitName, def);
     await imagesReady(root);
     const missing = Array.from(root.querySelectorAll("img.doc-sig-img")).filter(i => !i.naturalWidth);
     if (missing.length) {

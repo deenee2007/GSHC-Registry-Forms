@@ -16,6 +16,7 @@ const SIGNER_ROLES = {
   registrar:             'Registrar',
   chief_bailiff:         'Chief Bailiff',
   deputy_sheriff:        'Deputy Sheriff',
+  director_of_litigation: 'Director of Litigation',
   commissioner_for_oaths: 'Commissioner for Oaths'
 };
 
@@ -57,11 +58,21 @@ const DEFAULT_SIGNERS = {
   'notice-of-attachment': [{ role: 'chief_registrar', label: 'Chief Registrar' }],
   'statutory-notice-auction': chiefBailiff,
   'request-nscdc-personnel': chiefBailiff,
-  'public-auction-receipt': [{ role: 'deputy_sheriff', label: 'Deputy Sheriff' }, { role: 'chief_bailiff', label: 'Chief Bailiff' }],
+  'public-auction-receipt': [
+    { role: 'deputy_sheriff', label: 'Deputy Sheriff' }, { role: 'chief_bailiff', label: 'Chief Bailiff' },
+    { role: 'chief_registrar', label: 'Chief Registrar' }, { role: 'director_of_litigation', label: 'Director of Litigation' }
+  ],
   'request-police-assistance': chiefBailiff,
   'notice-to-vacate': chiefBailiff,
   'writ-attachment-goods': judge,
   'writ-possession-occupancy': judge
 };
 
-module.exports = { SIGNER_ROLES, DEFAULT_SIGNERS };
+// Changes to a default rule after first run. Each is applied once, and only
+// if the form still has the rule it replaces; a rule the admin has changed
+// in Settings is left alone.
+const RULE_UPDATES = [
+  { id: 'public-auction-receipt-2026-10', formType: 'public-auction-receipt', from: ['deputy_sheriff', 'chief_bailiff'] }
+];
+
+module.exports = { SIGNER_ROLES, DEFAULT_SIGNERS, RULE_UPDATES };
