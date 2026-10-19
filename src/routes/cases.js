@@ -66,4 +66,48 @@ router.get('/', wrap(async (req, res) => {
   res.json({ query: q, cases: list.slice(0, MAX_CASES), moreCases: list.length > MAX_CASES, truncated: found.length > MAX_RECORDS });
 }));
 
+// ── Fill a new form from earlier documents for the same case ──
+// Boxes that hold the same thing on every document of a case (parties,
+// addresses, court, offence) are offered; boxes that differ per document
+// (dates, times, fees, amounts, references, who was served) never are.
+const NOT_COPIED = /date|time|fee|mileage|amount|levied|^ourref$|^refno|writno|noticedays|personnelcount|^served|deliveredto|unknownperson|pointedoutby|askedidentity|identityresponse|^recipient|receiptnumber|sum(naira|kobo)$|^execution|additionalgrounds/i;
+// The first and second party go by different names on different forms.
+const ALIASES = [['plaintiff', 'complainant', 'plaintiffName'], ['defendant']];
+
+function prefillValues(def, sources) {
+  const values = {};
+  const used = new Set();
+  for (const f of def.schema) {
+    if (!f.name || f.type === 'date' || f.type === 'table' || NOT_COPIED.test(f.name) || catalogue.CASE_FIELDS.includes(f.name)) continue;
+    const names = [f.name, ...((ALIASES.find(g => g.includes(f.name)) || []).filter(n => n !== f.name))];
+    for (const r of sources) {
+      const name = names.find(n => typeof r.data[n] === 'string' && r.data[n].trim());
+      if (!name) continue;
+      const v = r.data[name].trim();
+      if (f.type === 'select' && !(f.options || []).some(o => (o.value !== undefined ? o.value : o) === v)) continue;
+      values[f.name] = v;
+      used.add(String(r._id));
+      break;
+    }
+  }
+  return { values, used };
+}
+
+router.get('/prefill', wrap(async (req, res) => {
+  const caseNo = catalogue.normalizeCase(req.query.caseNo);
+  const def = catalogue.get(String(req.query.formType || ''));
+  if (!def) throw new HttpError(400, 'Unknown form.');
+  if (caseNo.length < 3) return res.json({ caseNo, values: {}, sources: [] });
+  const found = await Record.find({ caseNos: caseNo, status: { $ne: 'offline' } })
+    .select('unitKey formType status data createdBy submittedBy slots.approvers createdAt updatedAt')
+    .sort({ updatedAt: -1 }).limit(50).lean();
+  const mine = found.filter(r => canOpen(req.user, r)).slice(0, 20); // newest first: the latest value wins
+  const { values, used } = prefillValues(def, mine);
+  const sources = mine.filter(r => used.has(String(r._id))).map(r => {
+    const d = catalogue.get(r.formType);
+    return { formLabel: d ? d.label : r.formType, date: r.updatedAt };
+  });
+  res.json({ caseNo, values, sources });
+}));
+
 module.exports = router;

@@ -68,10 +68,11 @@
     // Every save stores every field, so a field missing from a saved draft
     // was added to the form after the draft was made.
     const added = record && record.data ? def.schema.filter(x => x.name && !(x.name in record.data)) : [];
-    const body = added.length ? ui().el('div', null, [
-      ui().el('div', { class: 'notice notice--warn' }, `This form has changed since this draft was saved. Please check these boxes before saving: ${added.map(x => x.label).join('; ')}.`),
+    const body = ui().el('div', null, [
+      added.length ? ui().el('div', { class: 'notice notice--warn' }, `This form has changed since this draft was saved. Please check these boxes before saving: ${added.map(x => x.label).join('; ')}.`) : null,
       f.node
-    ]) : f.node;
+    ]);
+    if (!record) offerPrefill(def, formType, f.node, body);
 
     return ui().modal(def.label, body, {
       confirmText: 'Save Draft',
@@ -105,6 +106,46 @@
         }
       }
     });
+  }
+
+  // On a new form: once a suit or case number is typed, offer to fill the
+  // empty boxes from earlier documents for that case. Online only.
+  const CASE_FIELDS = ['suitNumber', 'caseNumber', 'suitNo', 'processSuitNumber', 'processSuitNo', 'highCourtAppealNo', 'lowerCourtSuitNo', 'appealNumber'];
+  function offerPrefill(def, formType, formNode, body) {
+    const bar = ui().el('div', { class: 'notice notice--info prefill-bar', hidden: 'hidden' });
+    body.insertBefore(bar, formNode);
+    let asked = '';
+    const check = async (e) => {
+      const caseNo = e.target.value.trim();
+      if (caseNo.replace(/\s+/g, '').length < 3 || caseNo === asked) return;
+      asked = caseNo;
+      let r;
+      try { r = await api().get(`/cases/prefill?caseNo=${encodeURIComponent(caseNo)}&formType=${encodeURIComponent(formType)}`); }
+      catch (err) { return; } // offline or not allowed: nothing to offer
+      if (asked !== caseNo) return; // the number changed while asking
+      const boxes = def.schema.filter(x => x.name && r.values[x.name] !== undefined && isEmpty(formNode, x));
+      if (!boxes.length) { bar.hidden = true; return; }
+      const from = [...new Set(r.sources.map(x => x.formLabel))].slice(0, 3).join(', ');
+      const btn = ui().el('button', { class: 'btn btn--small btn--primary', type: 'button', onclick: () => {
+        let n = 0;
+        boxes.forEach(x => { const inp = formNode.querySelector(`[name="${x.name}"]`); if (inp && isEmpty(formNode, x)) { inp.value = r.values[x.name]; n++; } });
+        bar.hidden = true;
+        ui().toast(`Filled ${n} box(es) from earlier documents. Please check them.`, 'success');
+      } }, 'Fill them in');
+      bar.replaceChildren(ui().el('span', null, `Earlier documents for ${r.caseNo} (${from}) can fill ${boxes.length} empty box(es): ${boxes.map(x => x.label).join(', ')}. `), btn);
+      bar.hidden = false;
+    };
+    CASE_FIELDS.forEach(name => {
+      const inp = formNode.querySelector(`[name="${name}"]`);
+      if (inp) inp.addEventListener('change', check);
+    });
+  }
+  // A box is free to fill when it is blank, or a list still at its starting choice.
+  function isEmpty(formNode, field) {
+    const inp = formNode.querySelector(`[name="${field.name}"]`);
+    if (!inp) return false;
+    if (field.type === 'select') return field.defaultValue === undefined || inp.value === String(field.defaultValue);
+    return !inp.value.trim();
   }
 
   // ── Open the document with the actions this user can take ──
