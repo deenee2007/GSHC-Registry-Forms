@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
+    "restore": "node scripts/restore-backup.js",
     "test": "node --test --test-concurrency=1 test/*.test.js"
   },
   "author": "Directorate of ICT, Gombe State High Court of Justice",

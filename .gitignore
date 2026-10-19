@@ -17,6 +17,7 @@ build/
 coverage/
 tmp/
 uploads/
+backups/
 
 # OS and editor files
 .DS_Store

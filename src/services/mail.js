@@ -40,16 +40,16 @@ async function send({ to, name, subject, text, html }) {
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-// One simple, plain layout for every message.
+// One simple, plain layout for every message. Without a link, no button.
 function layout({ heading, paragraphs, button, link, footer }) {
-  const text = [heading, '', ...paragraphs, '', `${button}: ${link}`, '', footer].join('\n');
+  const text = [heading, '', ...paragraphs, '', ...(link ? [`${button}: ${link}`, ''] : []), footer].join('\n');
   const html = `<!doctype html><html><body style="margin:0;background:#eef3ef;font-family:Segoe UI,Arial,sans-serif;color:#1d2a22">
   <div style="max-width:560px;margin:24px auto;background:#fff;border-radius:10px;padding:28px;border-top:5px solid #0b5d33">
     <div style="font-size:13px;letter-spacing:.08em;color:#5c6b62;text-transform:uppercase">Gombe State High Court of Justice</div>
     <h1 style="font-size:20px;color:#0b5d33;margin:8px 0 16px">${esc(heading)}</h1>
     ${paragraphs.map(p => `<p style="font-size:15px;line-height:1.55;margin:0 0 12px">${esc(p)}</p>`).join('')}
-    <p style="margin:22px 0"><a href="${esc(link)}" style="background:#0b5d33;color:#fff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:600;display:inline-block">${esc(button)}</a></p>
-    <p style="font-size:12px;color:#5c6b62;word-break:break-all">If the button does not work, copy this address into your browser:<br>${esc(link)}</p>
+    ${link ? `<p style="margin:22px 0"><a href="${esc(link)}" style="background:#0b5d33;color:#fff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:600;display:inline-block">${esc(button)}</a></p>
+    <p style="font-size:12px;color:#5c6b62;word-break:break-all">If the button does not work, copy this address into your browser:<br>${esc(link)}</p>` : ''}
     <p style="font-size:12px;color:#5c6b62;margin-top:20px">${esc(footer)}</p>
   </div></body></html>`;
   return { text, html };
@@ -99,4 +99,18 @@ function alertMessage(user, subject, message, link) {
   };
 }
 
-module.exports = { enabled, send, inviteMessage, resetMessage, alertMessage, sent };
+function backupFailedMessage(user, error, link) {
+  return {
+    subject: 'GSHC Registry: the daily backup failed',
+    ...layout({
+      heading: 'The daily backup failed',
+      paragraphs: [`Dear ${user.fullName},`,
+        `Today's automatic backup of the GSHC Registry could not be completed. The reason given was: ${error}`,
+        'The system will try again every hour. You can also run a backup from the Dashboard (Back up now) once the problem is fixed. If it keeps failing, check the Cloudinary settings on Render.'],
+      button: 'Open GSHC Registry', link,
+      footer: 'This message goes to administrators only. Directorate of ICT, Gombe State High Court of Justice.'
+    })
+  };
+}
+
+module.exports = { enabled, send, inviteMessage, resetMessage, alertMessage, backupFailedMessage, sent };

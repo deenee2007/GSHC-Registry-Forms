@@ -47,7 +47,7 @@ line; finalising them still locks them and issues a verification code.
 * **Unit pages:** each unit's records, with search and status filters.
 * **My Signature** (signers): draw or upload your signature, set your PIN.
 * **Settings** (administrators): users, units, form access, signing rules,
-  audit log. The dashboard also offers a full JSON backup of records.
+  audit log. The dashboard shows the automatic backups (see Backups).
 
 ## Working offline
 The app keeps working when the internet drops. It still opens, shows the
@@ -146,6 +146,31 @@ prints exactly as it was signed, even after a form's wording is corrected.
 
 When a form gains new boxes, a draft saved before the change shows a notice
 naming them when it is next edited.
+
+## Backups
+Once a day the server makes a backup by itself and keeps it privately on
+Cloudinary (no public address; only the server can read it):
+* one compressed file with the units, users, signing rules, records,
+  notifications, settings and audit log, exact to the second;
+* each signed document's saved copy, once, as its own file.
+
+Backups are kept 30 days (`BACKUP_KEEP_DAYS`); the newest is never removed.
+The server checks every hour, so if it was asleep at the usual time it backs
+up soon after it wakes. If a backup fails, administrators with an email
+address are told (at most once a day) and it is tried again every hour.
+
+On the **Dashboard**, administrators see the last backup, the list of kept
+backups with **Download**, and **Back up now**. Signature images are not in
+the file; they stay in Cloudinary.
+
+**Restoring** (only into a new, empty database; it refuses to touch one
+that has users):
+```
+MONGODB_URI=<new database> CLOUDINARY_URL=<same as on Render> npm run restore -- --latest
+npm run restore -- gshc_2026-10-19_020000_000.json.gz --uri <new database>
+```
+Then point `MONGODB_URI` on Render at the restored database. Everyone's
+password, PIN and signature carry over.
 
 ## Units
 Settings → Units → **+ Add Unit** adds either another **Court Registry**

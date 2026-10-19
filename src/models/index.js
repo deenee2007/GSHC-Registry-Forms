@@ -160,7 +160,22 @@ const DocumentCopySchema = new Schema({
   record:      { type: Schema.Types.ObjectId, ref: 'Record', required: true, unique: true },
   html:        { type: String, required: true },
   generatedAt: { type: Date, default: Date.now },
-  late:        { type: Boolean, default: false } // made after signing (record signed before copies existed)
+  late:        { type: Boolean, default: false }, // made after signing (record signed before copies existed)
+  backedUpAt:  Date                                 // copied to the backup store (src/services/backup.js)
+});
+
+// One run of the backup: the data file it wrote, or why it failed.
+const BackupSchema = new Schema({
+  at:          { type: Date, default: Date.now, index: true },
+  ok:          { type: Boolean, required: true },
+  reason:      { type: String, enum: ['scheduled', 'manual'], default: 'scheduled' },
+  by:          String,                 // username, for a manual run
+  file:        String,                 // name in the backup store
+  bytes:       Number,
+  counts:      Schema.Types.Mixed,     // documents per collection
+  copiesAdded: { type: Number, default: 0 },
+  error:       String,
+  deleted:     { type: Boolean, default: false } // removed from the store by retention
 });
 
 module.exports = {
@@ -172,5 +187,6 @@ module.exports = {
   AuditLog:     mongoose.model('AuditLog', AuditLogSchema),
   Notification: mongoose.model('Notification', NotificationSchema),
   PasswordToken: mongoose.model('PasswordToken', PasswordTokenSchema),
-  DocumentCopy: mongoose.model('DocumentCopy', DocumentCopySchema)
+  DocumentCopy: mongoose.model('DocumentCopy', DocumentCopySchema),
+  Backup:       mongoose.model('Backup', BackupSchema)
 };
