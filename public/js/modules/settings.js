@@ -78,43 +78,66 @@
           el('label', { class: 'check check--plain alert-switch' }, [globalAlerts,
             meta.mailEnabled ? ' Send email alerts to all users' : ' Email alerts (email is not set up on the server)'])
         ]));
+        // Five tidy columns; the less used actions sit behind More.
+        const small = (text, cls) => el('div', { class: 'cell-sub' + (cls ? ' ' + cls : '') }, text);
+        const accessOf = (u) => u.role === 'admin' ? 'Administrator · all units'
+          : (u.unitKeys.length ? u.unitKeys.map(unitName).join(', ') : (u.signerRoles.length ? 'All units' : 'No unit'));
+        const alertsOf = (u) => !u.email ? 'No email' : !meta.settings.emailAlerts ? 'Off for everyone'
+          : u.emailAlertsBlocked ? 'Off (by admin)' : u.emailAlerts ? 'On' : 'Off (by user)';
         panel.appendChild(ui.table(
           [
-            { label: 'Name', value: u => [u.title, u.fullName].filter(Boolean).join(' ') },
-            { label: 'Username', key: 'username' },
-            { label: 'Email', value: u => u.email || '—' },
-            { label: 'Role', value: u => u.role === 'admin' ? 'Administrator' : 'Unit User' },
-            { label: 'Units', value: u => u.role === 'admin' ? 'All' : (u.unitKeys.length ? u.unitKeys.map(unitName).join(', ') : (u.signerRoles.length ? 'All' : 'None')) },
-            { label: 'Privileges', value: u => u.role === 'admin' ? 'Full' : (u.privileges.join(', ') || 'none') },
-            { label: 'Email Alerts', value: u => !u.email ? 'No email' : !meta.settings.emailAlerts ? 'Off for everyone'
-              : u.emailAlertsBlocked ? 'Off (by admin)' : u.emailAlerts ? 'On' : 'Off (by user)' },
-            { label: 'Signs As', value: u => u.signerRoles.map(r => meta.signerRoles[r]).join(', ') || '—' },
-            { label: 'Signature', value: u => u.signerRoles.length ? (u.hasSignature && u.hasSigningPin ? 'Ready' : 'Not set up') : '—' },
+            { label: 'User', node: u => el('div', null, [
+              el('div', { class: 'cell-main' }, [u.title, u.fullName].filter(Boolean).join(' ')),
+              small([u.username, u.email].filter(Boolean).join(' · '))]) },
+            { label: 'Access', node: u => el('div', null, [
+              el('div', null, accessOf(u)),
+              small(u.role === 'admin' ? 'Full access' : (u.privileges.join(', ') || 'No privileges'))]) },
+            { label: 'Signs As', node: u => u.signerRoles.length ? el('div', null, [
+              el('div', null, u.signerRoles.map(r => meta.signerRoles[r] || r).join(', ')),
+              small(u.hasSignature && u.hasSigningPin ? 'Signature ready' : 'Signature not set up', u.hasSignature && u.hasSigningPin ? '' : 'cell-sub--warn')]) : el('span', { class: 'muted' }, '—') },
+            { label: 'Email Alerts', value: alertsOf },
             { label: 'Status', node: u => el('span', { class: 'badge ' + (u.active ? 'badge--final' : 'badge--revoked') }, u.active ? 'Active' : 'Inactive') }
           ],
           users,
           [
             { label: 'Edit', onClick: u => userForm(u, units) },
-            { label: 'Email Reset Link', show: u => meta.mailEnabled && u.email && u.active, onClick: u => emailLink(u) },
-            { label: u => meta.mailEnabled && u.email ? 'One Time Password' : 'Reset Password', onClick: async u => {
-              if (!confirm(`Give ${u.username} a new one time password?`)) return;
-              try { const r = await api.post(`/admin/users/${u.id}/reset-password`); showTempPassword(u.username, r.tempPassword); }
-              catch (e) { ui.toast(e.message, 'error'); }
-            } },
-            { label: 'Reset PIN', show: u => u.hasSigningPin, onClick: async u => {
-              if (!confirm(`Clear ${u.username}'s signing PIN? They will set a new one under My Signature.`)) return;
-              try { await api.post(`/admin/users/${u.id}/reset-pin`); ui.toast('Signing PIN cleared.', 'success'); renderUsers(); }
-              catch (e) { ui.toast(e.message, 'error'); }
-            } },
-            { label: u => u.active ? 'Deactivate' : 'Activate', class: 'btn--danger', onClick: async u => {
-              if (u.active && !confirm(`Deactivate ${u.username}? They will no longer be able to sign in. Documents they signed stay valid.`)) return;
-              try {
-                if (u.active) await api.del('/admin/users/' + u.id); else await api.patch('/admin/users/' + u.id, { active: true });
-                renderUsers();
-              } catch (e) { ui.toast(e.message, 'error'); }
-            } }
+            { label: 'More ▾', onClick: u => userActions(u) }
           ]
         ));
+      }
+
+      // The other actions for one user, each with what it does.
+      function userActions(u) {
+        let dialog;
+        const close = () => dialog && dialog.close();
+        const run = (fn) => async () => { close(); await fn(); };
+        const item = (label, help, onClick, cls) => el('div', { class: 'action-item' }, [
+          el('button', { class: 'btn btn--small ' + (cls || 'btn--ghost'), onclick: run(onClick) }, label),
+          el('span', { class: 'muted' }, help)]);
+        const items = [
+          meta.mailEnabled && u.email && u.active ? item('Email Reset Link', `Emails ${u.email} a link to choose a new password.`, () => emailLink(u)) : null,
+          item(meta.mailEnabled && u.email ? 'One Time Password' : 'Reset Password', 'Shows a new password here for you to give them privately.', async () => {
+            if (!confirm(`Give ${u.username} a new one time password?`)) return;
+            try { const r = await api.post(`/admin/users/${u.id}/reset-password`); showTempPassword(u.username, r.tempPassword); }
+            catch (e) { ui.toast(e.message, 'error'); }
+          }),
+          u.hasSigningPin ? item('Reset PIN', 'Clears their signing PIN; they set a new one under My Signature.', async () => {
+            if (!confirm(`Clear ${u.username}'s signing PIN? They will set a new one under My Signature.`)) return;
+            try { await api.post(`/admin/users/${u.id}/reset-pin`); ui.toast('Signing PIN cleared.', 'success'); renderUsers(); }
+            catch (e) { ui.toast(e.message, 'error'); }
+          }) : null,
+          item(u.active ? 'Deactivate' : 'Activate', u.active ? 'Stops them signing in. Documents they signed stay valid.' : 'Lets them sign in again.', async () => {
+            if (u.active && !confirm(`Deactivate ${u.username}? They will no longer be able to sign in. Documents they signed stay valid.`)) return;
+            try {
+              if (u.active) await api.del('/admin/users/' + u.id); else await api.patch('/admin/users/' + u.id, { active: true });
+              renderUsers();
+            } catch (e) { ui.toast(e.message, 'error'); }
+          }, u.active ? 'btn--danger' : 'btn--ok')
+        ].filter(Boolean);
+        items.push(el('div', { class: 'action-close' }, [el('button', { class: 'btn btn--ghost', onclick: close }, 'Close')]));
+        ui.modal([u.title, u.fullName].filter(Boolean).join(' ') + ` (${u.username})`, el('div', { class: 'action-list' }, items), {
+          noFooter: true, onOpen: (o) => { dialog = o; }
+        });
       }
 
       async function userForm(existing, units) {

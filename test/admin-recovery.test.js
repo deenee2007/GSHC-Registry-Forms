@@ -12,7 +12,7 @@ const DB = (process.env.TEST_MONGODB_URI || 'mongodb://127.0.0.1:27017/gshc_regi
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const { databaseName } = require('../src/config');
-const { resetAdmin, report, updateFormConfigs } = require('../src/services/seed');
+const { resetAdmin, report, updateFormConfigs, retireRoles } = require('../src/services/seed');
 const { User, FormConfig } = require('../src/models');
 
 before(async () => { await mongoose.connect(DB); await mongoose.connection.dropDatabase(); });
@@ -70,14 +70,14 @@ test('startup report names the database and flags accounts from another app', as
   assert.ok(logs.some(l => /not created by this app/.test(l)));
 });
 
-test('the public auction receipt rule gains the Chief Registrar and Director of Litigation once, unless the admin changed it', async () => {
+test('the public auction receipt rule gains the Chief Registrar once, unless the admin changed it', async () => {
   const old = [{ role: 'deputy_sheriff', label: 'Deputy Sheriff' }, { role: 'chief_bailiff', label: 'Chief Bailiff' }];
   await FormConfig.deleteMany({});
   await mongoose.connection.collection('appmeta').deleteMany({ _id: /^rule:/ });
   await FormConfig.create({ formType: 'public-auction-receipt', signers: old });
   await updateFormConfigs(() => {});
   let cfg = await FormConfig.findOne({ formType: 'public-auction-receipt' });
-  assert.deepEqual(cfg.signers.map(s => s.role), ['deputy_sheriff', 'chief_bailiff', 'chief_registrar', 'director_of_litigation']);
+  assert.deepEqual(cfg.signers.map(s => s.role), ['deputy_sheriff', 'chief_bailiff', 'chief_registrar']);
 
   // The admin later goes back to two signers; a restart leaves that alone.
   cfg.signers = old; await cfg.save();
@@ -92,4 +92,22 @@ test('the public auction receipt rule gains the Chief Registrar and Director of 
   await updateFormConfigs(() => {});
   cfg = await FormConfig.findOne({ formType: 'public-auction-receipt' });
   assert.deepEqual(cfg.signers.map(s => s.role), ['chief_bailiff']);
+});
+
+test('the Director of Litigation role is retired: holders become Deputy Sheriff, rules drop it', async () => {
+  await User.collection.insertOne({ username: 'dol', fullName: 'Director', role: 'user', signerRoles: ['director_of_litigation'], unitKeys: [], privileges: [] });
+  await User.collection.insertOne({ username: 'both', fullName: 'Both', role: 'user', signerRoles: ['deputy_sheriff', 'director_of_litigation'], unitKeys: [], privileges: [] });
+  await FormConfig.deleteMany({});
+  await FormConfig.collection.insertOne({ formType: 'public-auction-receipt', signers: [
+    { role: 'deputy_sheriff', label: 'Deputy Sheriff' }, { role: 'chief_bailiff', label: 'Chief Bailiff' },
+    { role: 'chief_registrar', label: 'Chief Registrar' }, { role: 'director_of_litigation', label: 'Director of Litigation' }] });
+  const logs = [];
+  await retireRoles(m => logs.push(m));
+  assert.deepEqual((await User.findOne({ username: 'dol' })).signerRoles, ['deputy_sheriff']);
+  assert.deepEqual((await User.findOne({ username: 'both' })).signerRoles, ['deputy_sheriff']);
+  const cfg = await FormConfig.findOne({ formType: 'public-auction-receipt' });
+  assert.deepEqual(cfg.signers.map(s => s.role), ['deputy_sheriff', 'chief_bailiff', 'chief_registrar']);
+  assert.ok(logs.some(l => /2 user\(s\) moved/.test(l)));
+  // The users can be saved again: no role outside the list is left.
+  await (await User.findOne({ username: 'dol' })).validate(['signerRoles']);
 });

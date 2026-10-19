@@ -266,10 +266,9 @@
       { section: 'Date' },
       { name: 'receiptDate', label: 'Date of Receipt', type: 'date', required: true },
       { section: 'Signatories' },
-      { name: 'deputySheriffName', label: 'Deputy Sheriff Name', required: true },
+      { name: 'deputySheriffName', label: 'Deputy Sheriff (Director of Litigation) Name', required: true },
       { name: 'chiefBailiffName', label: 'Chief Bailiff Name', required: true },
-      { name: 'chiefRegistrarName', label: 'Chief Registrar Name' },
-      { name: 'directorLitigationName', label: 'Director of Litigation Name' }
+      { name: 'chiefRegistrarName', label: 'Chief Registrar Name' }
     ]
   },
 

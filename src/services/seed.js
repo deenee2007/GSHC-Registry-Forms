@@ -6,7 +6,7 @@ const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const config = require('../config');
 const catalogue = require('../forms/catalogue');
-const { DEFAULT_SIGNERS, RULE_UPDATES } = require('../forms/signers');
+const { DEFAULT_SIGNERS, RULE_UPDATES, RETIRED_ROLES } = require('../forms/signers');
 const mongoose = require('mongoose');
 const { User, Unit, FormConfig, AuditLog } = require('../models');
 
@@ -28,6 +28,20 @@ async function seedFormConfigs() {
   const missing = Object.keys(catalogue.forms).filter(k => !existing.has(k));
   if (missing.length) {
     await FormConfig.insertMany(missing.map(formType => ({ formType, signers: DEFAULT_SIGNERS[formType] || [] })));
+  }
+}
+
+// A retired signing role: its holders get the role that replaces it, and
+// it leaves every signing rule. Signed documents keep their lines as signed.
+async function retireRoles(log = console.log) {
+  for (const [old, to] of Object.entries(RETIRED_ROLES)) {
+    const holders = await User.collection.countDocuments({ signerRoles: old });
+    await User.collection.updateMany({ signerRoles: old }, { $addToSet: { signerRoles: to } });
+    await User.collection.updateMany({ signerRoles: old }, { $pull: { signerRoles: old } });
+    const rules = await FormConfig.collection.updateMany({ 'signers.role': old }, { $pull: { signers: { role: old } } });
+    if (holders || rules.modifiedCount) {
+      log(`  Signing role "${old}" retired: ${holders} user(s) moved to "${to}", ${rules.modifiedCount} signing rule(s) updated.`);
+    }
   }
 }
 
@@ -135,6 +149,7 @@ async function report(log = console.log) {
 async function seedAll(log = console.log) {
   await seedUnits();
   await seedFormConfigs();
+  await retireRoles(log);
   await updateFormConfigs(log);
   await fillCaseNumbers(log);
   const created = await seedAdmin(log);
@@ -142,4 +157,4 @@ async function seedAll(log = console.log) {
   return created;
 }
 
-module.exports = { seedAll, resetAdmin, report, updateFormConfigs, fillCaseNumbers, SEED_UNITS };
+module.exports = { seedAll, resetAdmin, report, updateFormConfigs, retireRoles, fillCaseNumbers, SEED_UNITS };
