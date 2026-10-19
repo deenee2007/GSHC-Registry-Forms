@@ -11,6 +11,7 @@ async function main() {
   await mongoose.connect(config.mongoUri, { serverSelectionTimeoutMS: 15000 });
   await seedAll();
   await report();
+  require('./src/services/backup').start();
   const app = createApp();
   app.listen(config.port, () => {
     console.log('====================================================');

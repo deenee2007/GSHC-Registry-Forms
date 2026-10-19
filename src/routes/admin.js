@@ -1,6 +1,6 @@
 /*
  * src/routes/admin.js — Settings: users, units, form access and signing
- * rules, and the audit log. Administrators only.
+ * rules, backups and the audit log. Administrators only.
  */
 const express = require('express');
 const mongoose = require('mongoose');
@@ -12,6 +12,7 @@ const mail = require('../services/mail');
 const links = require('../services/passwordLinks');
 const settings = require('../services/settings');
 const audit = require('../services/audit');
+const backup = require('../services/backup');
 const { HttpError, requireLogin, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
@@ -261,6 +262,40 @@ router.get('/export', wrap(async (req, res) => {
     first = false;
   }
   res.end(']');
+}));
+
+// ── Automatic backups ──
+router.get('/backups', wrap(async (req, res) => {
+  const { Backup, DocumentCopy } = require('../models');
+  const [backups, copies, copiesSaved] = await Promise.all([
+    Backup.find({ deleted: false }).sort({ at: -1 }).limit(40).lean(),
+    DocumentCopy.countDocuments(), DocumentCopy.countDocuments({ backedUpAt: { $exists: true } })
+  ]);
+  res.json({ ...backup.status(), copies, copiesSaved,
+    backups: backups.map(b => ({ id: b._id, at: b.at, ok: b.ok, reason: b.reason, by: b.by, bytes: b.bytes,
+      records: b.counts ? b.counts.records : undefined, copiesAdded: b.copiesAdded, error: b.error })) });
+}));
+
+router.post('/backups', wrap(async (req, res) => {
+  let entry;
+  try { entry = await backup.run({ reason: 'manual', by: req.user.username }); }
+  catch (e) { throw Object.assign(new HttpError(e.status || 500, e.message), { expose: true }); }
+  await audit.log(req, 'backup_run', { details: { file: entry.file } });
+  res.status(201).json({ backup: { id: entry._id, at: entry.at, ok: entry.ok, bytes: entry.bytes, copiesAdded: entry.copiesAdded } });
+}));
+
+router.get('/backups/:id/download', wrap(async (req, res) => {
+  const { Backup } = require('../models');
+  const entry = await Backup.findOne({ _id: oid(req.params.id), ok: true, deleted: false });
+  if (!entry) throw new HttpError(404, 'That backup is no longer kept.');
+  let buffer;
+  try { buffer = await backup.read(entry); }
+  catch (e) { throw Object.assign(new HttpError(e.status || 502, e.message), { expose: true }); }
+  await audit.log(req, 'backup_downloaded', { details: { file: entry.file } });
+  res.set('Content-Type', 'application/gzip');
+  res.set('Content-Disposition', `attachment; filename="${entry.file.split('/').pop()}"`);
+  res.set('Cache-Control', 'private, no-store');
+  res.send(buffer);
 }));
 
 // ── Audit log ──

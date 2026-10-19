@@ -2,7 +2,7 @@
  * modules/dashboard.js — Home.
  * Everyone: greeting, what needs their attention, latest notifications.
  * Unit staff: their unit's numbers and quick links to each form.
- * Administrators: system overview, per unit numbers and a records backup.
+ * Administrators: system overview, per unit numbers and the backups.
  */
 (function () {
   window.App = window.App || {};
@@ -15,6 +15,52 @@
   }
   function section(ui, title, body) {
     return ui.el('div', { class: 'dash-section' }, [ui.el('h2', null, title), body]);
+  }
+
+  const when = (d) => new Date(d).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
+  const size = (n) => n == null ? '' : n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`;
+
+  // The automatic daily backup: how it stands, the files kept, Back up now.
+  async function renderBackups(box, ctx) {
+    const { ui, api } = ctx;
+    let info;
+    try { info = await api.get('/admin/backups'); }
+    catch (e) { box.replaceChildren(ui.el('p', { class: 'muted' }, 'Backup details are not available offline.')); return; }
+    const last = info.backups.find(b => b.ok);
+    const failed = info.backups[0] && !info.backups[0].ok ? info.backups[0] : null;
+    const kids = [];
+    if (!info.enabled) {
+      kids.push(ui.el('div', { class: 'notice notice--warn' }, 'Automatic backups are OFF because Cloudinary is not set up on the server (CLOUDINARY_URL). Use the download below until it is.'));
+    } else {
+      kids.push(ui.el('p', null, last
+        ? `Last backup: ${when(last.at)} (${last.records} records). A backup is made every day and kept ${info.keepDays} days, in ${info.where}. Signed copies backed up: ${info.copiesSaved} of ${info.copies}.`
+        : `No backup has been made yet. One is made every day and kept ${info.keepDays} days, in ${info.where}.`));
+      if (failed) kids.push(ui.el('div', { class: 'notice notice--warn' }, `The latest backup, at ${when(failed.at)}, failed: ${failed.error}. The system tries again every hour.`));
+    }
+    const runBtn = ui.el('button', { class: 'btn btn--primary', disabled: info.enabled ? null : true, onclick: async () => {
+      runBtn.disabled = true; runBtn.textContent = 'Backing up…';
+      try { await api.post('/admin/backups', {}); ui.toast('Backup saved.', 'success'); }
+      catch (e) { ui.toast(e.message, 'error', 8000); }
+      renderBackups(box, ctx);
+    } }, '⟳ Back up now');
+    kids.push(ui.el('div', { class: 'dash-links' }, [
+      runBtn,
+      ui.el('a', { class: 'btn btn--ghost', href: '/api/admin/export', download: '' }, '⬇ Download all records now (JSON)')
+    ]));
+    const kept = info.backups.filter(b => b.ok).slice(0, 10);
+    if (kept.length) {
+      kids.push(ui.table([
+        { label: 'Made', value: b => when(b.at) },
+        { label: 'How', value: b => b.reason === 'manual' ? `Back up now (${b.by || ''})` : 'Daily' },
+        { label: 'Records', value: b => b.records ?? '' },
+        { label: 'New signed copies', value: b => b.copiesAdded || 0 },
+        { label: 'Size', value: b => size(b.bytes) }
+      ], kept, [{ label: '⬇ Download', onClick: b => {
+        const a = ui.el('a', { href: `/api/admin/backups/${b.id}/download`, download: '' });
+        document.body.appendChild(a); a.click(); a.remove();
+      } }]));
+    }
+    box.replaceChildren(...kids);
   }
 
   window.App.dashboard = {
@@ -105,10 +151,9 @@
           unitRows,
           [{ label: 'Open', onClick: r => router.loadUnit(r.unit) }]
         )));
-        dash.appendChild(section(ui, 'Backup', ui.el('div', { class: 'dash-links' }, [
-          ui.el('a', { class: 'btn btn--ghost', href: '/api/admin/export', download: '' }, '⬇ Download all records (JSON)'),
-          ui.el('span', { class: 'muted' }, 'MongoDB Atlas also keeps automatic backups of the database.')
-        ])));
+        const backups = ui.el('div');
+        dash.appendChild(section(ui, 'Backups', backups));
+        renderBackups(backups, ctx);
       }
 
       // ── Notifications ──

@@ -5,7 +5,7 @@
  * when online. The last good copy of each page, script and API answer is
  * kept, and used only when the network fails.
  */
-const SHELL = 'gshc-shell-v10';
+const SHELL = 'gshc-shell-v11';
 const API = 'gshc-api';
 
 const SHELL_FILES = [
@@ -40,8 +40,10 @@ self.addEventListener('fetch', (event) => {
   const req = event.request;
   const url = new URL(req.url);
   if (req.method !== 'GET' || url.origin !== self.location.origin) return;
-  // Never keep verification answers or password reset links on the computer.
-  if (url.pathname.startsWith('/api/verify') || url.pathname.startsWith('/api/auth/reset') || url.pathname === '/healthz') return;
+  // Never keep verification answers, password reset links or backup files
+  // (which hold the whole database) on the computer.
+  if (url.pathname.startsWith('/api/verify') || url.pathname.startsWith('/api/auth/reset') || url.pathname === '/healthz' ||
+      url.pathname.startsWith('/api/admin/backups') || url.pathname === '/api/admin/export') return;
 
   if (url.pathname.startsWith('/api/')) {
     event.respondWith(

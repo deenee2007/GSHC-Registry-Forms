@@ -72,7 +72,8 @@ function createApp() {
     if (err.type === 'entity.parse.failed') { status = 400; message = 'Malformed request.'; }
     if (status >= 500) {
       console.error(err);
-      message = 'Something went wrong on the server. Please try again.';
+      // Unexpected errors stay vague; an error meant for the user (expose) keeps its words.
+      if (!err.expose) message = 'Something went wrong on the server. Please try again.';
     }
     res.status(status).json({ error: message });
   });

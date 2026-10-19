@@ -65,6 +65,13 @@ const config = {
   inviteHours: 24,
   resetMinutes: 60,
 
+  // Daily backup (src/services/backup.js). Stored privately on Cloudinary
+  // when CLOUDINARY_URL is set; otherwise in BACKUP_DIR on this computer
+  // (local development only, since a Render disk is wiped on every deploy).
+  backupDir: (process.env.BACKUP_DIR || (isProd ? '' : 'backups')).trim(),
+  backupKeepDays: parseInt(process.env.BACKUP_KEEP_DAYS, 10) || 30,
+  backupEnabled: !/^(0|false|no|off)$/i.test((process.env.BACKUP_ENABLED || '').trim()),
+
   loginMaxAttempts: 5,
   loginLockMinutes: 15,
   pinMaxAttempts: 5,
