@@ -29,9 +29,10 @@ let _dummy = null;
 const dummyHash = async () => (_dummy = _dummy || await pw.hash('not-a-real-password'));
 
 router.post('/login', loginLimiter, wrap(async (req, res) => {
+  // Email address or username; staff now sign in with their email.
   const username = String(req.body.username || '').trim().toLowerCase();
   const password = String(req.body.password || '');
-  const user = username ? await User.findOne({ username }) : null;
+  const user = username ? (await User.findOne({ username }) || await User.findOne({ email: username })) : null;
 
   if (!user || !user.active) {
     await pw.compare(password, await dummyHash()); // even out timing

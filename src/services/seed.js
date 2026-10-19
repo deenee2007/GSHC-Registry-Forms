@@ -73,6 +73,23 @@ async function fillCaseNumbers(log = console.log) {
   if (n) log(`  Case numbers and court dates filled in for ${n} earlier record(s).`);
 }
 
+// Staff sign in with their email: once, every account that has an email
+// address takes it as its username (the built in admin account keeps
+// "admin", which ADMIN_RESET looks for; it can still sign in by email).
+async function usernamesToEmail(log = console.log) {
+  const meta = mongoose.connection.collection('appmeta');
+  if (await meta.findOne({ _id: 'usernamesToEmail' })) return;
+  let n = 0;
+  for (const u of await User.find({ email: { $type: 'string' }, username: { $ne: config.adminUsername } })) {
+    if (u.username === u.email) continue;
+    if (await User.exists({ username: u.email, _id: { $ne: u._id } })) continue; // taken: keep the old username
+    await User.collection.updateOne({ _id: u._id }, { $set: { username: u.email } });
+    n++;
+  }
+  await meta.updateOne({ _id: 'usernamesToEmail' }, { $set: { at: new Date(), switched: n } }, { upsert: true });
+  if (n) log(`  Sign in by email: ${n} account(s) now use their email address as username.`);
+}
+
 async function seedAdmin(log = console.log) {
   if (await User.countDocuments() > 0) return null;
   const password = config.adminPassword || crypto.randomBytes(9).toString('base64url');
@@ -152,9 +169,10 @@ async function seedAll(log = console.log) {
   await retireRoles(log);
   await updateFormConfigs(log);
   await fillCaseNumbers(log);
+  await usernamesToEmail(log);
   const created = await seedAdmin(log);
   if (config.adminReset) await resetAdmin({ log });
   return created;
 }
 
-module.exports = { seedAll, resetAdmin, report, updateFormConfigs, retireRoles, fillCaseNumbers, SEED_UNITS };
+module.exports = { seedAll, resetAdmin, report, updateFormConfigs, retireRoles, fillCaseNumbers, usernamesToEmail, SEED_UNITS };
