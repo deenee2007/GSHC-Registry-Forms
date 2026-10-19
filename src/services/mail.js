@@ -62,7 +62,9 @@ function inviteMessage(user, link, hours) {
       heading: 'Set up your account',
       paragraphs: [
         `Dear ${user.fullName},`,
-        `An account has been created for you on the GSHC Registry Forms System. Your username is "${user.username}".`,
+        user.username === user.email
+          ? `An account has been created for you on the GSHC Registry Forms System. You sign in with your email address, ${user.email}.`
+          : `An account has been created for you on the GSHC Registry Forms System. Your username is "${user.username}".`,
         `Use the button below to choose your password. The link works once and expires in ${hours} hours.`
       ],
       button: 'Choose my password', link,

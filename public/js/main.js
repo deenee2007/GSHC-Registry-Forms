@@ -14,7 +14,7 @@
 
   function loginScreen(message, isError) {
     ui.clear(root);
-    const username = ui.el('input', { type: 'text', placeholder: 'Username', autocomplete: 'username', autocapitalize: 'none' });
+    const username = ui.el('input', { type: 'text', placeholder: 'Email or username', autocomplete: 'username', autocapitalize: 'none', 'aria-label': 'Email or username' });
     const password = ui.el('input', { type: 'password', placeholder: 'Password', autocomplete: 'current-password' });
     const msg = ui.el('p', { class: 'login__msg' + (isError === false ? ' login__msg--info' : '') }, message || '');
     const btn = ui.el('button', { class: 'btn btn--primary btn--block', onclick: submit }, 'Sign In');

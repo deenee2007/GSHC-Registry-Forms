@@ -36,7 +36,7 @@
         return { node: wrap, values: () => Object.entries(map).filter(([, cb]) => cb.checked).map(([v]) => v) };
       };
 
-      function showTempPassword(username, pw, note) {
+      function showTempPassword(u, pw, note) {
         const copyBtn = el('button', { class: 'btn btn--primary', type: 'button', onclick: async () => {
           const ok = await ui.copyText(pw);
           copyBtn.textContent = ok ? '✔ Copied' : 'Select and copy';
@@ -44,7 +44,7 @@
         } }, '📋 Copy');
         ui.modal('Temporary Password', el('div', null, [
           note ? el('div', { class: 'notice notice--warn' }, note) : null,
-          el('p', null, `Give this one time password to ${username}. They must change it when they first sign in. It will not be shown again.`),
+          el('p', null, `Give this one time password to ${u.fullName}. They sign in with ${u.username} and must change the password the first time. It will not be shown again.`),
           el('div', { class: 'temp-pw-row' }, [el('div', { class: 'temp-pw' }, pw), copyBtn])
         ]), { confirmText: 'Done', cancelText: 'Close' });
       }
@@ -88,7 +88,7 @@
           [
             { label: 'User', node: u => el('div', null, [
               el('div', { class: 'cell-main' }, [u.title, u.fullName].filter(Boolean).join(' ')),
-              small([u.username, u.email].filter(Boolean).join(' · '))]) },
+              small([u.email, u.username !== u.email ? `username: ${u.username}` : ''].filter(Boolean).join(' · '))]) },
             { label: 'Access', node: u => el('div', null, [
               el('div', null, accessOf(u)),
               small(u.role === 'admin' ? 'Full access' : (u.privileges.join(', ') || 'No privileges'))]) },
@@ -118,7 +118,7 @@
           meta.mailEnabled && u.email && u.active ? item('Email Reset Link', `Emails ${u.email} a link to choose a new password.`, () => emailLink(u)) : null,
           item(meta.mailEnabled && u.email ? 'One Time Password' : 'Reset Password', 'Shows a new password here for you to give them privately.', async () => {
             if (!confirm(`Give ${u.username} a new one time password?`)) return;
-            try { const r = await api.post(`/admin/users/${u.id}/reset-password`); showTempPassword(u.username, r.tempPassword); }
+            try { const r = await api.post(`/admin/users/${u.id}/reset-password`); showTempPassword(u, r.tempPassword); }
             catch (e) { ui.toast(e.message, 'error'); }
           }),
           u.hasSigningPin ? item('Reset PIN', 'Clears their signing PIN; they set a new one under My Signature.', async () => {
@@ -142,7 +142,7 @@
 
       async function userForm(existing, units) {
         const v = existing || { role: 'user', unitKeys: [], privileges: ['view', 'create', 'edit', 'finalize', 'print'], signerRoles: [] };
-        const username = el('input', { type: 'text', value: v.username || '', autocapitalize: 'none' });
+        const username = el('input', { type: 'text', value: v.username || '', autocapitalize: 'none', placeholder: existing ? '' : 'Leave empty to use the email' });
         if (existing) username.disabled = true;
         const fullName = el('input', { type: 'text', value: v.fullName || '' });
         const title = el('input', { type: 'text', value: v.title || '', placeholder: 'e.g. Hon. Justice' });
@@ -172,11 +172,11 @@
         sync();
 
         const body = el('div', { class: 'form-grid' }, [
-          el('label', { class: 'form-field' }, [el('span', { class: 'form-field__label' }, 'Username'), username]),
-          el('label', { class: 'form-field' }, [el('span', { class: 'form-field__label' }, 'Role'), role]),
           el('label', { class: 'form-field' }, [el('span', { class: 'form-field__label' }, 'Full Name'), fullName]),
           el('label', { class: 'form-field' }, [el('span', { class: 'form-field__label' }, 'Title (printed with signature)'), title]),
-          el('label', { class: 'form-field form-field--full' }, [el('span', { class: 'form-field__label' }, 'Email (for invitations and password reset)'), email]),
+          el('label', { class: 'form-field form-field--full' }, [el('span', { class: 'form-field__label' }, 'Email (they sign in with it; also for invitations and password reset)'), email]),
+          el('label', { class: 'form-field' }, [el('span', { class: 'form-field__label' }, existing ? 'Signs in as' : 'Username (only for staff without email)'), username]),
+          el('label', { class: 'form-field' }, [el('span', { class: 'form-field__label' }, 'Role'), role]),
           inviteRow,
           meta.mailEnabled ? alertsRow : null,
           unitRow, privRow, signRow
@@ -192,7 +192,7 @@
             } else {
               const r = await api.post('/admin/users', { ...payload, username: username.value, sendInvite: !inviteRow.hidden && invite.checked });
               if (r.invited) ui.toast(`Invitation sent to ${r.user.email}. The link expires in 24 hours.`, 'success', 6000);
-              else showTempPassword(r.user.username, r.tempPassword, r.emailError ? `The invitation email could not be sent (${r.emailError}). Give this password to the user instead.` : null);
+              else showTempPassword(r.user, r.tempPassword, r.emailError ? `The invitation email could not be sent (${r.emailError}). Give this password to the user instead.` : null);
             }
             renderUsers();
             return true;

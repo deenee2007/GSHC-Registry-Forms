@@ -12,6 +12,7 @@ const mail = require('../services/mail');
 const links = require('../services/passwordLinks');
 const settings = require('../services/settings');
 const audit = require('../services/audit');
+const config = require('../config');
 const backup = require('../services/backup');
 const { HttpError, requireLogin, requireAdmin } = require('../middleware/auth');
 
@@ -24,6 +25,11 @@ const oid = (id) => {
   return id;
 };
 
+// A username is either an email address or a short name (letters, numbers,
+// dots, dashes, underscores) for staff who have no email.
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const validUsername = (u) => /^[a-z0-9._-]{3,40}$/.test(u) || (EMAIL.test(u) && u.length <= 120);
+
 async function cleanUserInput(body, units) {
   const out = {};
   if (body.fullName !== undefined) {
@@ -33,7 +39,7 @@ async function cleanUserInput(body, units) {
   if (body.title !== undefined) out.title = String(body.title).trim().slice(0, 80);
   if (body.email !== undefined) {
     const email = String(body.email || '').trim().toLowerCase();
-    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, 'Enter a valid email address.');
+    if (email && !EMAIL.test(email)) throw new HttpError(400, 'Enter a valid email address.');
     out.email = email || undefined;
   }
   if (body.role !== undefined) {
@@ -78,10 +84,12 @@ router.get('/users', wrap(async (req, res) => {
 
 router.post('/users', wrap(async (req, res) => {
   const units = await Unit.find();
-  const username = String(req.body.username || '').trim().toLowerCase();
-  if (!/^[a-z0-9._-]{3,40}$/.test(username)) throw new HttpError(400, 'Username must be 3 to 40 letters, numbers, dots or underscores.');
-  if (await User.exists({ username })) throw new HttpError(409, 'That username is already taken.');
   const fields = await cleanUserInput(req.body, units);
+  // With an email address, the email is the username unless one is given.
+  const username = (String(req.body.username || '').trim() || fields.email || '').toLowerCase();
+  if (!username) throw new HttpError(400, 'Enter the email address, or a username for staff without email.');
+  if (!validUsername(username)) throw new HttpError(400, 'Username must be an email address, or 3 to 40 letters, numbers, dots or underscores.');
+  if (await User.exists({ $or: [{ username }, { email: username }] })) throw new HttpError(409, 'That username or email is already taken.');
   if (!fields.fullName) throw new HttpError(400, 'Full name is required.');
   if (fields.email && await User.exists({ email: fields.email })) throw new HttpError(409, 'Another account already uses that email address.');
   const invite = !!req.body.sendInvite && !!fields.email && mail.enabled();
@@ -126,8 +134,15 @@ router.patch('/users/:id', wrap(async (req, res) => {
   const user = await User.findById(oid(req.params.id));
   if (!user) throw new HttpError(404, 'User not found.');
   const fields = await cleanUserInput(req.body, await Unit.find());
-  if (fields.email && await User.exists({ email: fields.email, _id: { $ne: user._id } })) {
+  if (fields.email && await User.exists({ $or: [{ email: fields.email }, { username: fields.email }], _id: { $ne: user._id } })) {
     throw new HttpError(409, 'Another account already uses that email address.');
+  }
+  // Signing in by email: when the email changes, or is added for a user
+  // who had none, the username follows it (not the built in admin account,
+  // which the Render recovery looks for by name).
+  if (fields.email && fields.email !== user.email && user.username !== config.adminUsername &&
+      (!user.email || user.username === user.email)) {
+    fields.username = fields.email;
   }
   if (String(user._id) === String(req.user._id) && (fields.role === 'user' || fields.active === false)) {
     throw new HttpError(400, 'You cannot remove your own administrator access.');

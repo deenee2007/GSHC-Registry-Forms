@@ -111,6 +111,13 @@ enter `MONGODB_URI`, `CLOUDINARY_URL` and `ADMIN_PASSWORD` when asked.
 for daily use, because free instances sleep when idle.
 
 ## Passwords and email
+* **Signing in:** staff sign in with their **email address** (or a username,
+  for staff who have no email). A new user added with an email needs no
+  username: the email is used. On the first start after this change, every
+  existing account with an email address switched to it (once). The built in
+  `admin` account keeps the username "admin", which ADMIN_RESET looks for,
+  and can also sign in with its email. When an administrator adds or
+  changes someone's email, they sign in with the new email.
 * **New accounts:** if the user has an email address, the admin can email
   an invitation link; the user chooses their own password (link valid 24
   hours, works once). Without email, the admin gets a one time password
