@@ -141,6 +141,11 @@ When a document is signed, the server keeps a copy exactly as signed: one
 HTML file containing its styles, signatures and QR code. **Download Copy**
 (in the document view and My Submissions) saves it; it opens and prints in
 any browser, even offline. Revoked documents download with a REVOKED notice.
+**Print** on a signed document also prints this copy, so a document always
+prints exactly as it was signed, even after a form's wording is corrected.
+
+When a form gains new boxes, a draft saved before the change shows a notice
+naming them when it is next edited.
 
 ## Units
 Settings → Units → **+ Add Unit** adds either another **Court Registry**

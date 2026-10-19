@@ -219,7 +219,8 @@ router.get('/:id/copy', wrap(async (req, res) => {
   if (!canView(req.user, rec)) throw new HttpError(403, 'You do not have access to this record.');
   if (!['final', 'revoked'].includes(rec.status)) throw new HttpError(409, 'Only signed documents have a saved copy.');
   const html = await documentCopy.get(rec);
-  await audit.log(req, 'copy_downloaded', { record: rec });
+  // Printing fetches the copy too; the print itself is logged by /printed.
+  if (!req.query.print) await audit.log(req, 'copy_downloaded', { record: rec });
   res.set('Content-Type', 'text/html; charset=utf-8');
   res.set('Content-Disposition', `attachment; filename="${documentCopy.fileName(rec)}"`);
   res.set('Cache-Control', 'private, no-store');

@@ -37,7 +37,7 @@ test('execution Affidavit of Service: readable date, no repeated name, no "This 
 
 test('Writ of Attachment and Sale of Goods: corrected phrases', () => {
   const t = text('writ-attachment-goods', { judgmentDate: '2026-08-01', defaultDate: '2026-09-01' });
-  assert.match(t, /WHEREAS on the 1 day of August/);
+  assert.match(t, /WHEREAS on the 1st day of August 2026/);
   assert.doesNotMatch(t, /on the this/);
   assert.match(t, /upon the application of the Plaintiff it was/);
   assert.match(t, /seizing and taking any money/);
@@ -62,7 +62,7 @@ test('registry forms: subpoena name and heading, affidavit of means, warrants, b
 
 test('Notice of Appeal Fixed: corrected wording and one date field', () => {
   const t = text('notice-appeal-fixed', { hearingDate: '2026-11-15', originalDecisionDate: '2026-09-01', depositAmount: '100' });
-  assert.match(t, /fixed in this Hon\. Court on the 15 day of November 20 ?26/);
+  assert.match(t, /fixed in this Hon\. Court on the 15th day of November 2026/);
   assert.match(t, /decision of your Court on 1\/9\/2026/);
   assert.match(t, /file two copies of the Notice of Appeal/);
   assert.match(t, /Form 2 of the First Schedule to the Gombe State High Court \(Appeal from Area Court Rules 1960\)/);
@@ -154,4 +154,22 @@ test('personnel letters, notice to vacate, writ of goods', () => {
   assert.match(g, /belonging to the Ali which may be found there, or such part/);
   assert.match(g, /to the value of five pounds ?\)/);
   assert.match(text('writ-attachment-goods', { exemptValue: '₦50,000' }), /to the value of ₦50,000 ?\)/);
+});
+
+/* ---- dates ---------------------------------------------------------------- */
+
+test('dates print as "the 1st day of October 2026" on every form', () => {
+  const cases = [['2026-10-01', '1st'], ['2026-10-02', '2nd'], ['2026-10-03', '3rd'], ['2026-10-11', '11th'], ['2026-10-12', '12th'], ['2026-10-13', '13th'], ['2026-10-21', '21st'], ['2026-10-22', '22nd'], ['2026-10-31', '31st']];
+  for (const [date, day] of cases) {
+    assert.match(text('civil-summons', { issueDate: date }), new RegExp(`this ${day} day of October 2026`));
+  }
+  assert.match(text('remand-warrant', { returnDate: '2026-11-02' }), /before the 2nd day of November 2026 ?, you shall/);
+  assert.match(text('summons-settle-record', { attendanceDate: '2026-11-03' }), /on the 3rd day of November 2026 at the hour/);
+  assert.match(text('judgment-summons', { applicationDate: '2026-11-04' }), /application: the 4th day of November 2026/);
+  assert.match(text('public-auction-receipt', { receiptDate: '2026-11-05' }), /DATED THIS 5TH DAY OF NOVEMBER 2026/);
+  assert.match(text('court-order', { sittingDate: '2026-10-22' }), /THE 22ND DAY OF OCTOBER/);
+  // A blank date leaves blanks, not "20" and no stray "th".
+  const blank = text('civil-summons', {});
+  assert.match(blank, /Issued at +this +day of +\./);
+  assert.doesNotMatch(blank, / 20 \.|undefined|NaN/);
 });
