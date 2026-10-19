@@ -71,16 +71,15 @@ test('public auction receipt heading', () => {
   assert.match(text('public-auction-receipt', {}), /HIGH COURT PUBLIC AUCTION RECEIPT/);
 });
 
-test('public auction receipt: four signature lines, each digital signature on its own line', () => {
+test('public auction receipt: Chief Bailiff and Deputy Sheriff (Director of Litigation) on top, Chief Registrar below', () => {
   const html = output.render({ formType: 'public-auction-receipt', status: 'final', data: { chiefBailiffName: 'Ibrahim', deputySheriffName: 'Aminu' },
     signatures: [
       { role: 'chief_registrar', label: 'Chief Registrar', name: 'Fatima Bello', imageUrl: 'data:image/png;base64,AA', signedAt: new Date() },
-      { role: 'director_of_litigation', label: 'Director of Litigation', name: 'Yusuf Ali', imageUrl: 'data:image/png;base64,AA', signedAt: new Date() }
+      { role: 'deputy_sheriff', label: 'Deputy Sheriff', name: 'Yusuf Ali', imageUrl: 'data:image/png;base64,AA', signedAt: new Date() }
     ] }, 'Execution / Bailiffs Unit', allForms['public-auction-receipt']);
   const t = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
-  for (const label of ['CHIEF BAILIFF', 'DEPUTY SHERIFF', 'DIRECTOR OF LITIGATION', 'CHIEF REGISTRAR']) assert.match(t, new RegExp(label));
-  assert.match(t, /CHIEF BAILIFF Ibrahim/);
-  assert.match(t, /DIRECTOR OF LITIGATION Yusuf Ali/);
-  assert.match(t, /CHIEF REGISTRAR Fatima Bello/);
+  assert.match(t, /CHIEF BAILIFF Ibrahim .*DEPUTY SHERIFF \(Director of Litigation\) Yusuf Ali .*CHIEF REGISTRAR Fatima Bello/, 'in this order');
+  assert.equal((html.match(/doc-sign-block/g) || []).length, 3, 'three signature lines');
+  assert.doesNotMatch(t, /DIRECTOR OF LITIGATION/, 'no separate Director of Litigation line');
   assert.doesNotMatch(html, /doc-esign/, 'no signature left over below the receipt');
 });

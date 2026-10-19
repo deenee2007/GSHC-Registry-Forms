@@ -125,14 +125,16 @@
     return `<div class="doc-sign-wrap"><div class="doc-sign-block">${sigImage(sig)}<div class="doc-sign">${esc(label)}</div>${sigMeta(sig)}</div></div>`;
   }
 
-  // Several signature lines side by side, two to a row, each with the name
-  // typed on the form until the digital signature is placed.
+  // Several signature lines, two to a row (an odd last one centred below),
+  // each with the name typed on the form until the digital signature is
+  // placed. A line may carry a second title in brackets under it.
   function signGrid(lines) {
-    return `<div class="doc-signgrid">${lines.map(([label, name]) => {
+    return `<div class="doc-signgrid">${lines.map(([label, name, also]) => {
       const sig = claimSignature(label);
+      const title = `${esc(label)}${also ? `<br><span class="doc-sign-also">(${esc(also)})</span>` : ""}`;
       return sig
-        ? `<div class="doc-sign-block">${sigImage(sig)}<div class="doc-sign">${esc(label)}</div>${sigMeta(sig)}</div>`
-        : `<div class="doc-sign-block"><div class="doc-sign">${esc(label)}${name ? `<br>${esc(name)}` : ""}</div></div>`;
+        ? `<div class="doc-sign-block">${sigImage(sig)}<div class="doc-sign">${title}</div>${sigMeta(sig)}</div>`
+        : `<div class="doc-sign-block"><div class="doc-sig-space"></div><div class="doc-sign">${title}${name ? `<br>${esc(name)}` : ""}</div></div>`;
     }).join("")}</div>`;
   }
 
@@ -1077,8 +1079,8 @@
       <p>Being payment for ${L(d.beingPaymentFor)}</p>
       <p>DATED THIS ${dayOf(rd).toUpperCase()}.</p>` +
       signGrid([
-        ['CHIEF BAILIFF', d.chiefBailiffName], ['DEPUTY SHERIFF', d.deputySheriffName],
-        ['DIRECTOR OF LITIGATION', d.directorLitigationName], ['CHIEF REGISTRAR', d.chiefRegistrarName]
+        ['CHIEF BAILIFF', d.chiefBailiffName], ['DEPUTY SHERIFF', d.deputySheriffName, 'Director of Litigation'],
+        ['CHIEF REGISTRAR', d.chiefRegistrarName]
       ]),
       r);
   }

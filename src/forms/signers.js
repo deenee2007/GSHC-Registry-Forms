@@ -16,7 +16,6 @@ const SIGNER_ROLES = {
   registrar:             'Registrar',
   chief_bailiff:         'Chief Bailiff',
   deputy_sheriff:        'Deputy Sheriff',
-  director_of_litigation: 'Director of Litigation',
   commissioner_for_oaths: 'Commissioner for Oaths'
 };
 
@@ -58,9 +57,10 @@ const DEFAULT_SIGNERS = {
   'notice-of-attachment': [{ role: 'chief_registrar', label: 'Chief Registrar' }],
   'statutory-notice-auction': chiefBailiff,
   'request-nscdc-personnel': chiefBailiff,
+  // The Deputy Sheriff is the Director of Litigation.
   'public-auction-receipt': [
     { role: 'deputy_sheriff', label: 'Deputy Sheriff' }, { role: 'chief_bailiff', label: 'Chief Bailiff' },
-    { role: 'chief_registrar', label: 'Chief Registrar' }, { role: 'director_of_litigation', label: 'Director of Litigation' }
+    { role: 'chief_registrar', label: 'Chief Registrar' }
   ],
   'request-police-assistance': chiefBailiff,
   'notice-to-vacate': chiefBailiff,
@@ -75,4 +75,7 @@ const RULE_UPDATES = [
   { id: 'public-auction-receipt-2026-10', formType: 'public-auction-receipt', from: ['deputy_sheriff', 'chief_bailiff'] }
 ];
 
-module.exports = { SIGNER_ROLES, DEFAULT_SIGNERS, RULE_UPDATES };
+// Roles no longer offered, and the role their holders move to.
+const RETIRED_ROLES = { director_of_litigation: 'deputy_sheriff' }; // the same office as the Deputy Sheriff
+
+module.exports = { SIGNER_ROLES, DEFAULT_SIGNERS, RULE_UPDATES, RETIRED_ROLES };
