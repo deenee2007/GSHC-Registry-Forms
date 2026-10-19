@@ -113,4 +113,4 @@ function backupFailedMessage(user, error, link) {
   };
 }
 
-module.exports = { enabled, send, inviteMessage, resetMessage, alertMessage, backupFailedMessage, sent };
+module.exports = { enabled, send, layout, inviteMessage, resetMessage, alertMessage, backupFailedMessage, sent };

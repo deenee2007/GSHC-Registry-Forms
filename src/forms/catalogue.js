@@ -62,7 +62,31 @@ function describe(formType, data) {
                    fields.find(s => /title|party|name|plaintiff|appellant/i.test(s.name));
   const refField = fields.find(s => /no\.?$|number|ref|suitno/i.test(s.name) || /No\./i.test(s.label || ''));
   const text = v => (typeof v === 'string' ? v : '').slice(0, 300);
-  return { ref: refField ? text(data[refField.name]) : '', summary: sumField ? text(data[sumField.name]) : '', caseNos: caseNumbers(formType, data) };
+  return { ref: refField ? text(data[refField.name]) : '', summary: sumField ? text(data[sumField.name]) : '',
+    caseNos: caseNumbers(formType, data), events: courtDates(formType, data) };
+}
+
+// The day (and time) a document calls people to court, for the hearing
+// reminders. Only forms that fix a court date are listed.
+const COURT_DATES = {
+  'hearing-notice':            { date: 'hearingDate', time: 'hearingTime', what: d => d.stage ? `Hearing (${d.stage})` : 'Hearing' },
+  'civil-summons':             { date: 'appearanceDate', time: 'appearanceTime', what: () => 'Defendant to appear (civil summons)' },
+  'criminal-summons':          { date: 'appearanceDate', time: 'appearanceTime', what: () => 'Accused to appear (summons)' },
+  'witness-summons':           { date: 'appearanceDate', time: 'appearanceTime', what: () => 'Witness to appear' },
+  'bail-bond':                 { date: 'appearanceDate', time: 'appearanceTime', what: () => 'Accused on bail to appear' },
+  'subpoena-ad-testificandum': { date: 'attendanceDate', time: 'attendanceTime', what: () => 'Witness to attend (subpoena)' },
+  'subpoena-duces-tecum':      { date: 'attendanceDate', time: 'attendanceTime', what: () => 'Witness to attend with documents' },
+  'order-to-produce-prisoner': { date: 'productionDate', time: 'productionTime', what: () => 'Prisoner to be produced' },
+  'remand-warrant':            { date: 'returnDate', what: () => 'Remand ends: accused to be brought back' },
+  'cause-list':                { date: 'sittingDate', time: 'sittingTime', what: d => `Court sitting: cause list of ${Array.isArray(d.entries) ? d.entries.length : 0} case(s)` },
+  'summons-settle-record':     { date: 'attendanceDate', time: 'attendanceTime', what: () => 'Settling the record of appeal' },
+  'notice-appeal-fixed':       { date: 'hearingDate', what: () => 'Appeal hearing' }
+};
+
+function courtDates(formType, data) {
+  const c = COURT_DATES[formType];
+  if (!c || !data || !/^\d{4}-\d{2}-\d{2}$/.test(String(data[c.date] || ''))) return [];
+  return [{ date: data[c.date], time: c.time ? String(data[c.time] || '').slice(0, 20) : '', what: c.what(data).slice(0, 120) }];
 }
 
 // Suit, case and appeal numbers a form mentions, for the case file. Written
@@ -114,4 +138,4 @@ function cleanData(formType, input) {
   return { data: out };
 }
 
-module.exports = { ...catalogue, MODULES, get, formsForUnit, describe, cleanData, caseNumbers, normalizeCase, CASE_FIELDS };
+module.exports = { ...catalogue, MODULES, get, formsForUnit, describe, cleanData, caseNumbers, normalizeCase, CASE_FIELDS, courtDates };
