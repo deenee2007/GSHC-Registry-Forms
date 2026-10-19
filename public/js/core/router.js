@@ -54,6 +54,7 @@
 
     group('Account');
     _nav.appendChild(navItem('🔑  My Account', () => loadModule('account'), { 'data-nav': 'account' }));
+    _nav.appendChild(navItem('❓  Help', () => window.open('/guide', '_blank', 'noopener'), { 'data-nav': 'help' }));
     if (permissions.isSigner(user)) _nav.appendChild(navItem('🖊  My Signature', () => loadModule('signature'), { 'data-nav': 'signature' }));
     if (permissions.isAdmin(user)) _nav.appendChild(navItem('⚙  Settings', () => loadModule('settings'), { 'data-nav': 'settings' }));
 

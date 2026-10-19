@@ -41,6 +41,7 @@
       ui.el('h1', { class: 'login__title' }, 'Gombe State High Court of Justice'),
       ui.el('p', { class: 'login__sub' }, 'Registry & Units Forms Automation System'),
       username, password, msg, btn, forgot,
+      ui.el('a', { class: 'login__link', href: '/guide', target: '_blank', rel: 'noopener' }, 'User guide'),
       ui.el('p', { class: 'login__foot' }, 'Directorate of ICT')
     ]));
     username.focus();
