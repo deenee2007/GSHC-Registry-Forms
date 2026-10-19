@@ -1,0 +1,55 @@
+/* User guide: readable on screen, one A4 page per section when printed. */
+:root { --green: #0b5d33; --ink: #1d2a22; --muted: #5c6b62; --line: #d9e2dc; --bg: #eef3ef; --ok: #0b6b3a; --bad: #b3261e; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 "Segoe UI", system-ui, Arial, sans-serif; }
+.g-bar { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: center;
+  padding: .6rem 16px; background: var(--green); color: #fff; }
+.g-bar a { color: #fff; text-decoration: none; font-size: .9rem; }
+.g-bar a:hover { text-decoration: underline; }
+.g-brand { font-weight: 700; }
+.g-links { display: flex; flex-wrap: wrap; gap: .3rem 1rem; flex: 1; }
+.g-print { font: inherit; font-size: .85rem; font-weight: 600; border: 1px solid #b9dcc6; background: #fff; color: var(--green);
+  border-radius: 8px; padding: .35rem .75rem; cursor: pointer; }
+main { max-width: 210mm; margin: 0 auto; padding: 16px; }
+.g-page { background: #fff; border-radius: 10px; padding: 24px 28px; margin: 0 0 20px; box-shadow: 0 1px 4px rgba(0,0,0,.08); scroll-margin-top: 70px; }
+.g-head { display: flex; align-items: center; gap: 14px; border-bottom: 3px solid var(--green); padding-bottom: 10px; margin-bottom: 12px; }
+.g-head img { width: 54px; height: 54px; }
+.g-head > div { flex: 1; }
+.g-court { font-size: .78rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+h1 { margin: 2px 0 0; font-size: 1.35rem; color: var(--green); }
+h2 { margin: 16px 0 6px; font-size: 1.02rem; color: var(--green); }
+p, li { margin: 4px 0; }
+ol, ul { padding-left: 1.3rem; margin: 4px 0; }
+table { width: 100%; border-collapse: collapse; margin: 6px 0; font-size: .93rem; }
+th, td { border: 1px solid var(--line); padding: 5px 8px; vertical-align: top; text-align: left; }
+th { width: 28%; background: #f3f8f5; font-weight: 600; }
+th.ok { color: var(--ok); } th.bad { color: var(--bad); }
+.g-note { background: #fff8e6; border: 1px solid #f1d49a; border-radius: 8px; padding: 6px 10px; font-size: .92rem; }
+.g-foot { text-align: center; color: var(--muted); font-size: .8rem; padding: 0 16px 24px; }
+@media (max-width: 600px) {
+  .g-bar { position: static; }
+  .g-links { flex: 1 1 100%; order: 3; }
+  .g-page { padding: 16px; scroll-margin-top: 8px; }
+  .g-head { flex-wrap: wrap; }
+  .g-head .g-print { display: none; }
+  h1 { font-size: 1.2rem; }
+  th { width: 38%; }
+}
+@page { size: A4; margin: 11mm 13mm; }
+@media print {
+  body { background: #fff; font-size: 9.6pt; line-height: 1.36; }
+  .g-head { padding-bottom: 6px; margin-bottom: 6px; }
+  .g-head img { width: 40px; height: 40px; }
+  h1 { font-size: 15pt; }
+  h2 { margin: 9px 0 3px; font-size: 11pt; }
+  p, li { margin: 2px 0; }
+  table { margin: 3px 0; font-size: 9.2pt; }
+  th, td { padding: 3px 6px; }
+  .g-note { font-size: 9.2pt; padding: 4px 8px; }
+  .g-bar, .g-print, .g-foot { display: none; }
+  main { max-width: none; padding: 0; }
+  .g-page { box-shadow: none; border-radius: 0; padding: 0; margin: 0; page-break-after: always; break-after: page; }
+  .g-page:last-of-type { page-break-after: auto; break-after: auto; }
+  .g-skip { display: none; }
+  th { background: #f3f8f5 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}

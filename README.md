@@ -17,6 +17,15 @@ confirm it is genuine.
 * **Execution / Bailiffs Unit** (14 forms)
 * **Settings** (administrators only)
 
+## User guide
+**❓ Help** in the menu (and **User guide** on the sign in screen) opens
+`/guide`: one page each for everyone, registry and unit staff, judges and
+signers, the Execution / Bailiffs Unit, administrators, and checking a
+document. Each prints on one A4 sheet (**Print this page**), or all
+together. It works offline. When a button or menu name changes, update
+`public/guide.html`; `test/guide.test.js` fails if the guide names a button
+the app no longer has.
+
 ## How signing works
 1. A staff member fills a form and saves it as a **draft**.
 2. On **Submit**, each signature line on the form is handled:

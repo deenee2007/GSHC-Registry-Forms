@@ -5,7 +5,7 @@
  * when online. The last good copy of each page, script and API answer is
  * kept, and used only when the network fails.
  */
-const SHELL = 'gshc-shell-v14';
+const SHELL = 'gshc-shell-v15';
 const API = 'gshc-api';
 
 const SHELL_FILES = [
@@ -16,7 +16,7 @@ const SHELL_FILES = [
   '/js/core/router.js', '/js/modules/dashboard.js', '/js/modules/registry.js',
   '/js/modules/appeals.js', '/js/modules/execution.js', '/js/modules/general.js', '/js/modules/inbox.js',
   '/js/modules/submissions.js', '/js/modules/signature.js', '/js/modules/account.js', '/js/modules/reports.js', '/js/modules/cases.js', '/js/modules/settings.js',
-  '/js/main.js'
+  '/js/main.js', '/guide', '/css/guide.css', '/js/guide.js'
 ];
 
 self.addEventListener('install', (event) => {

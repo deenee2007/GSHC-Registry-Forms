@@ -63,6 +63,7 @@ function createApp() {
   const pub = path.join(__dirname, '..', 'public');
   app.use(express.static(pub, { etag: false, lastModified: false, setHeaders: (res) => res.setHeader('Cache-Control', 'no-store') }));
   app.get(['/verify', '/verify/:code'], (req, res) => res.sendFile(path.join(pub, 'verify.html')));
+  app.get('/guide', (req, res) => res.sendFile(path.join(pub, 'guide.html')));
   app.get('*', (req, res) => res.sendFile(path.join(pub, 'index.html')));
 
   // Errors: known ones get their message; anything else is logged and hidden.
