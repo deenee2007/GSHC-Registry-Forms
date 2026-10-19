@@ -378,6 +378,8 @@ h1 { font-size: 1.35rem; margin: 0; }
 .notice { border-radius: 10px; padding: .8rem 1rem; margin-bottom: 1rem; display: flex; gap: .8rem;
   align-items: center; flex-wrap: wrap; font-size: .9rem; }
 .notice--warn { background: #fff4e0; color: #6b4a00; border: 1px solid #f1d49a; }
+.notice--info { background: #e8f3ec; color: #0b4d2b; border: 1px solid #b9dcc6; align-items: center; flex-wrap: wrap; }
+.notice[hidden] { display: none; }
 .empty { padding: 1rem 0; }
 .toolbar { flex-wrap: wrap; }
 

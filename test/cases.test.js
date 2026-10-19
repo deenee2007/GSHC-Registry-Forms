@@ -135,3 +135,31 @@ test('older records get their case numbers at start up', async () => {
   const found = await u.clerk2.get('/api/cases?q=GM/77/2025');
   assert.equal(found.body.cases[0].documents[0].id, String(r.insertedId));
 });
+
+test('a new form is offered the parties and details of earlier documents for the case', async () => {
+  // clerk1 made civil summonses for GM/45/2026 (Musa Bello v Ali Sani); the newest wins.
+  await u.clerk.post('/api/records', { unitKey: 'hc1', formType: 'civil-summons', data: { ...summons('GM/45/2026'), plaintiffAddress: 'No. 9 Bauchi Road' } });
+  const r = await u.clerk.get('/api/cases/prefill?caseNo=gm/45/2026&formType=hearing-notice');
+  assert.equal(r.status, 200);
+  assert.equal(r.body.caseNo, 'GM/45/2026');
+  assert.equal(r.body.values.plaintiff, 'Musa Bello');
+  assert.equal(r.body.values.defendant, 'Ali Sani');
+  for (const k of ['suitNumber', 'hearingDate', 'issueDate', 'recipientName', 'recipientAddress', 'hearingTime']) assert.equal(r.body.values[k], undefined, `${k} is not copied`);
+  assert.ok(r.body.sources.every(s => /Civil Summons/.test(s.formLabel)));
+
+  const s = await u.clerk.get('/api/cases/prefill?caseNo=GM/45/2026&formType=civil-summons');
+  assert.equal(s.body.values.plaintiffAddress, 'No. 9 Bauchi Road', 'the newest document wins');
+  assert.equal(s.body.values.appearanceTime, undefined);
+
+  // A criminal form takes the first party as complainant.
+  const w = await u.clerk.get('/api/cases/prefill?caseNo=GM/45/2026&formType=warrant-of-arrest');
+  assert.equal(w.body.values.complainant, 'Musa Bello');
+
+  // The bailiff cannot open the court's documents, so nothing is offered from them.
+  const b = await u.bailiff.get('/api/cases/prefill?caseNo=GM/45/2026&formType=notice-of-attachment');
+  assert.equal(b.body.values.plaintiff, undefined);
+  assert.deepEqual(b.body.sources.map(x => x.formLabel).filter(l => /Summons/.test(l)), []);
+
+  assert.equal((await u.clerk.get('/api/cases/prefill?caseNo=GM/45/2026&formType=nope')).status, 400);
+  assert.deepEqual((await u.clerk.get('/api/cases/prefill?caseNo=G&formType=hearing-notice')).body.values, {});
+});

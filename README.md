@@ -139,6 +139,12 @@ finds `GM/45/2026`). A document's **📁 Case File** button opens its case;
   a cause list and the extra suit numbers on a court order. Forms that had no
   suit number box (the writs of possession, statutory notice, notice to
   vacate, auction receipt, summons to settle record) now have an optional one.
+* **Filling a new form:** when a suit or case number is typed on a new
+  form, the system looks for earlier documents for that case that you can
+  open and offers to fill the empty boxes (parties, addresses, court,
+  offence and so on) with **Fill them in**. Dates, times, fees, amounts,
+  references and service details are never copied, and boxes already
+  filled are left alone.
 * Documents in your own unit can be opened. Documents in other units are
   listed by form, unit, status and date only, without their contents, and
   other units' drafts are not listed. Administrators see everything.
