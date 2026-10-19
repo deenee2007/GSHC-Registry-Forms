@@ -62,7 +62,29 @@ function describe(formType, data) {
                    fields.find(s => /title|party|name|plaintiff|appellant/i.test(s.name));
   const refField = fields.find(s => /no\.?$|number|ref|suitno/i.test(s.name) || /No\./i.test(s.label || ''));
   const text = v => (typeof v === 'string' ? v : '').slice(0, 300);
-  return { ref: refField ? text(data[refField.name]) : '', summary: sumField ? text(data[sumField.name]) : '' };
+  return { ref: refField ? text(data[refField.name]) : '', summary: sumField ? text(data[sumField.name]) : '', caseNos: caseNumbers(formType, data) };
+}
+
+// Suit, case and appeal numbers a form mentions, for the case file. Written
+// the same way however they were typed: capitals, no spaces
+// ("gm / 45 / 2026" is GM/45/2026).
+const CASE_FIELDS = ['suitNumber', 'caseNumber', 'suitNo', 'processSuitNumber', 'processSuitNo',
+  'highCourtAppealNo', 'lowerCourtSuitNo', 'appealNumber'];
+const normalizeCase = (v) => String(v || '').toUpperCase().replace(/\s+/g, '').replace(/[.,;:]+$/, '').slice(0, 80);
+
+function caseNumbers(formType, data) {
+  const def = get(formType);
+  if (!def || !data) return [];
+  const out = [];
+  for (const f of def.schema) {
+    if (!f.name) continue;
+    if (CASE_FIELDS.includes(f.name)) out.push(data[f.name]);
+    if (f.name === 'additionalSuits') out.push(...String(data[f.name] || '').split('\n'));
+    if (f.type === 'table' && Array.isArray(data[f.name]) && (f.columns || []).some(c => c.name === 'suitNumber')) {
+      data[f.name].forEach(row => out.push(row && row.suitNumber));
+    }
+  }
+  return [...new Set(out.map(normalizeCase).filter(s => s.length >= 3))];
 }
 
 // Keep only fields the schema defines; check required ones are filled.
@@ -92,4 +114,4 @@ function cleanData(formType, input) {
   return { data: out };
 }
 
-module.exports = { ...catalogue, MODULES, get, formsForUnit, describe, cleanData };
+module.exports = { ...catalogue, MODULES, get, formsForUnit, describe, cleanData, caseNumbers, normalizeCase };

@@ -516,6 +516,10 @@ button.dash-card:hover { border-color: var(--green-500); }
 .alert-switch { margin-left: auto; background: #fff; border: 1px solid var(--line); }
 
 /* Reports */
+.case-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; margin-bottom: .6rem; }
+.case-head h2 { font-size: 1.15rem; color: var(--ink); text-transform: none; letter-spacing: 0; margin: 0 0 .2rem; }
+.case-parties { font-weight: 600; margin-bottom: .2rem; }
+.case-picks { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: 1rem; }
 .report-filters { display: flex; flex-wrap: wrap; gap: .7rem; align-items: flex-end; background: #fff; border: 1px solid var(--line);
   border-radius: 12px; padding: .8rem 1rem; margin-bottom: 1rem; box-shadow: var(--shadow); }
 .report-filter { display: flex; flex-direction: column; gap: .25rem; }

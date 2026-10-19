@@ -558,6 +558,7 @@
     const ad = splitDate(d.attendanceDate), is = splitDate(d.issueDate);
     return shell(u,
       title('SUMMONS TO PARTIES BY REGISTRAR TO SETTLE RECORD OF APPEAL') +
+      (d.appealNumber ? caseLine('Appeal No.', d.appealNumber) : '') +
       parties(d.appellant, 'Appellant', d.respondent, 'Respondent') +
       `<p>TAKE NOTICE that all parties concerned are required to attend before me at the
       Appeal Registry on the ${dayOf(ad)} at the hour of ${L(d.attendanceTime)} O'clock in the
@@ -826,6 +827,7 @@
       title('WRIT OF ATTACHMENT AND SALE') +
       `<div class="doc-title" style="font-size:11pt;font-weight:normal;">(${propCat})</div>` +
       caseLine('No.', d.writNo) +
+      (d.suitNumber ? caseLine('Suit No.', d.suitNumber) : '') +
       `<p>In the ${L(d.courtName)} Court No. ${L(d.courtNo)}</p>` +
       parties(d.plaintiff, 'Plaintiff', d.defendant, 'Defendant') +
       `<p><em>(If more than one, all should be named)</em>. To all Bailiffs and Messengers of this Court.</p>
@@ -862,6 +864,7 @@
       formRef('IN THE GOMBE JUDICIAL DIVISION<br>HOLDEN AT GOMBE') +
       formRef('FORM M') +
       title('WRIT OF POSSESSION OF PROPERTY (EJECTMENT)') +
+      (d.suitNumber ? caseLine('Suit No.', d.suitNumber) : '') +
       parties(d.appellant, terms[0], d.respondent, terms[1]) +
       `<p><strong>WHEREAS</strong> at the Court Holden at Gombe ${onDayLine(cd)}, it was adjudged that the
       ${esc(entitled)} is entitled to possession of the property situated at ${L(d.propertyAddress)}${d.houseScheme ?
@@ -893,6 +896,7 @@
       formRef('IN THE GOMBE JUDICIAL DIVISION<br>HOLDEN AT GOMBE') +
       formRef('FORM M') +
       title('WRIT OF POSSESSION OF CUSTODY OF CHILD/CHILDREN') +
+      (d.suitNumber ? caseLine('Suit No.', d.suitNumber) : '') +
       parties(d.plaintiff, creditor, d.defendant, debtor) +
       `<p><strong>WHEREAS</strong> at the Court Holden at Gombe ${onDayLine(cd)}, it was adjudged that
       the ${esc(entitled)} is entitled to possession of the Child/Children living in ${L(d.childrenResidence)}.</p>
@@ -924,6 +928,7 @@
       formRef('IN THE GOMBE JUDICIAL DIVISION<br>HOLDEN AT GOMBE') +
       formRef('FORM M') +
       title('WRIT OF POSSESSION OF PREMISES') +
+      (d.suitNumber ? caseLine('Suit No.', d.suitNumber) : '') +
       parties(d.plaintiff, creditor, d.defendant, debtor) +
       `<p><strong>WHEREAS</strong> at the Court Holden at ${L(d.courtHoldingAt)} ${onDayLine(jd)}
       it was adjudged that ${L(d.partyEntitled)} is entitled to possession of the property
@@ -1025,7 +1030,7 @@
     return shell(u,
       letterMeta(d) +
       letterTo(d.recipientName, d.recipientAddress) +
-      letterSubject(`STATUTORY NOTICE FOR PUBLIC AUCTION (MOVABLE/IMMOVABLE): ${esc(d.suitTitle)}`) +
+      letterSubject(`STATUTORY NOTICE FOR PUBLIC AUCTION (MOVABLE/IMMOVABLE): ${esc(d.suitTitle)}${d.suitNumber ? ` (SUIT NO. ${esc(d.suitNumber)})` : ''}`) +
       letterBody(
         `You may recall that your ${esc(d.propertyCategory === 'movable' ? 'movable property' : 'immovable property')} was attached in compliance with the Judgment of ${L(d.courtName)}.`,
         `Take notice that you are hereby given ${L(d.noticeDays)} days from the date you are served with
@@ -1066,6 +1071,7 @@
     const rd = splitDate(d.receiptDate);
     return shell(u,
       title('HIGH COURT PUBLIC AUCTION RECEIPT') +
+      (d.suitNumber ? caseLine('Suit No.', d.suitNumber) : '') +
       `<p>Received from ${L(d.receivedFrom)}</p>
       <p>The sum of ${L(d.sumAmount)}</p>
       <p>Being payment for ${L(d.beingPaymentFor)}</p>
@@ -1083,7 +1089,7 @@
     return shell(u,
       letterMeta(d) +
       letterTo(d.recipientName, d.recipientAddress) +
-      letterSubject(`RE: CASE OF ${esc(d.caseTitle)}`) +
+      letterSubject(`RE: CASE OF ${esc(d.caseTitle)}${d.suitNumber ? ` (SUIT NO. ${esc(d.suitNumber)})` : ''}`) +
       letterBody(
         `Pursuant to the judgment given against you for the payment of the sum of
         N${L(d.judgmentSum)} to the judgment creditor(s), which you failed to pay, resulting in the
@@ -1147,6 +1153,7 @@
     return shell(u,
       formRef('IN THE GOMBE JUDICIAL DIVISION<br>HOLDEN AT GOMBE') +
       title('WRIT OF POSSESSION OF CERTIFICATE OF OCCUPANCY') +
+      (d.suitNumber ? caseLine('Suit No.', d.suitNumber) : '') +
       parties(d.plaintiff, creditor, d.defendant, debtor) +
       `<p><strong>WHEREAS</strong> at the Court Holden at Gombe ${onDayLine(cd)}, it was adjudged that the
       ${esc(creditor)} is entitled to possession of the Certificate of Occupancy ${L(d.coDescription)},

@@ -43,6 +43,8 @@
       _nav.appendChild(navItem('📤  My Submissions', () => loadModule('submissions'), { 'data-nav': 'submissions' }, 'approved'));
     }
 
+    _nav.appendChild(navItem('📁  Case File', () => loadModule('cases'), { 'data-nav': 'cases' }));
+
     if (permissions.isAdmin(user) || (permissions.can('reports', user) && user.unitKeys.length)) {
       _nav.appendChild(navItem('📊  Reports', () => loadModule('reports'), { 'data-nav': 'reports' }));
     }

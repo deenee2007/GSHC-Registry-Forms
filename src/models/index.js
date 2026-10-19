@@ -96,6 +96,7 @@ const RecordSchema = new Schema({
   status:    { type: String, enum: STATUSES, default: 'draft', index: true },
   ref:       { type: String, default: '' },
   summary:   { type: String, default: '' },
+  caseNos:   { type: [String], default: undefined, index: true }, // suit / case / appeal numbers, for the case file
   data:      { type: Schema.Types.Mixed, default: {} },
   slots:     { type: [SlotSchema], default: [] },
 

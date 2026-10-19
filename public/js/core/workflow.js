@@ -132,6 +132,7 @@
     const actions = ui().el('div', { class: 'doc-preview__actions' }, [
       B('✕  Close', 'btn--ghost', () => overlay.close(), true),
       B('History', 'btn--ghost', () => showHistory(doc), can.history),
+      B('📁  Case File', 'btn--ghost', () => { overlay.close(); App.router.loadModule('cases', { q: doc.caseNos[0] }); }, doc.caseNos && doc.caseNos.length && doc.status !== 'offline'),
       B('Edit', 'btn--ghost', done(() => openForm({ unitKey: doc.unitKey, formType: doc.formType, record: doc })), can.edit),
       B('Delete', 'btn--danger', done(() => deleteRecord(doc)), can.remove),
       B('Withdraw', 'btn--ghost', done(() => withdraw(doc)), can.withdraw),

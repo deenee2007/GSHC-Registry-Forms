@@ -15,6 +15,7 @@
         { section: 'Parties' },
         { name: 'appellant',  label: 'Appellant',  required: true, full: true },
         { name: 'respondent', label: 'Respondent', required: true },
+        { name: 'appealNumber', label: 'Appeal Number', help: 'For the case file, e.g. GMA/3/2026' },
         { section: 'Attendance Details' },
         { name: 'attendanceDate', label: 'Date of Attendance', type: 'date', required: true },
         { name: 'attendanceTime', label: "Time (O'Clock)", required: true, defaultValue: '9:00',
