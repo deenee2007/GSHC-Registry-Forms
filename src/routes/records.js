@@ -100,7 +100,7 @@ function serialize(rec, forms) {
   const def = catalogue.get(o.formType);
   return {
     id: String(o._id), version: o.__v, unitKey: o.unitKey, formType: o.formType,
-    formLabel: def ? def.label : o.formType, status: o.status, ref: o.ref, summary: o.summary,
+    formLabel: def ? def.label : o.formType, status: o.status, ref: o.ref, summary: o.summary, caseNos: o.caseNos || [],
     data: forms === false ? undefined : o.data,
     slots: o.slots.map(s => ({
       role: s.role, label: s.label, rule: s.rule,

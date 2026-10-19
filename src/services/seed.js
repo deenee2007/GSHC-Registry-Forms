@@ -47,6 +47,17 @@ async function updateFormConfigs(log = console.log) {
   }
 }
 
+// Records saved before the case file existed get their case numbers once.
+async function fillCaseNumbers(log = console.log) {
+  const { Record } = require('../models');
+  let n = 0;
+  for await (const r of Record.find({ caseNos: { $exists: false } }, 'formType data').lean().cursor()) {
+    await Record.collection.updateOne({ _id: r._id }, { $set: { caseNos: catalogue.caseNumbers(r.formType, r.data) } });
+    n++;
+  }
+  if (n) log(`  Case file: case numbers filled in for ${n} earlier record(s).`);
+}
+
 async function seedAdmin(log = console.log) {
   if (await User.countDocuments() > 0) return null;
   const password = config.adminPassword || crypto.randomBytes(9).toString('base64url');
@@ -124,9 +135,10 @@ async function seedAll(log = console.log) {
   await seedUnits();
   await seedFormConfigs();
   await updateFormConfigs(log);
+  await fillCaseNumbers(log);
   const created = await seedAdmin(log);
   if (config.adminReset) await resetAdmin({ log });
   return created;
 }
 
-module.exports = { seedAll, resetAdmin, report, updateFormConfigs, SEED_UNITS };
+module.exports = { seedAll, resetAdmin, report, updateFormConfigs, fillCaseNumbers, SEED_UNITS };

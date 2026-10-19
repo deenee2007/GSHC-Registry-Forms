@@ -129,6 +129,20 @@ signer, with the list of documents signed (or forms created).
 * **Print** gives an A4 report with the court masthead; **Download for
   Excel** saves a CSV file that opens in Excel.
 
+## Case File
+**📁 Case File** in the menu: type a suit, case or appeal number (or part of
+one, such as `45/2026`) to see every document for it, in all units, oldest
+first, with its status. Capitals and spaces do not matter (`gm / 45 / 2026`
+finds `GM/45/2026`). A document's **📁 Case File** button opens its case;
+**Print list** prints the case list on A4.
+* Numbers are read from every number box on a form, including each line of
+  a cause list and the extra suit numbers on a court order. Forms that had no
+  suit number box (the writs of possession, statutory notice, notice to
+  vacate, auction receipt, summons to settle record) now have an optional one.
+* Documents in your own unit can be opened. Documents in other units are
+  listed by form, unit, status and date only, without their contents, and
+  other units' drafts are not listed. Administrators see everything.
+
 ## Email alerts
 When email is set up, people are emailed when a form waits for their
 signature, and when a form they submitted is approved, returned or revoked.
