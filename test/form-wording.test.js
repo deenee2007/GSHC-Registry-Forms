@@ -173,3 +173,11 @@ test('dates print as "the 1st day of October 2026" on every form', () => {
   assert.match(blank, /Issued at +this +day of +\./);
   assert.doesNotMatch(blank, / 20 \.|undefined|NaN/);
 });
+
+test('filled details print without a line; blanks left empty keep theirs', () => {
+  const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'styles.css'), 'utf8');
+  assert.match(css, /\.line:not\(:empty\)\s*\{[^}]*border-bottom:\s*none/);
+  const html = output.render({ formType: 'civil-summons', status: 'final', data: { recipientName: 'Ali Sani', serviceFee: '' }, signatures: [] }, 'Unit', allForms['civil-summons']);
+  assert.match(html, /<span class="line medium">Ali Sani<\/span>/, 'a filled detail has text, so no line');
+  assert.match(html, /Service: ₦ <span class="line short"><\/span>/, 'an empty blank is truly empty, so it keeps its line');
+});
