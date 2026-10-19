@@ -189,6 +189,9 @@ h1 { font-size: 1.35rem; margin: 0; }
 .line.short  { min-width: 48px; }
 .line.medium { min-width: 130px; }
 .line.long   { min-width: 240px; }
+/* A filled detail reads as part of the sentence (still bold); only a blank
+   left empty keeps its line, to show it and to fill by hand. */
+.line:not(:empty) { border-bottom: none; padding: 0; min-width: 0; }
 
 .doc-fees { display: flex; gap: 26px; flex-wrap: wrap; margin: 8px 0; }
 /* Signature blocks: right-aligned, with a full paragraph of breathing room above */

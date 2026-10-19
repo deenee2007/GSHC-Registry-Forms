@@ -24,17 +24,18 @@ function text(formType, data) {
 }
 
 test('police request: address and subject', () => {
-  const t = text('request-police-assistance', { personnelCount: 'Five', suitTitle: 'A v. B', suitNumber: 'GM/1/2026' });
+  const t = text('request-police-assistance', { personnelCount: 'Five', suitTitle: 'A v. B', suitNumber: 'GM/1/2026' }); // an older draft with a number
   assert.match(t, /The Commissioner of Police, Gombe State Command, Headquarters, Gombe State\./);
-  assert.match(t, /REQUEST FOR FIVE PERSONNEL: A v\. B/);
+  assert.match(t, /REQUEST FOR PERSONNEL: A v\. B/, 'no number of personnel');
   assert.doesNotMatch(t, /POLICE PERSONNEL ASSISTANCE/);
-  assert.match(text('request-police-assistance', { suitTitle: 'A v. B' }), /REQUEST FOR PERSONNEL: A v\. B/, 'count is optional');
+  assert.ok(!allForms['request-police-assistance'].schema.some(f => f.name === 'personnelCount'), 'no box for it');
 });
 
 test('NSCDC request: official name and subject', () => {
   const t = text('request-nscdc-personnel', { personnelCount: 'Three', suitTitle: 'A v. B' });
   assert.match(t, /The Commandant, Nigeria Security and Civil Defence Corps, Gombe State Command\./);
-  assert.match(t, /REQUEST FOR THREE PERSONNEL: A v\. B/);
+  assert.match(t, /REQUEST FOR PERSONNEL: A v\. B/);
+  assert.ok(!allForms['request-nscdc-personnel'].schema.some(f => f.name === 'personnelCount'));
   assert.doesNotMatch(t, /WITH ARMS/);
 });
 

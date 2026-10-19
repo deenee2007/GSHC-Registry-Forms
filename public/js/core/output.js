@@ -1046,8 +1046,7 @@
   /* 9 & 11 ── Request for Security Personnel (NSCDC / Police — shared renderer) */
   function requestSecurityPersonnel(d, u, r) {
     const isPolice = r.formType === 'request-police-assistance';
-    const count    = d.personnelCount ? esc(String(d.personnelCount).toUpperCase()) + ' ' : '';
-    const subject  = `REQUEST FOR ${count}PERSONNEL`;
+    const subject  = 'REQUEST FOR PERSONNEL'; // no number of personnel, also on older drafts that gave one
     return shell(u,
       letterMeta(d) +
       letterTo(
