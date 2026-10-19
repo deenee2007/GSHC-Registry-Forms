@@ -70,6 +70,8 @@ const config = {
   // (local development only, since a Render disk is wiped on every deploy).
   backupDir: (process.env.BACKUP_DIR || (isProd ? '' : 'backups')).trim(),
   backupKeepDays: parseInt(process.env.BACKUP_KEEP_DAYS, 10) || 30,
+  // Hearing reminders go out each working day from this hour (court time).
+  reminderHour: Math.min(23, Math.max(0, parseInt(process.env.REMINDER_HOUR, 10) || 7)),
   backupEnabled: !/^(0|false|no|off)$/i.test((process.env.BACKUP_ENABLED || '').trim()),
 
   loginMaxAttempts: 5,

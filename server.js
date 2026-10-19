@@ -12,6 +12,7 @@ async function main() {
   await seedAll();
   await report();
   require('./src/services/backup').start();
+  require('./src/services/hearings').start();
   const app = createApp();
   app.listen(config.port, () => {
     console.log('====================================================');

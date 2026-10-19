@@ -97,6 +97,7 @@ const RecordSchema = new Schema({
   ref:       { type: String, default: '' },
   summary:   { type: String, default: '' },
   caseNos:   { type: [String], default: undefined, index: true }, // suit / case / appeal numbers, for the case file
+  events:    { type: [{ _id: false, date: String, time: String, what: String }], default: undefined }, // court dates, for reminders
   data:      { type: Schema.Types.Mixed, default: {} },
   slots:     { type: [SlotSchema], default: [] },
 
@@ -123,6 +124,7 @@ const RecordSchema = new Schema({
 
 RecordSchema.index({ 'slots.approvers': 1, status: 1 });
 RecordSchema.index({ ref: 1 });
+RecordSchema.index({ 'events.date': 1, status: 1 });
 
 const AuditLogSchema = new Schema({
   at:       { type: Date, default: Date.now, index: true },

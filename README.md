@@ -149,6 +149,22 @@ finds `GM/45/2026`). A document's **📁 Case File** button opens its case;
   listed by form, unit, status and date only, without their contents, and
   other units' drafts are not listed. Administrators see everything.
 
+## Hearing reminders
+Court dates are read from signed documents: hearing notices, civil and
+criminal summonses, witness summonses, subpoenas, bail bonds, orders to
+produce a prisoner, remand return dates, cause lists, summonses to settle
+record and notices of appeal fixed.
+* **Home** shows each court's dates for the next 14 days (time, case number,
+  parties, what is happening), with Open. Administrators see every court.
+* **Email:** every working day from 07:00 (`REMINDER_HOUR`), each person
+  with an email address in a court is sent that court's dates for the next
+  working day; on Friday, Monday's. One email per person, once a day. The
+  same switches as the other alerts apply (My Account, and the
+  administrator's per user and global switches).
+* A date changed in court shows here only once a new document with the new
+  date is signed. Set `PUBLIC_BASE_URL` so the email carries a button back
+  to the app.
+
 ## Email alerts
 When email is set up, people are emailed when a form waits for their
 signature, and when a form they submitted is approved, returned or revoked.

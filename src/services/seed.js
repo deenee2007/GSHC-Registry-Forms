@@ -47,15 +47,16 @@ async function updateFormConfigs(log = console.log) {
   }
 }
 
-// Records saved before the case file existed get their case numbers once.
+// Records saved before the case file and hearing reminders existed get
+// their case numbers and court dates once.
 async function fillCaseNumbers(log = console.log) {
   const { Record } = require('../models');
   let n = 0;
-  for await (const r of Record.find({ caseNos: { $exists: false } }, 'formType data').lean().cursor()) {
-    await Record.collection.updateOne({ _id: r._id }, { $set: { caseNos: catalogue.caseNumbers(r.formType, r.data) } });
+  for await (const r of Record.find({ $or: [{ caseNos: { $exists: false } }, { events: { $exists: false } }] }, 'formType data').lean().cursor()) {
+    await Record.collection.updateOne({ _id: r._id }, { $set: { caseNos: catalogue.caseNumbers(r.formType, r.data), events: catalogue.courtDates(r.formType, r.data) } });
     n++;
   }
-  if (n) log(`  Case file: case numbers filled in for ${n} earlier record(s).`);
+  if (n) log(`  Case numbers and court dates filled in for ${n} earlier record(s).`);
 }
 
 async function seedAdmin(log = console.log) {

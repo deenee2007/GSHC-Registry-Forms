@@ -63,6 +63,34 @@
     box.replaceChildren(...kids);
   }
 
+  // Court dates fixed in signed documents, soonest first.
+  async function renderHearings(box, ctx, showUnit) {
+    const { ui, workflow: wf } = ctx;
+    let r;
+    try { r = await ctx.api.get('/hearings?days=14'); } catch (e) { box.remove(); return; }
+    const all = r.hearings;
+    if (!all.length) { box.replaceChildren(ui.el('p', { class: 'muted' }, 'No court dates in the next 14 days in signed documents.')); return; }
+    const dayLabel = (s) => {
+      const d = new Date(s + 'T00:00:00');
+      const t = new Date(); t.setHours(0, 0, 0, 0);
+      const diff = Math.round((d - t) / 86400000);
+      const name = d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+      return diff === 0 ? `Today, ${name}` : diff === 1 ? `Tomorrow, ${name}` : name;
+    };
+    const shown = all.slice(0, 50);
+    box.replaceChildren(
+      ui.table([
+        { label: 'Day', value: h => dayLabel(h.date) },
+        { label: 'Time', value: h => h.time || '' },
+        { label: 'Case No.', value: h => h.caseNo },
+        { label: 'Parties', value: h => h.parties },
+        { label: 'What', value: h => h.what },
+        ...(showUnit ? [{ label: 'Unit', value: h => h.unitName }] : [])
+      ], shown, [{ label: 'Open', onClick: h => wf.openDocument(h.id) }]),
+      ...(all.length > shown.length ? [ui.el('p', { class: 'muted' }, `Showing the first ${shown.length} of ${all.length}.`)] : [])
+    );
+  }
+
   window.App.dashboard = {
     async render(container, ctx) {
       const { ui, api, permissions, router, workflow: wf, user, offline } = ctx;
@@ -108,6 +136,13 @@
           row.appendChild(card(ui, sum('final'), 'Signed'));
         }
         if (row.children.length) dash.appendChild(row);
+      }
+
+      // ── Upcoming court dates (the user's courts; every unit for admins) ──
+      if (stats && (isAdmin || user.unitKeys.length)) {
+        const box = ui.el('div');
+        dash.appendChild(section(ui, 'Upcoming Court Dates · next 14 days', box));
+        renderHearings(box, ctx, isAdmin || user.unitKeys.length > 1);
       }
 
       // ── Quick actions (unit staff) ──
