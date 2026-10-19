@@ -20,7 +20,7 @@
         { name: 'attendanceTime', label: "Time (O'Clock)", required: true, defaultValue: '9:00',
           help: "e.g. 9:00" },
         { section: 'Date' },
-        { name: 'datedAt',   label: 'Dated At', defaultValue: 'Gombe', required: true },
+        { name: 'datedAt',   label: 'Dated at', defaultValue: 'Gombe', required: true },
         { name: 'issueDate', label: 'Date Issued', type: 'date', required: true }
       ]
     },
@@ -39,10 +39,7 @@
         { name: 'applicant',         label: 'Applicant',           required: true, full: true },
         { name: 'respondent',        label: 'Respondent',          required: true },
         { section: 'Appeal Details' },
-        { name: 'hearingDay',        label: 'Day of Hearing (ordinal)', required: true,
-          help: 'e.g. 15th' },
-        { name: 'hearingMonth',      label: 'Month of Hearing',    required: true },
-        { name: 'hearingYear',       label: 'Year of Hearing',     required: true },
+        { name: 'hearingDate',       label: 'Date Appeal Was Fixed', type: 'date', required: true },
         { name: 'originalDecisionDate', label: 'Date of Original Court Decision',
           type: 'date', required: true },
         { name: 'lowerCourtSuitNo',  label: 'Case/Suit No. at Lower Court', required: true },
