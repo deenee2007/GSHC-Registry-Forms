@@ -127,12 +127,24 @@
             catch (e) { ui.toast(e.message, 'error'); }
           }) : null,
           item(u.active ? 'Deactivate' : 'Activate', u.active ? 'Stops them signing in. Documents they signed stay valid.' : 'Lets them sign in again.', async () => {
-            if (u.active && !confirm(`Deactivate ${u.username}? They will no longer be able to sign in. Documents they signed stay valid.`)) return;
+            if (u.active) {
+              let waitingNote = '';
+              try {
+                const w = await api.get(`/admin/users/${u.id}/work`);
+                if (w.waiting) waitingNote = `\n\n${w.waiting} form(s) are waiting for ${u.fullName}'s signature. They will not move by themselves: ask the units to Withdraw them and submit them to another signer.`;
+              } catch (e) { /* the warning is extra; deactivating still works */ }
+              if (!confirm(`Deactivate ${u.fullName} (${u.username})? They will no longer be able to sign in. Documents they signed stay valid.${waitingNote}`)) return;
+            }
             try {
               if (u.active) await api.del('/admin/users/' + u.id); else await api.patch('/admin/users/' + u.id, { active: true });
               renderUsers();
             } catch (e) { ui.toast(e.message, 'error'); }
-          }, u.active ? 'btn--danger' : 'btn--ok')
+          }, u.active ? 'btn--danger' : 'btn--ok'),
+          !u.active && u.username !== 'admin' ? item('Delete permanently', 'Removes the account for good, so its email can be used for a new account. Only for an account in no document (a test account).', async () => {
+            if (!confirm(`Delete ${u.fullName}'s account permanently? This cannot be undone.`)) return;
+            try { await api.del(`/admin/users/${u.id}/permanent`); ui.toast('Account deleted. Its email can now be used for a new account.', 'success', 6000); renderUsers(); }
+            catch (e) { ui.toast(e.message, 'error', 9000); }
+          }, 'btn--danger') : null
         ].filter(Boolean);
         items.push(el('div', { class: 'action-close' }, [el('button', { class: 'btn btn--ghost', onclick: close }, 'Close')]));
         ui.modal([u.title, u.fullName].filter(Boolean).join(' ') + ` (${u.username})`, el('div', { class: 'action-list' }, items), {
@@ -190,7 +202,20 @@
               await api.patch('/admin/users/' + existing.id, payload);
               ui.toast('User updated.', 'success');
             } else {
-              const r = await api.post('/admin/users', { ...payload, username: username.value, sendInvite: !inviteRow.hidden && invite.checked });
+              let r;
+              try { r = await api.post('/admin/users', { ...payload, username: username.value, sendInvite: !inviteRow.hidden && invite.checked }); }
+              catch (e) {
+                const old = e.body && e.body.inactiveUser;
+                if (!old) throw e;
+                // The email belongs to a deactivated account: bring it back instead.
+                if (confirm(`${e.message}\n\nActivate ${old.fullName}'s account again? They keep their history, signature and PIN; you can then change their court and roles with Edit.\n\n(If it was only a test account, cancel, open it under More and choose Delete permanently.)`)) {
+                  await api.patch('/admin/users/' + old.id, { active: true });
+                  ui.toast(`${old.fullName}'s account is active again.`, 'success', 5000);
+                  renderUsers();
+                  return true;
+                }
+                return undefined;
+              }
               if (r.invited) ui.toast(`Invitation sent to ${r.user.email}. The link expires in 24 hours.`, 'success', 6000);
               else showTempPassword(r.user, r.tempPassword, r.emailError ? `The invitation email could not be sent (${r.emailError}). Give this password to the user instead.` : null);
             }

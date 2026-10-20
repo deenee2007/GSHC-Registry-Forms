@@ -118,6 +118,12 @@ for daily use, because free instances sleep when idle.
   `admin` account keeps the username "admin", which ADMIN_RESET looks for,
   and can also sign in with its email. When an administrator adds or
   changes someone's email, they sign in with the new email.
+* **Removing an account:** **Deactivate** (under More) stops someone signing
+  in and warns how many forms are waiting for their signature; documents
+  they made or signed stay valid with their name. A deactivated account that
+  is in no document at all (a test account) can be **Deleted permanently**,
+  which frees its email for a new account. Adding an email that belongs to a
+  deactivated account offers to activate that account instead.
 * **New accounts:** if the user has an email address, the admin can email
   an invitation link; the user chooses their own password (link valid 24
   hours, works once). Without email, the admin gets a one time password
