@@ -230,6 +230,17 @@ npm run restore -- gshc_2026-10-19_020000_000.json.gz --uri <new database>
 Then point `MONGODB_URI` on Render at the restored database. Everyone's
 password, PIN and signature carry over.
 
+## Before going live: clearing test data
+Until it has been used, Home shows administrators a **Before Going Live**
+section with **🗑 Clear Test Data**. Typing `CLEAR TEST DATA` removes every
+form, saved copy and notification, and the audit entries about those forms
+(so Reports start from zero). Users, units, form access, signing rules,
+signatures and PINs are kept. A backup of everything is made first; if the
+backup fails, nothing is cleared. It works **once only**: afterwards the
+section disappears and the server refuses it, so it can never touch real
+court records. Test QR codes then show "Not found". Test accounts no longer
+in any document can then be deleted permanently (Settings → Users → More).
+
 ## Units
 Settings → Units → **+ Add Unit** adds either another **Court Registry**
 (numbered automatically, with the registry forms) or an **Other Unit**
