@@ -414,8 +414,10 @@
         const prefix = el('input', { type: 'text', value: s.prefix, maxlength: '6', class: 'narrow', 'aria-label': 'Number prefix' });
         const rowsOf = (items, make) => { const box = el('div', { class: 'settings-rows' }); items.forEach(x => box.appendChild(make(x))); return box; };
         const removable = (cells) => { const row = el('div', { class: 'settings-row' }, cells); row.appendChild(el('button', { class: 'btn btn--small btn--ghost', type: 'button', onclick: () => row.remove() }, '✕')); return row; };
+        const bookPick = (b) => { const sel = el('select', { 'data-f': 'book', 'aria-label': 'Register book' }, [el('option', { value: 'civil' }, 'Civil Register'), el('option', { value: 'criminal' }, 'Criminal Register')]); sel.value = b === 'criminal' ? 'criminal' : 'civil'; return sel; };
         const typeRow = (t) => { const r = removable([el('input', { type: 'text', value: t.label, placeholder: 'Case type, e.g. Motion', 'data-f': 'label' }),
-          el('input', { type: 'text', value: t.suffix, placeholder: 'Letter', maxlength: '3', class: 'narrow', 'data-f': 'suffix' })]); r.dataset.key = t.key || ''; return r; };
+          el('input', { type: 'text', value: t.suffix, placeholder: 'Letter', maxlength: '3', class: 'narrow', 'data-f': 'suffix' }),
+          bookPick(t.book)]); r.dataset.key = t.key || ''; return r; };
         const feeRow = (f) => removable([el('input', { type: 'text', value: f.item, placeholder: 'Fee, e.g. Writ of summons', 'data-f': 'item' }),
           el('input', { type: 'number', min: '0', step: '0.01', value: f.amount === undefined ? '' : String(f.amount), placeholder: 'Amount (₦)', class: 'narrow', 'data-f': 'amount' })]);
         const types = rowsOf(s.caseTypes, typeRow), fees = rowsOf(s.fees, feeRow);
@@ -429,8 +431,8 @@
           el('p', { class: 'muted' }, 'How new cases are numbered, the filing fees staff choose from, and which courts hear EFCC matters.'),
           el('h3', null, 'Suit numbers'),
           el('div', { class: 'settings-row' }, [el('span', null, 'Prefix'), prefix, el('span', { class: 'muted' }, `Numbers read ${s.prefix}/1/${new Date().getFullYear()}; each type counts on its own and starts again at 1 each year.`)]),
-          el('h3', null, 'Case types and their letter'), el('p', { class: 'muted' }, 'The letter is printed raised after the number (Criminal: GM/45c/2026). Leave it empty for one type only (Civil).'),
-          types, el('button', { class: 'btn btn--small btn--ghost', type: 'button', onclick: () => types.appendChild(typeRow({ label: '', suffix: '' })) }, '+ Add case type'),
+          el('h3', null, 'Case types and their letter'), el('p', { class: 'muted' }, 'The letter is printed raised after the number (Criminal: GM/45c/2026). Leave it empty for one type only (Civil). Each type goes in the Civil or the Criminal register book of the court.'),
+          types, el('button', { class: 'btn btn--small btn--ghost', type: 'button', onclick: () => types.appendChild(typeRow({ label: '', suffix: '', book: 'civil' })) }, '+ Add case type'),
           el('h3', null, 'Fee schedule'), el('p', { class: 'muted' }, 'Staff pick fees from this list when filing; the total is worked out for them. Official cases have no fee.'),
           fees, el('button', { class: 'btn btn--small btn--ghost', type: 'button', onclick: () => fees.appendChild(feeRow({ item: '' })) }, '+ Add fee'),
           el('h3', null, 'Courts that hear EFCC matters'), efcc,
@@ -438,7 +440,7 @@
           el('div', { class: 'card__actions' }, [el('button', { class: 'btn btn--primary', onclick: async () => {
             try {
               await api.put('/process/settings', {
-                prefix: prefix.value, caseTypes: read(types, ['label', 'suffix']).filter(t => t.label.trim()),
+                prefix: prefix.value, caseTypes: read(types, ['label', 'suffix', 'book']).filter(t => t.label.trim()),
                 fees: read(fees, ['item', 'amount']).filter(f => f.item.trim()).map(f => ({ item: f.item, amount: Number(f.amount) })),
                 efccCourts: [...efcc.querySelectorAll('input:checked')].map(b => b.value)
               });

@@ -34,7 +34,8 @@ router.use(requireLogin);
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: fileStore.MAX_BYTES, files: 1 } });
 
 // ── Who may do what ──
-const inProcess = (u) => isAdmin(u) || u.unitKeys.includes('process');
+// The Process Registrar works in the Process Registry even without the unit.
+const inProcess = (u) => isAdmin(u) || u.unitKeys.includes('process') || u.signerRoles.includes('process_registrar');
 const isRegistrar = (u) => isAdmin(u) || u.signerRoles.includes('process_registrar');
 const isCJ = (u) => u.signerRoles.includes('chief_judge');
 const inCourt = (u, key) => !!key && canAccessUnit(u, key) && (can(u, 'view') || u.signerRoles.length > 0);
@@ -374,14 +375,16 @@ router.post('/register/earlier', wrap(async (req, res) => {
   if (await Case.exists({ suitNumber })) throw new HttpError(409, `${suitNumber} is already in a register.`);
   const s = await processSvc.getSettings();
   const caseType = s.caseTypes.some(t => t.key === req.body.caseType) ? req.body.caseType : s.caseTypes[0].key;
-  const assignedOn = DAY.test(req.body.assignedOn || '') ? req.body.assignedOn : null;
+  // A typed date is kept at midday, so it reads as the same day in any time zone.
+  const typed = (v) => DAY.test(v || '') ? new Date(v + 'T12:00:00Z') : null;
   const c = await Case.create({
     caseType, suitNumber, earlier: true, caseNos: [catalogue.normalizeCase(suitNumber)],
     firstParty: String(req.body.firstParty || '').trim().slice(0, 1000), secondParty: String(req.body.secondParty || '').trim().slice(0, 1000),
     nature: String(req.body.nature || '').trim().slice(0, 300),
     filedOn: DAY.test(req.body.filedOn || '') ? req.body.filedOn : undefined,
-    status: 'received', assignedUnit: unitKey, assignedAt: assignedOn ? new Date(assignedOn + 'T00:00:00') : undefined,
-    receivedAt: new Date(), receivedByName: req.user.fullName, createdBy: req.user._id, createdByName: req.user.fullName
+    status: 'received', assignedUnit: unitKey, assignedAt: typed(req.body.assignedOn) || undefined,
+    receivedAt: typed(req.body.receivedOn) || new Date(),
+    receivedByName: req.user.fullName, createdBy: req.user._id, createdByName: req.user.fullName
   });
   await audit.log(req, 'case_earlier_added', { unitKey, details: { caseId: String(c._id), suitNumber } });
   res.status(201).json({ case: serialize(c, await unitNames()) });

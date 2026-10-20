@@ -5,7 +5,7 @@
  * when online. The last good copy of each page, script and API answer is
  * kept, and used only when the network fails.
  */
-const SHELL = 'gshc-shell-v24';
+const SHELL = 'gshc-shell-v25';
 const API = 'gshc-api';
 
 const SHELL_FILES = [
