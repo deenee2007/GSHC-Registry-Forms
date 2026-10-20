@@ -89,9 +89,18 @@ router.post('/users', wrap(async (req, res) => {
   const username = (String(req.body.username || '').trim() || fields.email || '').toLowerCase();
   if (!username) throw new HttpError(400, 'Enter the email address, or a username for staff without email.');
   if (!validUsername(username)) throw new HttpError(400, 'Username must be an email address, or 3 to 40 letters, numbers, dots or underscores.');
-  if (await User.exists({ $or: [{ username }, { email: username }] })) throw new HttpError(409, 'That username or email is already taken.');
   if (!fields.fullName) throw new HttpError(400, 'Full name is required.');
-  if (fields.email && await User.exists({ email: fields.email })) throw new HttpError(409, 'Another account already uses that email address.');
+  const keys = [username, fields.email].filter(Boolean);
+  const taken = await User.findOne({ $or: [{ username: { $in: keys } }, { email: { $in: keys } }] });
+  if (taken) {
+    // A deactivated account holding the email: say so, and let the admin
+    // switch it back on (or delete it, if it was never used) instead.
+    if (!taken.active) {
+      return res.status(409).json({ error: `This email or username belongs to ${taken.fullName}'s deactivated account.`,
+        inactiveUser: taken.toSafeJSON() });
+    }
+    throw new HttpError(409, 'That username or email is already taken by another account.');
+  }
   const invite = !!req.body.sendInvite && !!fields.email && mail.enabled();
   // An invited user chooses their own password from the email link, so the
   // stored one is random and never shown to anyone.
@@ -176,6 +185,45 @@ router.post('/users/:id/reset-pin', wrap(async (req, res) => {
 
 // Accounts are deactivated, never deleted: signed documents and the audit
 // log still point at them.
+// What an account is part of: forms waiting for its signature now, and
+// every document it ever created, submitted, was asked to sign or signed.
+async function userWork(id) {
+  const { Record } = require('../models');
+  const [waiting, documents] = await Promise.all([
+    Record.countDocuments({ status: 'pending', 'slots.approvers': id }),
+    Record.countDocuments({ $or: [{ createdBy: id }, { submittedBy: id }, { updatedBy: id }, { 'slots.approvers': id }, { 'slots.signatures.user': id }] })
+  ]);
+  return { waiting, documents };
+}
+
+router.get('/users/:id/work', wrap(async (req, res) => {
+  const user = await User.findById(oid(req.params.id));
+  if (!user) throw new HttpError(404, 'User not found.');
+  res.json(await userWork(user._id));
+}));
+
+// Remove an account for good, so its email can be used again. Only for a
+// deactivated account that is in no document at all (a test account, or one
+// made by mistake); an account with documents can only be deactivated, so no
+// court record ever loses the name of who made or signed it.
+router.delete('/users/:id/permanent', wrap(async (req, res) => {
+  const { Notification, PasswordToken } = require('../models');
+  const user = await User.findById(oid(req.params.id));
+  if (!user) throw new HttpError(404, 'User not found.');
+  if (String(user._id) === String(req.user._id)) throw new HttpError(400, 'You cannot delete your own account.');
+  if (user.username === config.adminUsername) throw new HttpError(400, 'The built in admin account cannot be deleted.');
+  if (user.active) throw new HttpError(409, 'Deactivate the account first.');
+  const work = await userWork(user._id);
+  if (work.documents) {
+    throw new HttpError(409, `${user.fullName} is named in ${work.documents} document(s), so the account can only stay deactivated. Its records must keep the name of who made or signed them.`);
+  }
+  await links.endSessions(user._id);
+  await Promise.all([Notification.deleteMany({ user: user._id }), PasswordToken.deleteMany({ user: user._id })]);
+  await User.deleteOne({ _id: user._id });
+  await audit.log(req, 'user_deleted', { details: { username: user.username, fullName: user.fullName, email: user.email } });
+  res.json({ deleted: true });
+}));
+
 router.delete('/users/:id', wrap(async (req, res) => {
   const user = await User.findById(oid(req.params.id));
   if (!user) throw new HttpError(404, 'User not found.');
