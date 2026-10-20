@@ -45,6 +45,9 @@
     }
 
     _nav.appendChild(navItem('📁  Case File', () => loadModule('cases'), { 'data-nav': 'cases' }));
+    // The court's register books; with more than one court, a choice of court first.
+    const courts = list.filter(u => u.type === 'registry');
+    if (courts.length) _nav.appendChild(navItem('📒  Case Register', () => loadModule('caseRegister', courts.length === 1 ? { unit: courts[0] } : {}), { 'data-nav': 'caseRegister' }, 'newcases'));
 
     if (permissions.isAdmin(user) || (permissions.can('reports', user) && user.unitKeys.length)) {
       _nav.appendChild(navItem('📊  Reports', () => loadModule('reports'), { 'data-nav': 'reports' }));
@@ -79,13 +82,14 @@
       setBadge('approved', stats.approvedUnprinted);
       setBadge('notifications', notes.unread);
       // Cases for the Chief Judge to assign, and filings for the Process Registrar to register.
-      let cases = { awaitingAssignment: 0, toRegister: 0 };
-      if (badges.assign || badges.process) { try { cases = await api.get('/process/counts'); } catch (e) { /* keep zero */ } }
+      let cases = { awaitingAssignment: 0, toRegister: 0, newCases: 0 };
+      if (badges.assign || badges.process || badges.newcases) { try { cases = await api.get('/process/counts'); } catch (e) { /* keep zero */ } }
       setBadge('assign', cases.awaitingAssignment);
       setBadge('process', cases.toRegister);
+      setBadge('newcases', cases.newCases);
       // Phones: the menu button shows whether anything waits inside the menu.
       const menu = document.getElementById('menu-badge');
-      const waiting = stats.inbox + stats.approvedUnprinted + notes.unread + cases.awaitingAssignment + cases.toRegister;
+      const waiting = stats.inbox + stats.approvedUnprinted + notes.unread + cases.awaitingAssignment + cases.toRegister + (cases.newCases || 0);
       if (menu) { menu.textContent = waiting > 99 ? '99+' : String(waiting); menu.hidden = !waiting; }
     } catch (e) { /* offline: keep the last numbers */ }
   }

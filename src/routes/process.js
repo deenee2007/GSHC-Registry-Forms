@@ -141,13 +141,27 @@ router.put('/settings', wrap(async (req, res) => {
   res.json(s);
 }));
 
+// The courts whose register this person keeps: the court registries they are in.
+const myCourts = async (u) => (await Unit.find({ type: 'registry', active: true, key: { $in: u.unitKeys } }, 'key').lean()).map(x => x.key).filter(k => inCourt(u, k));
+// New cases: assigned to one of those courts, the file not yet received.
+const newCasesQuery = (keys) => ({ status: 'assigned', assignedUnit: { $in: keys }, earlier: { $ne: true } });
+
 // Numbers for the menu badges.
 router.get('/counts', wrap(async (req, res) => {
-  const [awaiting, toRegister] = await Promise.all([
+  const courts = await myCourts(req.user);
+  const [awaiting, toRegister, newCases] = await Promise.all([
     isCJ(req.user) ? Case.countDocuments({ status: 'awaiting_assignment' }) : 0,
-    isRegistrar(req.user) && inProcess(req.user) ? Case.countDocuments({ status: 'submitted' }) : 0
+    isRegistrar(req.user) && inProcess(req.user) ? Case.countDocuments({ status: 'submitted' }) : 0,
+    courts.length ? Case.countDocuments(newCasesQuery(courts)) : 0
   ]);
-  res.json({ awaitingAssignment: awaiting, toRegister });
+  res.json({ awaitingAssignment: awaiting, toRegister, newCases });
+}));
+
+// New cases for Home: assigned to this person's courts, file not yet received.
+router.get('/new-cases', wrap(async (req, res) => {
+  const courts = await myCourts(req.user);
+  const [list, units] = await Promise.all([courts.length ? Case.find(newCasesQuery(courts)).sort({ assignedAt: -1 }).limit(100) : [], unitNames()]);
+  res.json({ cases: list.map(c => serialize(c, units)) });
 }));
 
 // ── Cases ──
@@ -335,8 +349,10 @@ router.post('/cases/:id/assign', wrap(async (req, res) => {
   await c.save();
   await audit.log(req, 'case_assigned', { unitKey: unit.key, details: { caseId: String(c._id), suitNumber: c.suitNumber, court: unit.key, proposed: c.proposedUnit } });
   const roman = processSvc.roman(unit.courtNo);
-  await tell(await processPeople(), `${c.suitNumber} was assigned to High Court No. ${roman}. Print the assignment slip for the file.`, 'process', `Case assigned to High Court No. ${roman}`);
-  await tell(await User.find({ active: true, unitKeys: unit.key }), `New case ${c.suitNumber} (${c.firstParty} v. ${c.secondParty}) assigned to your court. The file will come from the Process Registry.`, `register:${unit.key}`, 'New case assigned to your court');
+  // Not to the Chief Judge who made the assignment, even where they sit in that court too.
+  const others = { _id: { $ne: req.user._id } };
+  await tell(await processPeople(others), `${c.suitNumber} was assigned to High Court No. ${roman}. Print the assignment slip for the file.`, 'process', `Case assigned to High Court No. ${roman}`);
+  await tell(await User.find({ active: true, unitKeys: unit.key, ...others }), `New case ${c.suitNumber} (${c.firstParty} v. ${c.secondParty}) assigned to your court. The file will come from the Process Registry.`, `register:${unit.key}`, 'New case assigned to your court');
   res.json({ case: serialize(c, await unitNames()) });
 }));
 

@@ -170,6 +170,24 @@
         if (row.children.length) dash.appendChild(row);
       }
 
+      // ── New cases assigned to the person's court, the file still to come ──
+      const myCourts = units.filter(u => u.type === 'registry' && user.unitKeys.includes(u.key));
+      if (myCourts.length) {
+        let nc = null;
+        try { nc = await api.get('/process/new-cases'); } catch (e) { /* offline */ }
+        if (nc && nc.cases.length) {
+          const P = window.App.processUi;
+          const open = (c) => { const u = units.find(x => x.key === c.assigned.key); if (u) router.loadModule('caseRegister', { unit: u }); };
+          dash.appendChild(section(ui, `New Cases Assigned · ${nc.cases.length} awaiting the file`, ui.table([
+            { label: 'Suit number', node: c => P.caseNo(ui, c.suitNumber) },
+            { label: 'Name of case', value: c => P.parties(c) },
+            { label: 'Type of case', value: c => c.nature || '' },
+            ...(myCourts.length > 1 ? [{ label: 'Court', value: c => c.assigned ? c.assigned.name : '' }] : []),
+            { label: 'Date of assignment', value: c => P.day(c.assignedAt) }
+          ], nc.cases, [{ label: 'Open Register', onClick: open }])));
+        }
+      }
+
       // ── Upcoming court dates (the user's courts; every unit for admins) ──
       if (stats && (isAdmin || user.unitKeys.length)) {
         const box = ui.el('div');
