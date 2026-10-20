@@ -234,8 +234,14 @@
           list.appendChild(ui.el('button', { class: 'note' + (n.read ? '' : ' note--unread'), onclick: async () => {
             if (!n.read) { await api.post('/notifications/read', { ids: [n.id] }).catch(() => {}); router.refreshBadges(); }
             if (n.record) wf.openDocument(n.record);
+            else if (n.kind === 'case' && n.link) {
+              // A case notice opens its screen: assignment, the Process Registry or a court's register.
+              if (n.link === 'assign') router.loadModule('assign');
+              else if (n.link.startsWith('register:')) { const u = units.find(x => x.key === n.link.slice(9)); if (u) router.loadModule('caseRegister', { unit: u }); }
+              else { const u = units.find(x => x.type === 'process'); if (u) router.loadUnit(u); }
+            }
           } }, [
-            ui.el('span', { class: 'note__kind note__kind--' + n.kind }, { submitted: 'For signature', approved: 'Approved', signed: 'Signed', returned: 'Returned', revoked: 'Revoked' }[n.kind] || n.kind),
+            ui.el('span', { class: 'note__kind note__kind--' + n.kind }, { submitted: 'For signature', approved: 'Approved', signed: 'Signed', returned: 'Returned', revoked: 'Revoked', case: 'Case' }[n.kind] || n.kind),
             ui.el('span', { class: 'note__msg' }, n.message),
             ui.el('span', { class: 'note__time muted' }, ui.fmtDate(n.createdAt))
           ]));

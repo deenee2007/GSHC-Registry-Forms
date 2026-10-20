@@ -56,7 +56,7 @@ UserSchema.methods.toSafeJSON = function () {
 
 const UnitSchema = new Schema({
   key:          { type: String, required: true, unique: true, lowercase: true, trim: true },
-  type:         { type: String, enum: ['registry', 'appeals', 'execution', 'general'], required: true },
+  type:         { type: String, enum: ['registry', 'appeals', 'execution', 'general', 'process'], required: true },
   name:         { type: String, required: true, trim: true },
   courtNo:      Number,
   allowedForms: { type: [String], default: null },
@@ -139,7 +139,8 @@ const AuditLogSchema = new Schema({
 
 const NotificationSchema = new Schema({
   user:    { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
-  kind:    { type: String, enum: ['submitted', 'approved', 'returned', 'revoked', 'signed'], required: true },
+  kind:    { type: String, enum: ['submitted', 'approved', 'returned', 'revoked', 'signed', 'case'], required: true },
+  link:    String, // for a case notice: the screen it opens ("assign", "process" or "register:<unit key>")
   record:  { type: Schema.Types.ObjectId, ref: 'Record' },
   message: String,
   read:    { type: Boolean, default: false }
@@ -167,6 +168,71 @@ const DocumentCopySchema = new Schema({
   backedUpAt:  Date                                 // copied to the backup store (src/services/backup.js)
 });
 
+// ── Process Registry ──
+// A file kept privately (the payment receipt of a filing).
+const FileRef = new Schema({
+  provider:    { type: String, enum: ['cloudinary', 'inline'], required: true },
+  publicId:    String,
+  dataUrl:     String,
+  contentType: String,
+  name:        String,
+  bytes:       Number,
+  uploadedAt:  Date
+}, { _id: false });
+
+// draft → submitted (to the Process Registrar) → awaiting_assignment (number
+// given) → assigned (by the Chief Judge) → received (by the court) → disposed.
+// "returned" goes back to the filer with the Process Registrar's comment.
+const CASE_STATUSES = ['draft', 'submitted', 'returned', 'awaiting_assignment', 'assigned', 'received', 'disposed'];
+
+// A case filed at the Process Registry: registered with the next suit
+// number of its type, assigned to a court by the Hon. Chief Judge, then
+// kept in that court's Case Register until disposed of. A case filed
+// before the system ("earlier case") is entered straight into a register.
+const CaseSchema = new Schema({
+  caseType:      { type: String, required: true },   // key from the Process Registry settings (civil, criminal, ...)
+  suitNumber:    { type: String, trim: true },       // GM/1/2026, GM/45c/2026; set at registration
+  seq:           Number,
+  year:          Number,
+  earlier:       { type: Boolean, default: false },  // entered by a court registry for a case filed before the system
+  firstParty:    { type: String, trim: true, default: '' },
+  secondParty:   { type: String, trim: true, default: '' },
+  nature:        { type: String, trim: true, default: '' },
+  process:       { type: String, trim: true, default: '' },   // originating process
+  counsel:       { type: String, trim: true, default: '' },
+  counselAddress:{ type: String, trim: true, default: '' },
+  filedOn:       String,                              // YYYY-MM-DD
+  efcc:          { type: Boolean, default: false },
+  official:      { type: Boolean, default: false },  // no filing fee (criminal cases filed by the State, EFCC matters)
+  fees:          { type: [{ _id: false, item: String, amount: Number, qty: Number }], default: [] },
+  feeTotal:      { type: Number, default: 0 },
+  receiptNumber: { type: String, trim: true, default: '' },
+  receipt:       { type: FileRef, default: null },
+
+  status:        { type: String, enum: CASE_STATUSES, default: 'draft', index: true },
+  returnComment: String,
+  returnedByName: String,
+  createdBy:     { type: Schema.Types.ObjectId, ref: 'User' },
+  createdByName: String,
+  registeredBy:  { type: Schema.Types.ObjectId, ref: 'User' },
+  registeredByName: String,
+  registeredAt:  Date,
+
+  proposedUnit:  String,                              // court the rotation proposed
+  assignedUnit:  { type: String, index: true },       // court the Chief Judge assigned
+  assignedAt:    Date,
+  assignment:    { type: SignatureSchema, default: null },  // the Chief Judge's signature on the assignment
+  verifyCode:    { type: String, unique: true, sparse: true },
+  verifyUrl:     String,
+  contentHash:   String,
+
+  receivedAt:    Date,
+  receivedByName: String,
+  disposal:      { type: { _id: false, remark: String, date: String, byName: String, at: Date }, default: null },
+  caseNos:       { type: [String], index: true }      // for the case file
+}, { timestamps: true });
+CaseSchema.index({ suitNumber: 1 }, { unique: true, partialFilterExpression: { suitNumber: { $type: 'string' } } });
+
 // One run of the backup: the data file it wrote, or why it failed.
 const BackupSchema = new Schema({
   at:          { type: Date, default: Date.now, index: true },
@@ -191,5 +257,7 @@ module.exports = {
   Notification: mongoose.model('Notification', NotificationSchema),
   PasswordToken: mongoose.model('PasswordToken', PasswordTokenSchema),
   DocumentCopy: mongoose.model('DocumentCopy', DocumentCopySchema),
-  Backup:       mongoose.model('Backup', BackupSchema)
+  Backup:       mongoose.model('Backup', BackupSchema),
+  Case:         mongoose.model('Case', CaseSchema),
+  CASE_STATUSES
 };

@@ -19,7 +19,7 @@ router.get('/', wrap(async (req, res) => {
   ]);
   res.json({
     unread,
-    notifications: items.map(n => ({ id: String(n._id), kind: n.kind, record: n.record ? String(n.record) : null, message: n.message, read: n.read, createdAt: n.createdAt }))
+    notifications: items.map(n => ({ id: String(n._id), kind: n.kind, record: n.record ? String(n.record) : null, link: n.link || null, message: n.message, read: n.read, createdAt: n.createdAt }))
   });
 }));
 

@@ -4,7 +4,8 @@
  */
 const express = require('express');
 const rateLimit = require('express-rate-limit');
-const { Record, Unit } = require('../models');
+const { Record, Unit, Case } = require('../models');
+const { roman } = require('../services/process');
 const catalogue = require('../forms/catalogue');
 const verification = require('../services/verification');
 
@@ -19,7 +20,21 @@ router.get('/:code', async (req, res, next) => {
   try {
     const code = verification.normaliseCode(req.params.code);
     const rec = code ? await Record.findOne({ verifyCode: code, status: { $in: ['final', 'revoked'] } }) : null;
-    if (!rec) return res.status(404).json({ status: 'not_found', code: code || String(req.params.code).slice(0, 40) });
+    if (!rec) {
+      // A case assignment slip from the Process Registry.
+      const c = code ? await Case.findOne({ verifyCode: code, assignment: { $ne: null } }) : null;
+      if (!c) return res.status(404).json({ status: 'not_found', code: code || String(req.params.code).slice(0, 40) });
+      const court = await Unit.findOne({ key: c.assignedUnit });
+      return res.json({
+        status: verification.hashCase(c) === c.contentHash ? 'valid' : 'tampered',
+        code: c.verifyCode,
+        document: `Case Assignment: High Court No. ${roman(court && court.courtNo)}`,
+        reference: c.suitNumber || null,
+        court: court ? court.name : c.assignedUnit,
+        issuedAt: c.assignedAt,
+        signedBy: [{ capacity: 'Hon. Chief Judge', name: c.assignment.name, title: c.assignment.title || null, signedAt: c.assignment.signedAt }]
+      });
+    }
 
     const intact = verification.hashRecord(rec) === rec.contentHash;
     const unit = await Unit.findOne({ key: rec.unitKey });

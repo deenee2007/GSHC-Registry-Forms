@@ -10,18 +10,18 @@
  */
 const mongoose = require('mongoose');
 const backup = require('./backup');
-const { Record, DocumentCopy, Notification, AuditLog } = require('../models');
+const { Record, DocumentCopy, Notification, AuditLog, Case } = require('../models');
 
 const CONFIRM = 'CLEAR TEST DATA';
 const KEY = 'testDataCleared';
 const meta = () => mongoose.connection.collection('appmeta');
 
 async function counts() {
-  const [records, signed, copies, notifications] = await Promise.all([
+  const [records, signed, copies, notifications, cases] = await Promise.all([
     Record.countDocuments(), Record.countDocuments({ status: { $in: ['final', 'revoked'] } }),
-    DocumentCopy.countDocuments(), Notification.countDocuments()
+    DocumentCopy.countDocuments(), Notification.countDocuments(), Case.countDocuments()
   ]);
-  return { records, signed, copies, notifications };
+  return { records, signed, copies, notifications, cases };
 }
 
 async function status() {
@@ -53,7 +53,11 @@ async function clear({ confirm, by }) {
   await Promise.all([
     Record.deleteMany({}), DocumentCopy.deleteMany({}), Notification.deleteMany({}),
     AuditLog.deleteMany({ record: { $exists: true } }),
-    meta().deleteMany({ _id: /^hearingDigest:/ })
+    AuditLog.deleteMany({ action: /^case_/ }),
+    // Process Registry test cases: suit numbers start again at 1, and the
+    // court rotation starts again from High Court 1.
+    Case.deleteMany({}),
+    meta().deleteMany({ _id: { $in: [/^hearingDigest:/, /^caseSeq:/, /^rotation:/] } })
   ]);
   return { counts: before, backupFile: saved.file };
 }

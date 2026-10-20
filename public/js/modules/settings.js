@@ -407,9 +407,51 @@
         load();
       }
 
+      // ── PROCESS REGISTRY: number prefix, case types, fee schedule, EFCC courts ──
+      async function renderProcess() {
+        ui.clear(panel);
+        const s = await api.get('/process/settings');
+        const prefix = el('input', { type: 'text', value: s.prefix, maxlength: '6', class: 'narrow', 'aria-label': 'Number prefix' });
+        const rowsOf = (items, make) => { const box = el('div', { class: 'settings-rows' }); items.forEach(x => box.appendChild(make(x))); return box; };
+        const removable = (cells) => { const row = el('div', { class: 'settings-row' }, cells); row.appendChild(el('button', { class: 'btn btn--small btn--ghost', type: 'button', onclick: () => row.remove() }, '✕')); return row; };
+        const typeRow = (t) => { const r = removable([el('input', { type: 'text', value: t.label, placeholder: 'Case type, e.g. Motion', 'data-f': 'label' }),
+          el('input', { type: 'text', value: t.suffix, placeholder: 'Letter', maxlength: '3', class: 'narrow', 'data-f': 'suffix' })]); r.dataset.key = t.key || ''; return r; };
+        const feeRow = (f) => removable([el('input', { type: 'text', value: f.item, placeholder: 'Fee, e.g. Writ of summons', 'data-f': 'item' }),
+          el('input', { type: 'number', min: '0', step: '0.01', value: f.amount === undefined ? '' : String(f.amount), placeholder: 'Amount (₦)', class: 'narrow', 'data-f': 'amount' })]);
+        const types = rowsOf(s.caseTypes, typeRow), fees = rowsOf(s.fees, feeRow);
+        const efcc = el('div', { class: 'checks' }, s.courts.map(c => {
+          const box = el('input', { type: 'checkbox', value: c.key }); box.checked = s.efccCourts.includes(c.key);
+          return el('label', { class: 'check' }, [box, ` High Court No. ${c.roman}`]);
+        }));
+        const name = (k) => (s.courts.find(c => c.key === k) || { name: 'none yet' }).name;
+        const read = (box, fields) => [...box.querySelectorAll('.settings-row')].map(r => Object.assign({ key: r.dataset.key }, ...fields.map(f => ({ [f]: r.querySelector(`[data-f="${f}"]`).value }))));
+        panel.append(
+          el('p', { class: 'muted' }, 'How new cases are numbered, the filing fees staff choose from, and which courts hear EFCC matters.'),
+          el('h3', null, 'Suit numbers'),
+          el('div', { class: 'settings-row' }, [el('span', null, 'Prefix'), prefix, el('span', { class: 'muted' }, `Numbers read ${s.prefix}/1/${new Date().getFullYear()}; each type counts on its own and starts again at 1 each year.`)]),
+          el('h3', null, 'Case types and their letter'), el('p', { class: 'muted' }, 'The letter is printed raised after the number (Criminal: GM/45c/2026). Leave it empty for one type only (Civil).'),
+          types, el('button', { class: 'btn btn--small btn--ghost', type: 'button', onclick: () => types.appendChild(typeRow({ label: '', suffix: '' })) }, '+ Add case type'),
+          el('h3', null, 'Fee schedule'), el('p', { class: 'muted' }, 'Staff pick fees from this list when filing; the total is worked out for them. Official cases have no fee.'),
+          fees, el('button', { class: 'btn btn--small btn--ghost', type: 'button', onclick: () => fees.appendChild(feeRow({ item: '' })) }, '+ Add fee'),
+          el('h3', null, 'Courts that hear EFCC matters'), efcc,
+          el('p', { class: 'muted' }, `Rotation: the last ordinary case was proposed for ${name(s.rotation.ordinaryLast)}; the last EFCC matter for ${name(s.rotation.efccLast)}.`),
+          el('div', { class: 'card__actions' }, [el('button', { class: 'btn btn--primary', onclick: async () => {
+            try {
+              await api.put('/process/settings', {
+                prefix: prefix.value, caseTypes: read(types, ['label', 'suffix']).filter(t => t.label.trim()),
+                fees: read(fees, ['item', 'amount']).filter(f => f.item.trim()).map(f => ({ item: f.item, amount: Number(f.amount) })),
+                efccCourts: [...efcc.querySelectorAll('input:checked')].map(b => b.value)
+              });
+              ui.toast('Process Registry settings saved.', 'success');
+              renderProcess();
+            } catch (e) { ui.toast(e.message, 'error', 7000); }
+          } }, 'Save')])
+        );
+      }
+
       const tabDefs = [
         ['Users', renderUsers], ['Units', renderUnits], ['Form Access', renderFormAccess],
-        ['Signing Rules', renderSigning], ['Audit Log', renderAudit]
+        ['Signing Rules', renderSigning], ['Process Registry', renderProcess], ['Audit Log', renderAudit]
       ];
       tabDefs.forEach(([name, fn], i) => {
         const btn = el('button', { class: 'tab' + (i === 0 ? ' is-active' : ''), role: 'tab', onclick: () => {

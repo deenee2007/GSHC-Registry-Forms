@@ -24,13 +24,13 @@ const PUB = path.join(__dirname, '..', 'public');
 const guide = fs.readFileSync(path.join(PUB, 'guide.html'), 'utf8');
 const appCode = ['js/main.js', 'js/core/workflow.js', 'js/core/recordEngine.js', 'js/core/router.js', 'js/core/ui.js', 'js/modules/inbox.js',
   'js/modules/submissions.js', 'js/modules/signature.js', 'js/modules/settings.js', 'js/modules/dashboard.js', 'js/modules/reports.js',
-  'js/modules/cases.js', 'js/modules/account.js', 'js/verify.js'].map(f => fs.readFileSync(path.join(PUB, f), 'utf8')).join('\n');
+  'js/modules/cases.js', 'js/modules/account.js', 'js/verify.js', 'js/modules/process.js', 'js/modules/assign.js', 'js/modules/caseRegister.js'].map(f => fs.readFileSync(path.join(PUB, f), 'utf8')).join('\n');
 
 test('the guide is served without signing in and has a page for each role', async () => {
   const r = await fetch(base + '/guide');
   assert.equal(r.status, 200);
   const html = await r.text();
-  for (const id of ['everyone', 'staff', 'signers', 'execution', 'admins', 'verify']) assert.match(html, new RegExp(`<section class="g-page" id="${id}"`));
+  for (const id of ['everyone', 'staff', 'signers', 'execution', 'process', 'admins', 'verify']) assert.match(html, new RegExp(`<section class="g-page" id="${id}"`));
   assert.equal((await fetch(base + '/js/guide.js')).status, 200);
   assert.equal((await fetch(base + '/css/guide.css')).status, 200);
 });
@@ -42,7 +42,9 @@ test('every button and menu name the guide quotes exists in the app', () => {
     'Upload a scan', 'Draw', 'Account password', 'New PIN', 'Repeat PIN', 'Set PIN', 'Reset PIN', 'My Submissions', 'Approved',
     'Awaiting Signature', 'Returned', 'Revoked', 'My Account', 'Help', 'Sign Out', 'Not Synced', '+ Add User', 'Email Reset Link',
     'One Time Password', 'Reset Password', 'Deactivate', '+ Add Unit', 'Form Access', 'Signing Rules', 'Audit Log', 'Back up now',
-    'Download for Excel', 'Upcoming Court Dates', 'Genuine document', 'Record altered', 'Not found'];
+    'Download for Excel', 'Upcoming Court Dates', 'Genuine document', 'Record altered', 'Not found',
+    '+ New Filing', 'Send to Process Registrar', 'View receipt', 'Register and Give Number', 'Awaiting Assignment', 'Review & Assign',
+    'Case Register', 'File received', 'Record Remark', '+ Add Earlier Case', 'Print Register'];
   for (const n of names) {
     assert.ok(guide.includes(n.replace('&', '&amp;')) || guide.includes(n), `the guide mentions "${n}"`);
     assert.ok(appCode.includes(n), `"${n}" is in the app`);
