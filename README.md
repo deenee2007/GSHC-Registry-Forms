@@ -234,9 +234,14 @@ password, PIN and signature carry over.
 New cases are filed, numbered and assigned to a court here.
 1. **Filing** (Process Registry staff): **+ New Filing** with the case type,
    parties, nature of case, originating process, counsel, date of filing,
-   the fees (picked from the fee schedule; the total is worked out), the
-   receipt number and an **upload of the payment receipt** (photo or PDF,
-   kept privately). **Official** (criminal cases filed by the State, EFCC
+   the fees (picked from the fee schedule; the total is worked out). Then
+   **🧾 Print Invoice** for the filer to go and pay: an A5 invoice with the
+   fees, the total in figures and words, the payment details set by the
+   administrator and a reference (INV/2026/0001, from 1 again each year;
+   printing again after the fees change keeps the reference). When the
+   filer returns, the receipt number and an **upload of the payment
+   receipt** (photo or PDF, kept privately; the administrator can make the
+   upload optional). **Official** (criminal cases filed by the State, EFCC
    matters) needs no fee or receipt; ticking **EFCC matter** makes a case
    official. Then **Send to Process Registrar**. The Process Registrar may
    file a case themselves and register it at once, with no sending.
@@ -268,7 +273,8 @@ Roles: give the **Process Registrar** and **Hon. Chief Judge** signing roles
 in Settings → Users; Process Registry staff need the Process Registry unit
 (the Process Registrar role alone is enough to see it).
 Settings → **Process Registry**: the number prefix (GM), case types with their
-letters and register book (Civil or Criminal), the fee schedule, and the courts that hear EFCC matters. The Process
+letters and register book (Civil or Criminal), the payment details on
+the invoice, whether the receipt upload is required, the fee schedule, and the courts that hear EFCC matters. The Process
 Registry's **Summary** tab gives cases registered by type, official cases,
 fees recorded and cases assigned per court for any period. Cases are in the
 Case File, the daily backup, and Clear Test Data (which also restarts the

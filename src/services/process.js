@@ -5,7 +5,8 @@
  * Settings (kept in MongoDB, changed by an administrator): the number
  * prefix (GM), the case types with their letter (Civil none, Criminal c,
  * Petition p, ...), the schedule of filing fees, and which courts hear
- * EFCC matters.
+ * EFCC matters; whether the receipt must be uploaded, and the payment
+ * details printed on the invoice.
  *
  * Suit numbers: each case type counts on its own and starts again at 1
  * each year (GM/1/2026, GM/1c/2026, GM/1p/2026). The count is kept in
@@ -30,7 +31,9 @@ const DEFAULTS = {
     { key: 'petition', label: 'Petition', suffix: 'p', book: 'civil' }
   ],
   fees: [],          // [{ item: 'Writ of summons', amount: 2000 }]
-  efccCourts: []     // unit keys of the courts that hear EFCC matters
+  efccCourts: [],    // unit keys of the courts that hear EFCC matters
+  receiptRequired: true, // the receipt file must be uploaded before registration
+  paymentNote: ''    // printed on the invoice: where and how to pay
 };
 const REMARKS = ['Judgment entered', 'Struck out', 'Withdrawn', 'Dismissed', 'Transferred'];
 
@@ -86,6 +89,8 @@ async function setSettings(input) {
     const courts = new Set((await courts_()).map(c => c.key));
     next.efccCourts = [...new Set((input.efccCourts || []).map(String))].filter(k => courts.has(k));
   }
+  if (input.receiptRequired !== undefined) next.receiptRequired = !!input.receiptRequired;
+  if (input.paymentNote !== undefined) next.paymentNote = String(input.paymentNote || '').trim().slice(0, 1000);
   await meta().updateOne({ _id: KEY }, { $set: next }, { upsert: true });
   return next;
 }
@@ -110,6 +115,14 @@ async function nextNumber(caseType, now = new Date()) {
   const r = await meta().findOneAndUpdate({ _id: `caseSeq:${caseType}:${year}` }, { $inc: { seq: 1 } }, { upsert: true, returnDocument: 'after' });
   const seq = (r && r.value ? r.value : r).seq;
   return { seq, year, suitNumber: `${s.prefix}/${seq}${type.suffix}/${year}` };
+}
+
+// The next invoice reference: INV/2026/0001, from 1 again each year.
+async function nextInvoice(now = new Date()) {
+  const year = now.getFullYear();
+  const r = await meta().findOneAndUpdate({ _id: `invoiceSeq:${year}` }, { $inc: { seq: 1 } }, { upsert: true, returnDocument: 'after' });
+  const seq = (r && r.value ? r.value : r).seq;
+  return `INV/${year}/${String(seq).padStart(4, '0')}`;
 }
 
 // Propose the next court in turn, and move the rotation on to it.
@@ -147,4 +160,4 @@ function roman(n) {
   return s;
 }
 
-module.exports = { getSettings, setSettings, nextNumber, proposeCourt, rotationState, courts: courts_, formatHtml, roman, REMARKS, DEFAULTS };
+module.exports = { getSettings, setSettings, nextNumber, nextInvoice, proposeCourt, rotationState, courts: courts_, formatHtml, roman, REMARKS, DEFAULTS };

@@ -1,7 +1,8 @@
 /*
  * modules/process.js — the Process Registry.
- * Staff file new cases (fees, receipt, or Official for no fee) and send
- * them to the Process Registrar, who registers each one: the next suit
+ * Staff file new cases (fees, the invoice the filer takes to pay, then
+ * the receipt; or Official for no fee) and send them to the Process
+ * Registrar, who registers each one: the next suit
  * number of its type, and the next court in turn proposed to the Hon.
  * Chief Judge. Once assigned, the Process Registry prints the small
  * assignment slip for the file. Also a summary of the period.
@@ -25,6 +26,41 @@
   function ordinalDate(v) {
     const d = new Date(v), n = d.getDate(), s = ['th', 'st', 'nd', 'rd'], m = n % 100;
     return `${n}${s[(m - 20) % 10] || s[m] || s[0]} ${d.toLocaleDateString('en-GB', { month: 'long' })} ${d.getFullYear()}`;
+  }
+
+  // 7500.5 → "Seven thousand, five hundred naira, fifty kobo only".
+  function amountWords(total) {
+    const ones = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
+    const tens = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
+    const under100 = (n) => n < 20 ? ones[n] : tens[Math.floor(n / 10)] + (n % 10 ? ' ' + ones[n % 10] : '');
+    const under1000 = (n) => [n >= 100 ? ones[Math.floor(n / 100)] + ' hundred' : '', n % 100 ? under100(n % 100) : ''].filter(Boolean).join(' and ');
+    const words = (n) => {
+      if (!n) return 'zero';
+      const parts = [];
+      [[1e9, 'billion'], [1e6, 'million'], [1e3, 'thousand'], [1, '']].forEach(([k, name]) => {
+        const x = Math.floor(n / k) % 1000;
+        if (x) parts.push(under1000(x) + (name ? ' ' + name : ''));
+      });
+      return parts.join(', ');
+    };
+    const kobo = Math.round(Number(total || 0) * 100), n = Math.floor(kobo / 100), k = kobo % 100;
+    const s = `${words(n)} naira${k ? ', ' + words(k) + ' kobo' : ''} only`;
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
+
+  // Print some HTML on its own page size, then tidy up.
+  async function printPage(html, pageCss, bodyClass) {
+    const root = document.getElementById('print-root') || document.body.appendChild(Object.assign(document.createElement('div'), { id: 'print-root' }));
+    root.innerHTML = html;
+    await Promise.all([...root.querySelectorAll('img')].map(i => i.complete ? null : new Promise(r => { i.onload = i.onerror = r; setTimeout(r, 8000); })));
+    const page = Object.assign(document.createElement('style'), { textContent: pageCss });
+    document.head.appendChild(page);
+    const classes = ['is-printing', ...(bodyClass ? [bodyClass] : [])];
+    document.body.classList.add(...classes);
+    const done = () => { document.body.classList.remove(...classes); root.innerHTML = ''; page.remove(); window.removeEventListener('afterprint', done); };
+    window.addEventListener('afterprint', done);
+    window.print();
+    setTimeout(done, 1000);
   }
 
   // GM/45c/2026 with the letter raised.
@@ -51,6 +87,8 @@
       row('Counsel', [c.counsel, c.counselAddress].filter(Boolean).join(', ')),
       row('Date of filing', day(c.filedOn)),
       c.official ? row('Fees', 'Official: no filing fee') : row('Fees', `${c.fees.map(f => `${f.item}${f.qty > 1 ? ' × ' + f.qty : ''} ${naira(f.amount * f.qty)}`).join('; ')} · Total ${naira(c.feeTotal)}`),
+      c.official ? null : row('Invoice', c.invoice ? `${c.invoice.reference}, issued ${day(c.invoice.issuedAt)} by ${c.invoice.issuedByName}` : 'Not yet issued'),
+      invoiceStale(c) ? ui.el('div', { class: 'notice notice--warn' }, 'The fees changed after the invoice was issued. Print the invoice again so it shows the new fees (the reference stays the same).') : null,
       c.official ? null : row('Receipt', ui.el('span', null, [c.receiptNumber || 'No number',
         c.receipt ? ui.el('button', { class: 'btn btn--small btn--ghost', type: 'button', onclick: () => viewReceipt(c.id) }, '📄 View receipt') : ' · not uploaded'])),
       row('Filed by', c.createdByName),
@@ -63,6 +101,32 @@
     ]);
   }
 
+  const feeKey = (fees) => JSON.stringify((fees || []).map(f => [f.item, Number(f.amount), Number(f.qty)]));
+  const invoiceStale = (c) => !c.official && c.invoice && feeKey(c.invoice.fees) !== feeKey(c.fees);
+
+  // The invoice the filer takes to pay: the fees chosen, the total and a
+  // reference to quote when they bring the receipt back.
+  function printInvoice(c, settings) {
+    const inv = c.invoice;
+    const rows = inv.fees.map((f, i) => `<tr><td>${i + 1}</td><td>${esc(f.item)}</td><td class="num">${f.qty}</td><td class="num">${esc(naira(f.amount))}</td><td class="num">${esc(naira(f.amount * f.qty))}</td></tr>`).join('');
+    const kv = (k, v) => v ? `<div class="doc-kv"><strong>${esc(k)}:</strong> ${esc(v)}</div>` : '';
+    return printPage(`<article class="court-doc invoice-print">
+      <header class="doc-masthead"><img class="doc-emblem" src="/assets/highcourt.png" alt="">
+        <div class="doc-titleblock"><div class="doc-line1">THE JUDICIARY</div><div class="doc-line2">GOMBE STATE HIGH COURT OF JUSTICE</div><div class="doc-line3">PROCESS REGISTRY</div></div>
+        <img class="doc-emblem" src="/assets/coat.png" alt=""></header><div class="doc-rule"></div>
+      <h2 class="invoice-title">INVOICE</h2>
+      <div class="invoice-meta"><div><strong>Reference:</strong> ${esc(inv.reference)}</div><div><strong>Date:</strong> ${esc(day(inv.issuedAt))}</div></div>
+      ${kv('Name of case', parties(c))}${kv('Case type', typeLabel(settings, c.caseType))}${kv('Nature of case', c.nature)}${kv('Originating process', c.process)}${kv('Counsel', c.counsel)}
+      <table class="doc-table invoice-table"><thead><tr><th>S/No</th><th>Item</th><th class="num">Qty</th><th class="num">Amount</th><th class="num">Total</th></tr></thead>
+        <tbody>${rows}</tbody><tfoot><tr><th colspan="4">TOTAL</th><th class="num">${esc(naira(inv.total))}</th></tr></tfoot></table>
+      <div class="doc-kv"><strong>Amount in words:</strong> ${esc(amountWords(inv.total))}</div>
+      ${settings.paymentNote ? `<div class="invoice-pay"><strong>Payment details</strong><div>${esc(settings.paymentNote)}</div></div>` : ''}
+      <p class="invoice-note">After payment, bring the receipt to the Process Registry and quote the reference ${esc(inv.reference)}.</p>
+      <div class="doc-kv">Issued by: ${esc(inv.issuedByName)}</div>
+      <footer class="doc-footer"><span>Printed ${esc(day(new Date()))}</span><span>Powered by the Directorate of ICT, Gombe State High Court of Justice</span></footer>
+    </article>`, '@page { size: A5; margin: 10mm; }');
+  }
+
   // The small slip fixed to the file: the court, the date, the Chief
   // Judge's signature and the QR code (and, in small print, the suit
   // number, so a slip that comes off can be matched to its file).
@@ -71,8 +135,7 @@
     let c;
     try { c = (await api.get(`/process/cases/${id}`)).case; } catch (e) { ui.toast(e.message, 'error'); return; }
     if (!c.assigned || !c.assignment) { ui.toast('The case is not assigned yet.', 'error'); return; }
-    const root = document.getElementById('print-root') || document.body.appendChild(Object.assign(document.createElement('div'), { id: 'print-root' }));
-    root.innerHTML = `<article class="case-slip">
+    await printPage(`<article class="case-slip">
       <div class="slip-court">GOMBE STATE HIGH COURT OF JUSTICE</div>
       <div class="slip-label">ASSIGNED TO</div>
       <div class="slip-assigned">HIGH COURT No. ${esc(c.assigned.roman)}</div>
@@ -83,18 +146,10 @@
         <div class="slip-qr"><img src="${esc(c.qrDataUrl)}" alt="QR code"><div>${esc(c.verifyCode)}</div></div>
       </div>
       <div class="slip-ref">${caseNoHtml(c.suitNumber)}</div>
-    </article>`;
-    await Promise.all([...root.querySelectorAll('img')].map(i => i.complete ? null : new Promise(r => { i.onload = i.onerror = r; setTimeout(r, 8000); })));
-    const page = Object.assign(document.createElement('style'), { textContent: '@page { size: 148mm 105mm; margin: 0; }' });
-    document.head.appendChild(page);
-    document.body.classList.add('is-printing', 'is-printing-slip');
-    const done = () => { document.body.classList.remove('is-printing', 'is-printing-slip'); root.innerHTML = ''; page.remove(); window.removeEventListener('afterprint', done); };
-    window.addEventListener('afterprint', done);
-    window.print();
-    setTimeout(done, 1000);
+    </article>`, '@page { size: 148mm 105mm; margin: 0; }', 'is-printing-slip');
   }
 
-  window.App.processUi = { caseNoHtml, caseNo, badge, details, viewReceipt, printSlip, parties, day, naira, STATUS };
+  window.App.processUi = { caseNoHtml, caseNo, badge, details, viewReceipt, printSlip, printPage, amountWords, parties, day, naira, STATUS };
 
   // ── The filing form ──
   function filingForm(ctx, settings, existing) {
@@ -147,8 +202,9 @@
     ]);
     const paidBox = el('div', { class: 'form-grid form-field--full' }, [
       feeBox,
+      el('p', { class: 'form-field__help form-field--full' }, 'Save the filing, then open it and click Print Invoice for the filer to go and pay. Enter the receipt number when they bring the receipt.'),
       el('label', { class: 'form-field' }, [el('span', { class: 'form-field__label' }, 'Receipt number'), receiptNumber]),
-      el('label', { class: 'form-field' }, [el('span', { class: 'form-field__label' }, existing && existing.receipt ? `Receipt file (uploaded: ${existing.receipt.name}; choose to replace)` : 'Receipt file (photo or PDF)'), receiptFile])
+      el('label', { class: 'form-field' }, [el('span', { class: 'form-field__label' }, existing && existing.receipt ? `Receipt file (uploaded: ${existing.receipt.name}; choose to replace)` : `Receipt file (photo or PDF${settings.receiptRequired ? '' : ', optional'})`), receiptFile])
     ]);
     const syncOfficial = () => { if (efcc.checked) official.checked = true; official.disabled = efcc.checked; paidBox.hidden = official.checked; };
     efcc.addEventListener('change', syncOfficial); official.addEventListener('change', syncOfficial); syncOfficial();
@@ -176,7 +232,7 @@
           form.append('file', receiptFile.files[0]);
           r = await api.post(`/process/cases/${r.case.id}/receipt`, form);
         }
-        ui.toast(existing ? 'Filing updated.' : 'Filing saved. Send it to the Process Registrar when complete.', 'success', 5000);
+        ui.toast(existing ? 'Filing updated.' : 'Filing saved.', 'success', 5000);
         return r.case;
       }
     });
@@ -192,9 +248,17 @@
     const after = (msg) => (r) => { if (r) { ui.toast(msg, 'success', 6000); dialog && dialog.close(); onDone(); window.App.router.refreshBadges(); } };
     const act = (label, cls, fn, show) => show ? ui.el('button', { class: 'btn ' + cls, onclick: async () => { try { await fn(); } catch (e) { ui.toast(e.message, 'error', 8000); } } }, label) : null;
     const draftish = ['draft', 'returned'].includes(c.status);
+    const editable = draftish || (c.status === 'submitted' && me.registrar);
     const actions = ui.el('div', { class: 'doc-preview__actions' }, [
       act('✕  Close', 'btn--ghost', async () => dialog.close(), true),
       act('Edit', 'btn--ghost', async () => { dialog.close(); const r = await filingForm(ctx, settings, c); if (r) onDone(); }, draftish || (c.status === 'submitted' && me.registrar)),
+      act('🧾  Print Invoice', 'btn--primary', async () => {
+        // Issued (or brought up to date) while the filing can change; printed as issued after that.
+        const issue = editable && (!c.invoice || invoiceStale(c));
+        if (issue) c = (await api.post(`/process/cases/${c.id}/invoice`)).case;
+        await printInvoice(c, settings);
+        if (issue) { dialog.close(); onDone(); openCase(ctx, settings, c.id, onDone); } // show the reference now issued
+      }, !c.official && c.feeTotal > 0 && me.inProcess && (editable || !!c.invoice)),
       act('Delete', 'btn--danger', async () => { if (!confirm('Delete this filing?')) return; await api.del(`/process/cases/${c.id}`); after('Filing deleted.')(true); }, draftish),
       act('➤  Send to Process Registrar', 'btn--primary', async () => { await api.post(`/process/cases/${c.id}/submit`); after('Sent to the Process Registrar.')(true); }, draftish && !me.registrar),
       act('Return with Comments', 'btn--danger', async () => {
@@ -263,12 +327,12 @@
           ['awaiting_assignment', 'Awaiting assignment'], ['assigned', 'Assigned (print the slip)'], ['received,disposed', 'With the courts'], ['', 'All']
         ].map(([v, t]) => el('option', { value: v }, t)));
         status.value = filter;
-        const search = el('input', { type: 'search', class: 'search-input', placeholder: '🔍  Search suit no., party, nature, receipt no.', value: term });
+        const search = el('input', { type: 'search', class: 'search-input', placeholder: '🔍  Search suit no., party, nature, invoice or receipt no.', value: term });
         const list = el('div');
         const canFile = settings.me.inProcess;
         panel.replaceChildren(
           el('div', { class: 'toolbar' }, [
-            canFile ? el('button', { class: 'btn btn--primary', onclick: async () => { const r = await filingForm(ctx, settings); if (r) load(); } }, '+ New Filing') : null,
+            canFile ? el('button', { class: 'btn btn--primary', onclick: async () => { const r = await filingForm(ctx, settings); if (r) { load(); openCase(ctx, settings, r.id, load); } } }, '+ New Filing') : null,
             el('button', { class: 'btn btn--ghost', onclick: () => load() }, '↻ Refresh')
           ]),
           el('div', { class: 'filter-bar' }, [search, status]),

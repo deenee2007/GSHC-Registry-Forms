@@ -72,22 +72,29 @@
         const rows = shown();
         const bookName = BOOKS.find(b => b[0] === book)[1];
         if (!rows.length) { list.replaceChildren(ui.empty(entries().length ? 'No case matches.' : `No case in the ${bookName} yet.`)); return; }
-        list.replaceChildren(ui.table([
-          { label: 'S/No', value: c => String(c.sn) },
-          { label: 'Name of case', value: c => P.parties(c) },
-          { label: 'Suit number', node: c => P.caseNo(ui, c.suitNumber) },
-          { label: 'Date of filing', value: c => P.day(c.filedOn) },
-          { label: 'Date of assignment', value: c => P.day(c.assignedAt) },
-          { label: 'Type of case', value: c => c.nature || '' },
-          { label: 'Date received', node: c => c.receivedAt ? el('span', null, P.day(c.receivedAt)) : el('span', { class: 'badge badge--pending' }, 'Not yet received') },
-          { label: 'Date of disposal', value: c => c.disposal ? P.day(c.disposal.date) : '' },
-          { label: 'Remarks', value: c => c.disposal ? c.disposal.remark : '' }
-        ], rows, canWork ? [
-          { label: 'File received', class: 'btn--ok', show: c => c.status === 'assigned', onClick: async c => {
+        // As in the book: the action sits in its own column (File received under
+        // Date received, Record Remark under Remarks), so there is no Actions column.
+        const btn = (label, cls, fn) => el('button', { class: 'btn btn--small ' + cls, type: 'button', onclick: fn }, label);
+        const received = (c) => c.receivedAt ? P.day(c.receivedAt)
+          : canWork && c.status === 'assigned' ? btn('File received', 'btn--ok', async () => {
             try { await api.post(`/process/cases/${c.id}/received`); ui.toast(`File ${c.suitNumber} received.`, 'success'); load(); } catch (e) { ui.toast(e.message, 'error'); }
-          } },
-          { label: c => c.disposal ? 'Change Remark' : 'Record Remark', onClick: c => remark(c) }
-        ] : null));
+          }) : el('span', { class: 'reg-pending' }, 'Not yet received');
+        const remarks = (c) => el('div', { class: 'reg-remark' }, [
+          c.disposal ? el('span', null, c.disposal.remark) : null,
+          canWork ? btn(c.disposal ? 'Change' : 'Record Remark', 'btn--ghost', () => remark(c)) : null
+        ]);
+        const COLS = [
+          ['S/No', 'c-sn', c => String(c.sn)], ['Name of case', 'c-name', c => P.parties(c)], ['Suit number', 'c-suit', c => P.caseNo(ui, c.suitNumber)],
+          ['Date of filing', 'c-date', c => P.day(c.filedOn)], ['Date of assignment', 'c-date', c => P.day(c.assignedAt)], ['Type of case', 'c-type', c => c.nature || ''],
+          ['Date received', 'c-date', received], ['Date of disposal', 'c-date', c => c.disposal ? P.day(c.disposal.date) : ''], ['Remarks', 'c-remark', remarks]
+        ];
+        list.replaceChildren(el('div', { class: 'table-scroll' }, [el('table', { class: 'data-table register-table' }, [
+          el('thead', null, el('tr', null, COLS.map(([label, cls]) => el('th', { class: cls }, label)))),
+          el('tbody', null, rows.map(c => el('tr', null, COLS.map(([label, cls, value]) => {
+            const v = value(c);
+            return el('td', { class: cls, 'data-label': label }, typeof v === 'string' ? v : [v]);
+          }))))
+        ])]));
       }
 
       function remark(c) {

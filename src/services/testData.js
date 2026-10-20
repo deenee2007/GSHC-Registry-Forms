@@ -57,7 +57,7 @@ async function clear({ confirm, by }) {
     // Process Registry test cases: suit numbers start again at 1, and the
     // court rotation starts again from High Court 1.
     Case.deleteMany({}),
-    meta().deleteMany({ _id: { $in: [/^hearingDigest:/, /^caseSeq:/, /^rotation:/] } })
+    meta().deleteMany({ _id: { $in: [/^hearingDigest:/, /^caseSeq:/, /^invoiceSeq:/, /^rotation:/] } })
   ]);
   return { counts: before, backupFile: saved.file };
 }
