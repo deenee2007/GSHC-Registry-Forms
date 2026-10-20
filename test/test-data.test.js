@@ -71,7 +71,7 @@ test('administrators only, and the confirmation word is required', async () => {
   assert.equal((await clerk.post('/api/admin/test-data/clear', { confirm: 'CLEAR TEST DATA' })).status, 403);
   const st = await admin.get('/api/admin/test-data');
   assert.equal(st.body.available, true);
-  assert.deepEqual(st.body.counts, { records: 2, signed: 1, copies: 1, notifications: 1 });
+  assert.deepEqual(st.body.counts, { records: 2, signed: 1, copies: 1, notifications: 1, cases: 0 });
   const wrong = await admin.post('/api/admin/test-data/clear', { confirm: 'yes' });
   assert.equal(wrong.status, 400);
   assert.equal(await Record.countDocuments(), 2, 'nothing cleared');
@@ -95,6 +95,10 @@ test('nothing is cleared when the backup fails', async () => {
 
 test('clearing removes the test documents, keeps users and rules, and backs up first', async () => {
   const users = await User.countDocuments(), rules = await FormConfig.countDocuments(), units = await Unit.countDocuments();
+  // A test case at the Process Registry, with its number count and rotation.
+  const { Case } = require('../src/models');
+  await Case.create({ caseType: 'civil', suitNumber: 'GM/5/2026', status: 'assigned', assignedUnit: 'hc2' });
+  await mongoose.connection.collection('appmeta').insertMany([{ _id: 'caseSeq:civil:2026', seq: 5 }, { _id: 'rotation:ordinary', unitKey: 'hc2' }]);
   const r = await admin.post('/api/admin/test-data/clear', { confirm: 'clear test data' });
   assert.equal(r.status, 200, JSON.stringify(r.body));
   assert.equal(r.body.counts.records, 2);
@@ -104,6 +108,8 @@ test('clearing removes the test documents, keeps users and rules, and backs up f
   assert.equal(await Record.countDocuments(), 0);
   assert.equal(await DocumentCopy.countDocuments(), 0);
   assert.equal(await Notification.countDocuments(), 0);
+  assert.equal(await Case.countDocuments(), 0, 'test cases removed');
+  assert.equal(await mongoose.connection.collection('appmeta').countDocuments({ _id: { $in: ['caseSeq:civil:2026', 'rotation:ordinary'] } }), 0, 'numbers start again at 1, rotation from High Court 1');
   assert.equal(await AuditLog.countDocuments({ record: { $exists: true } }), 0, 'Reports start from zero');
   assert.ok(await AuditLog.exists({ action: 'test_data_cleared' }), 'the clearing itself is logged');
   assert.ok(await AuditLog.exists({ action: 'user_created' }), 'other audit entries stay');

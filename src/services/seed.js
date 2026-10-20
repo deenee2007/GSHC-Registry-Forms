@@ -17,8 +17,9 @@ const SEED_UNITS = [
 ];
 
 async function seedUnits() {
-  if (await Unit.countDocuments() > 0) return;
-  await Unit.insertMany(SEED_UNITS);
+  if (await Unit.countDocuments() === 0) await Unit.insertMany(SEED_UNITS);
+  // Added later: databases made before it get it too.
+  if (!(await Unit.exists({ type: 'process' }))) await Unit.create({ key: 'process', type: 'process', name: 'Process Registry' });
 }
 
 // Add a signing rule for any form that does not have one yet. Existing

@@ -50,6 +50,15 @@ function hashRecord(rec) {
   return crypto.createHash('sha256').update(stable(content)).digest('hex');
 }
 
+// Fingerprint of a case assignment: the case, the court and who signed when.
+function hashCase(c) {
+  const content = {
+    id: String(c._id), suitNumber: c.suitNumber, assignedUnit: c.assignedUnit, assignedAt: c.assignedAt, verifyCode: c.verifyCode,
+    signed: c.assignment ? { user: String(c.assignment.user), name: c.assignment.name, signedAt: c.assignment.signedAt } : null
+  };
+  return crypto.createHash('sha256').update(stable(content)).digest('hex');
+}
+
 // The QR points at the address the document was issued from, unless
 // PUBLIC_BASE_URL pins it to one domain.
 function baseUrl(req) {
@@ -61,4 +70,4 @@ function qrDataUrl(url) {
   return QRCode.toDataURL(url, { errorCorrectionLevel: 'M', margin: 1, width: 240 });
 }
 
-module.exports = { newCode, normaliseCode, hashRecord, baseUrl, qrDataUrl };
+module.exports = { newCode, normaliseCode, hashRecord, hashCase, baseUrl, qrDataUrl };

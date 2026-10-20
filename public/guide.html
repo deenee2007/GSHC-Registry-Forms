@@ -16,6 +16,7 @@
       <a href="#staff">Registry and Unit Staff</a>
       <a href="#signers">Judges and Signers</a>
       <a href="#execution">Execution / Bailiffs</a>
+      <a href="#process">Process Registry</a>
       <a href="#admins">Administrators</a>
       <a href="#verify">Checking a Document</a>
     </div>
@@ -179,6 +180,41 @@
     <p class="g-note">Before enforcing, check <b>📁 Case File</b> for the suit number: it shows every order, notice and writ issued in the case and whether any was revoked.</p>
   </section>
 
+  <!-- ─────────────────────── Process Registry ─────────────────────── -->
+  <section class="g-page" id="process">
+    <header class="g-head">
+      <img src="/assets/highcourt.png" alt="" />
+      <div><div class="g-court">Gombe State High Court of Justice · GSHC Registry</div><h1>User Guide: Process Registry and Case Assignment</h1></div>
+      <button type="button" class="g-print" data-print="process">🖨 Print this page</button>
+    </header>
+
+    <h2>Filing a new case (Process Registry staff)</h2>
+    <ol>
+      <li>Open <b>Process Registry</b> in the menu and click <b>+ New Filing</b>.</li>
+      <li>Choose the case type, enter both parties, the nature of the case, the originating process, counsel and the date of filing.</li>
+      <li>Pick the fees from the list (the total is worked out for you), type the receipt number, and choose the photo or PDF of the receipt.</li>
+      <li>For a criminal case filed by the State, or an EFCC matter, tick <b>Official</b> (or <b>EFCC matter</b>): no fee or receipt is needed.</li>
+      <li>Click <b>Save</b>, then open the filing and click <b>Send to Process Registrar</b>.</li>
+    </ol>
+
+    <h2>Registering (Process Registrar)</h2>
+    <p>Filings waiting for you show a number beside <b>Process Registry</b> in the menu. Open each one, check the details and click <b>📄 View receipt</b>. Then click <b>Register and Give Number</b>: the case gets the next number of its type (GM/1/2026, GM/1<sup>c</sup>/2026, GM/1<sup>p</sup>/2026) and goes to the Hon. Chief Judge with the court next in turn proposed. If something is wrong, click <b>Return with Comments</b>.</p>
+
+    <h2>Assigning (Hon. Chief Judge)</h2>
+    <p>Click <b>⚖ Awaiting Assignment</b>, then <b>Review &amp; Assign</b> on a case. The court next in turn is already chosen; keep it or choose another, type your signing PIN and click <b>Assign</b>. EFCC matters are proposed to the courts that hear them.</p>
+
+    <h2>The slip and the file</h2>
+    <p>Once assigned, the Process Registry clicks <b>🖨 Slip</b> (filter <b>Assigned</b>) and prints the small slip on A6 paper or card, fixes it to the file and sends the file to the court registry. The slip carries the court, the date, the Chief Judge's signature and a QR code anyone can scan to check it.</p>
+
+    <h2>The court's Case Register (court registries)</h2>
+    <ul>
+      <li>On your court's page, click <b>📒 Case Register</b>. New cases assigned to your court appear by themselves.</li>
+      <li>When the file arrives, click <b>File received</b>.</li>
+      <li>When the case is disposed of, click <b>Record Remark</b> and choose the remark, or Other and type it.</li>
+      <li>For cases filed before the system, use <b>+ Add Earlier Case</b>. <b>🖨 Print Register</b> prints the list.</li>
+    </ul>
+  </section>
+
   <!-- ─────────────────────── Administrators ─────────────────────── -->
   <section class="g-page" id="admins">
     <header class="g-head">
@@ -193,6 +229,7 @@
       <tr><th>Units</th><td><b>+ Add Unit</b> adds another Court Registry (numbered for you, with the registry forms) or an Other Unit (Probate, Accounts and so on), which starts with no forms.</td></tr>
       <tr><th>Form Access</th><td>Which forms each unit may use.</td></tr>
       <tr><th>Signing Rules</th><td>Who signs each form. A form with no signature line is signed by hand outside the system.</td></tr>
+      <tr><th>Process Registry</th><td>The suit number prefix (GM), the case types and their letters, the fee schedule staff pick from, and which courts hear EFCC matters. Give the <b>Process Registrar</b> and <b>Hon. Chief Judge</b> signing roles under Users.</td></tr>
       <tr><th>Audit Log</th><td>Every sign in, edit, submission, signature, print, revocation and backup, with the user and time.</td></tr>
     </table>
     <p>Give every judge and signer the right <b>signing role</b> and assign them to their court, then ask them to set up <b>🖊 My Signature</b>. A form cannot be submitted to a role nobody holds.</p>

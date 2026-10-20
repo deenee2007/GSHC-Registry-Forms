@@ -230,6 +230,46 @@ npm run restore -- gshc_2026-10-19_020000_000.json.gz --uri <new database>
 Then point `MONGODB_URI` on Render at the restored database. Everyone's
 password, PIN and signature carry over.
 
+## Process Registry
+New cases are filed, numbered and assigned to a court here.
+1. **Filing** (Process Registry staff): **+ New Filing** with the case type,
+   parties, nature of case, originating process, counsel, date of filing,
+   the fees (picked from the fee schedule; the total is worked out), the
+   receipt number and an **upload of the payment receipt** (photo or PDF,
+   kept privately). **Official** (criminal cases filed by the State, EFCC
+   matters) needs no fee or receipt; ticking **EFCC matter** makes a case
+   official. Then **Send to Process Registrar**.
+2. **Registration** (Process Registrar): checks the filing and the receipt,
+   then **Register and Give Number**, or **Return with Comments**. Each case
+   type counts on its own and starts again at 1 each year: GM/1/2026 (civil),
+   GM/1<sup>c</sup>/2026 (criminal), GM/1<sup>p</sup>/2026 (petition). The
+   next court in turn is proposed: after the court proposed last, back to
+   High Court 1 after the last; EFCC matters go round the EFCC courts only.
+3. **Assignment** (Hon. Chief Judge): **⚖ Awaiting Assignment** lists the
+   registered cases with the proposed court. The Chief Judge keeps it or
+   chooses another and assigns with their signing PIN. The rotation
+   continues from the court proposed.
+4. **Slip** (Process Registry): **🖨 Print Assignment Slip** prints a small
+   A6 slip for the file: "Assigned to High Court No. IX", the date of
+   assignment, the Chief Judge's signature and a QR code (the suit number in
+   small print, so a slip that comes off can be matched to its file).
+5. **Case Register** (court registry): **📒 Case Register** on the court's
+   page lists its cases (case number, parties, nature, date filed, date
+   assigned, remark). **File received** when the file arrives; **Record
+   Remark** when the case is disposed of (Judgment entered, Struck out,
+   Withdrawn, Dismissed, Transferred, or Other typed in). **+ Add Earlier
+   Case** enters a case filed before the system.
+
+Roles: give the **Process Registrar** and **Hon. Chief Judge** signing roles
+in Settings → Users; Process Registry staff need the Process Registry unit.
+Settings → **Process Registry**: the number prefix (GM), case types and their
+letters, the fee schedule, and the courts that hear EFCC matters. The Process
+Registry's **Summary** tab gives cases registered by type, official cases,
+fees recorded and cases assigned per court for any period. Cases are in the
+Case File, the daily backup, and Clear Test Data (which also restarts the
+numbering at 1 and the rotation at High Court 1). Receipt files stay in
+Cloudinary, like signatures.
+
 ## Before going live: clearing test data
 Until it has been used, Home shows administrators a **Before Going Live**
 section with **🗑 Clear Test Data**. Typing `CLEAR TEST DATA` removes every

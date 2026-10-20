@@ -38,6 +38,7 @@
     const group = (title) => _nav.appendChild(ui.el('div', { class: 'nav-group' }, title));
 
     _nav.appendChild(navItem('🏠  Home', loadDashboard, { 'data-nav': 'home' }, 'notifications'));
+    if ((user.signerRoles || []).includes('chief_judge')) _nav.appendChild(navItem('⚖  Awaiting Assignment', () => loadModule('assign'), { 'data-nav': 'assign' }, 'assign'));
     if (permissions.isSigner(user)) _nav.appendChild(navItem('✍  Awaiting My Signature', () => loadModule('inbox'), { 'data-nav': 'inbox' }, 'inbox'));
     if (permissions.isAdmin(user) || permissions.can('finalize', user)) {
       _nav.appendChild(navItem('📤  My Submissions', () => loadModule('submissions'), { 'data-nav': 'submissions' }, 'approved'));
@@ -50,7 +51,7 @@
     }
 
     if (list.length) group('Units');
-    list.forEach(u => _nav.appendChild(navItem(u.name, () => loadUnit(u), { 'data-unit': u.key })));
+    list.forEach(u => _nav.appendChild(navItem(u.name, () => loadUnit(u), { 'data-unit': u.key }, u.type === 'process' ? 'process' : null)));
 
     group('Account');
     _nav.appendChild(navItem('🔑  My Account', () => loadModule('account'), { 'data-nav': 'account' }));
@@ -77,9 +78,14 @@
       setBadge('inbox', stats.inbox);
       setBadge('approved', stats.approvedUnprinted);
       setBadge('notifications', notes.unread);
+      // Cases for the Chief Judge to assign, and filings for the Process Registrar to register.
+      let cases = { awaitingAssignment: 0, toRegister: 0 };
+      if (badges.assign || badges.process) { try { cases = await api.get('/process/counts'); } catch (e) { /* keep zero */ } }
+      setBadge('assign', cases.awaitingAssignment);
+      setBadge('process', cases.toRegister);
       // Phones: the menu button shows whether anything waits inside the menu.
       const menu = document.getElementById('menu-badge');
-      const waiting = stats.inbox + stats.approvedUnprinted + notes.unread;
+      const waiting = stats.inbox + stats.approvedUnprinted + notes.unread + cases.awaitingAssignment + cases.toRegister;
       if (menu) { menu.textContent = waiting > 99 ? '99+' : String(waiting); menu.hidden = !waiting; }
     } catch (e) { /* offline: keep the last numbers */ }
   }

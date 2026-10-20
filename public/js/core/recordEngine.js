@@ -38,7 +38,10 @@
       onclick: () => wf.openForm({ unitKey: unit.key, formType: formPicker.value })
     }, '+ New Entry');
     const refreshBtn = ui.el('button', { class: 'btn btn--ghost', onclick: () => refresh() }, '↻ Refresh');
-    container.appendChild(ui.el('div', { class: 'toolbar' }, [formPicker, newBtn, refreshBtn]));
+    // A court registry keeps the register of cases assigned to it.
+    const registerBtn = unit.type === 'registry'
+      ? ui.el('button', { class: 'btn btn--ghost', onclick: () => window.App.router.loadModule('caseRegister', { unit }) }, '📒 Case Register') : null;
+    container.appendChild(ui.el('div', { class: 'toolbar' }, [formPicker, newBtn, refreshBtn, registerBtn]));
 
     // ── Search / filter / sort ──
     let filterStatus = 'all', searchTerm = '', sortMode = 'newest';

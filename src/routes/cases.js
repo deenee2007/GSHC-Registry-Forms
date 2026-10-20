@@ -8,7 +8,8 @@
  * contents; drafts in other units are not listed at all.
  */
 const express = require('express');
-const { Record, Unit } = require('../models');
+const { Record, Unit, Case } = require('../models');
+const { roman } = require('../services/process');
 const catalogue = require('../forms/catalogue');
 const { HttpError, requireLogin, canAccessUnit, can, isAdmin } = require('../middleware/auth');
 
@@ -55,6 +56,27 @@ router.get('/', wrap(async (req, res) => {
       cases.get(caseNo).push(item);
     }
   }
+  // Registered cases from the Process Registry: filing, assignment, disposal.
+  const regs = await Case.find({ caseNos: match, status: { $in: ['awaiting_assignment', 'assigned', 'received', 'disposed'] } })
+    .select('caseNos status firstParty secondParty registeredAt assignedAt assignedUnit disposal earlier').lean();
+  const courtNo = Object.fromEntries((await Unit.find({ type: 'registry' }, 'key courtNo').lean()).map(u => [u.key, u.courtNo]));
+  for (const c of regs) {
+    const label = c.status === 'awaiting_assignment' ? 'Case filed (awaiting assignment)'
+      : c.status === 'disposed' ? `Case disposed: ${c.disposal ? c.disposal.remark : ''}`
+      : c.earlier ? 'Case entered in the court register' : `Case assigned to High Court No. ${roman(courtNo[c.assignedUnit])}`;
+    const item = {
+      id: null, canOpen: false, formType: 'case', formLabel: label,
+      unitKey: c.assignedUnit || 'process', unitName: c.assignedUnit ? (units[c.assignedUnit] || c.assignedUnit) : 'Process Registry',
+      status: c.status === 'awaiting_assignment' ? 'pending' : 'final',
+      date: (c.disposal && c.disposal.at) || c.assignedAt || c.registeredAt, createdAt: c.registeredAt,
+      summary: `${c.firstParty} v. ${c.secondParty}`, createdByName: ''
+    };
+    for (const caseNo of (c.caseNos || []).filter(n => (exact ? n === q : n.includes(q)))) {
+      if (!cases.has(caseNo)) cases.set(caseNo, []);
+      cases.get(caseNo).unshift(item); // the filing comes first in its case
+    }
+  }
+
   // The number typed in full first, then the rest by how many documents they hold.
   const list = [...cases.entries()]
     .sort((a, b) => (b[0] === q) - (a[0] === q) || b[1].length - a[1].length || a[0].localeCompare(b[0]))
