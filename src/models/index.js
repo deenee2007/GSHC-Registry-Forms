@@ -208,6 +208,9 @@ const CaseSchema = new Schema({
   feeTotal:      { type: Number, default: 0 },
   receiptNumber: { type: String, trim: true, default: '' },
   receipt:       { type: FileRef, default: null },
+  // The invoice given to the filer to go and pay: its reference and what it listed.
+  invoice:       { type: { _id: false, reference: String, issuedAt: Date, issuedByName: String,
+                   fees: [{ _id: false, item: String, amount: Number, qty: Number }], total: Number }, default: null },
 
   status:        { type: String, enum: CASE_STATUSES, default: 'draft', index: true },
   returnComment: String,

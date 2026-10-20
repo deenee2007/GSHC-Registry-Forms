@@ -553,6 +553,53 @@ button.dash-card:hover { border-color: var(--green-500); }
 @media (max-width: 600px) { .action-item { flex-direction: column; align-items: flex-start; gap: .25rem; } }
 
 /* Process Registry */
+/* The court's register book: columns sized to their contents, dates kept
+   whole, no Actions column; on phones each case is a two column card. */
+.register-table th { text-transform: none; letter-spacing: 0; font-size: .8rem; line-height: 1.25; padding: .6rem .5rem; vertical-align: bottom; }
+.register-table td { padding: .55rem .5rem; font-size: .86rem; vertical-align: top; }
+.register-table tbody tr:nth-child(even) td { background: #f8faf8; }
+.register-table .c-sn { width: 2.6rem; text-align: center; }
+.register-table td.c-name { min-width: 9rem; }
+.register-table td.c-type { min-width: 6rem; }
+.register-table td.c-remark { min-width: 8rem; }
+.register-table td.c-suit { white-space: nowrap; }
+@media (min-width: 1200px) { .register-table td.c-date { white-space: nowrap; } }
+@media (min-width: 721px) and (max-width: 1199px) {
+  .register-table th, .register-table td { padding-left: .35rem; padding-right: .35rem; }
+  .register-table td { font-size: .82rem; }
+  .register-table td.c-name { min-width: 7rem; }
+  .register-table td.c-type { min-width: 4.5rem; }
+  .register-table td.c-remark { min-width: 6rem; }
+  .register-table .reg-remark .btn { white-space: normal; padding: .25rem .45rem; }
+}
+.reg-pending { color: var(--muted); font-size: .8rem; font-style: italic; }
+.reg-remark { display: flex; flex-direction: column; align-items: flex-start; gap: .3rem; }
+.reg-remark .btn, .register-table td.c-date .btn { white-space: nowrap; }
+@media (max-width: 720px) {
+  .data-table.register-table tr { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem .8rem; padding: .8rem .9rem; }
+  .data-table.register-table td { padding: 0; width: auto; min-width: 0; text-align: left; background: none; white-space: normal; }
+  .data-table.register-table td[data-label]::before { content: attr(data-label); display: block; font-size: .72rem; }
+  .data-table.register-table tbody tr td { background: none; }
+  .data-table.register-table td.c-name { grid-column: 1 / -1; font-weight: 600; font-size: .95rem; }
+  .data-table.register-table td.c-remark { grid-column: 1 / -1; }
+  .data-table.register-table td.c-sn { grid-column: 1 / -1; }
+  .data-table.register-table td.c-sn::before { display: inline; content: "S/No "; }
+  .reg-remark { flex-direction: row; align-items: center; flex-wrap: wrap; }
+}
+/* The invoice: A5, printed for the filer to go and pay. */
+.invoice-print { font-size: 10.5pt; }
+.invoice-print .doc-emblem { height: 58px; }
+.invoice-print .doc-line1 { font-size: 8.5pt; }
+.invoice-print .doc-line2 { font-size: 12pt; }
+.invoice-print .doc-line3 { font-size: 10pt; }
+.invoice-print .doc-table { font-size: 10pt; }
+.invoice-print .invoice-title { text-align: center; font-size: 15pt; letter-spacing: .15em; margin: 10px 0 6px; }
+.invoice-meta { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.invoice-table .num { text-align: right; white-space: nowrap; }
+.invoice-table tfoot th { text-align: right; }
+.invoice-table tfoot th.num { text-align: right; }
+.invoice-pay { border: 1px solid #000; padding: 6px 8px; margin: 10px 0; white-space: pre-line; }
+.invoice-note { margin: 8px 0; font-style: italic; }
 .case-no { white-space: nowrap; font-weight: 600; }
 .case-no sup, .slip-ref sup { font-size: .7em; }
 .case-details { margin-top: .8rem; display: grid; gap: .35rem; }

@@ -6,8 +6,9 @@
  *     └──── returned ◀────┘                                       ▼
  *                                         assigned ──file received──▶ received ──remark──▶ disposed
  *
- * Process Registry staff file new cases (with the fee and an upload of the
- * payment receipt, unless the case is official). The Process Registrar
+ * Process Registry staff file new cases and print the invoice the filer
+ * takes to pay; then the receipt number and (unless the administrator made
+ * it optional) an upload of the receipt. Official cases bear no fee. The Process Registrar
  * registers each one, which gives the next suit number of its type and
  * proposes the next court in turn. The Hon. Chief Judge assigns it with
  * their PIN; the signed assignment prints as a small slip with a QR code,
@@ -63,6 +64,7 @@ function serialize(c, units, extra = {}) {
     firstParty: o.firstParty, secondParty: o.secondParty, nature: o.nature, process: o.process,
     counsel: o.counsel, counselAddress: o.counselAddress, filedOn: o.filedOn, efcc: o.efcc, official: o.official,
     fees: o.fees || [], feeTotal: o.feeTotal || 0, receiptNumber: o.receiptNumber,
+    invoice: o.invoice && o.invoice.reference ? { reference: o.invoice.reference, issuedAt: o.invoice.issuedAt, issuedByName: o.invoice.issuedByName, fees: o.invoice.fees || [], total: o.invoice.total || 0 } : null,
     receipt: o.receipt ? { name: o.receipt.name, contentType: o.receipt.contentType, bytes: o.receipt.bytes, uploadedAt: o.receipt.uploadedAt } : null,
     status: o.status, returnComment: o.returnComment, returnedByName: o.returnedByName,
     createdBy: o.createdBy ? String(o.createdBy) : null, createdByName: o.createdByName, createdAt: o.createdAt,
@@ -159,7 +161,7 @@ router.get('/cases', wrap(async (req, res) => {
   }
   if (req.query.q) {
     const rx = new RegExp(escapeRegex(String(req.query.q).slice(0, 80)), 'i');
-    q.$or = [{ suitNumber: rx }, { firstParty: rx }, { secondParty: rx }, { nature: rx }, { receiptNumber: rx }];
+    q.$or = [{ suitNumber: rx }, { firstParty: rx }, { secondParty: rx }, { nature: rx }, { receiptNumber: rx }, { 'invoice.reference': rx }];
   }
   const [list, units] = await Promise.all([Case.find(q).sort({ updatedAt: -1 }).limit(500), unitNames()]);
   res.json({ cases: list.map(c => serialize(c, units)) });
@@ -239,14 +241,28 @@ router.get('/cases/:id/signature', wrap(async (req, res) => {
   res.set('Content-Type', img.contentType).set('Cache-Control', 'private, max-age=86400').send(img.buffer);
 }));
 
+// The invoice for the filer to go and pay. Issuing it again (after the fees
+// change) keeps the same reference.
+router.post('/cases/:id/invoice', wrap(async (req, res) => {
+  const c = await load(req.params.id, req.user);
+  assertEdit(req.user, c);
+  if (c.official) throw new HttpError(400, 'An official case has no filing fee, so no invoice.');
+  if (!(c.feeTotal > 0)) throw new HttpError(400, 'Enter the filing fees first.');
+  const reference = (c.invoice && c.invoice.reference) || await processSvc.nextInvoice();
+  c.invoice = { reference, issuedAt: new Date(), issuedByName: req.user.fullName, fees: c.fees.map(f => ({ item: f.item, amount: f.amount, qty: f.qty })), total: c.feeTotal };
+  await c.save();
+  await audit.log(req, 'case_invoice_issued', { unitKey: 'process', details: { caseId: String(c._id), reference, total: c.feeTotal } });
+  res.json({ case: serialize(c, await unitNames()) });
+}));
+
 // What registration needs: a fee and its receipt, unless the case is official.
-function missingForRegistration(c) {
+function missingForRegistration(c, s) {
   if (!c.caseType || !c.firstParty || !c.secondParty) return 'Enter the case type and both parties.';
   if (!c.nature) return 'Enter the nature of the case.';
   if (!c.official) {
     if (!(c.feeTotal > 0)) return 'Enter the filing fees, or mark the case Official (no fee).';
     if (!c.receiptNumber) return 'Enter the receipt number.';
-    if (!c.receipt) return 'Upload the payment receipt.';
+    if (!c.receipt && s.receiptRequired) return 'Upload the payment receipt.';
   }
   return null;
 }
@@ -254,7 +270,7 @@ function missingForRegistration(c) {
 router.post('/cases/:id/submit', wrap(async (req, res) => {
   const c = await load(req.params.id, req.user);
   if (!inProcess(req.user) || !['draft', 'returned'].includes(c.status)) throw new HttpError(409, 'Only a draft or returned filing can be sent to the Process Registrar.');
-  const missing = missingForRegistration(c);
+  const missing = missingForRegistration(c, await processSvc.getSettings());
   if (missing) throw new HttpError(400, missing);
   c.status = 'submitted';
   await c.save();
@@ -280,7 +296,7 @@ router.post('/cases/:id/register', wrap(async (req, res) => {
   const c = await load(req.params.id, req.user);
   if (!isRegistrar(req.user)) throw new HttpError(403, 'Only the Process Registrar registers cases.');
   if (!['draft', 'submitted', 'returned'].includes(c.status)) throw new HttpError(409, 'This case is already registered.');
-  const missing = missingForRegistration(c);
+  const missing = missingForRegistration(c, await processSvc.getSettings());
   if (missing) throw new HttpError(400, missing);
   if (!(await processSvc.getSettings()).caseTypes.some(t => t.key === c.caseType)) throw new HttpError(400, 'This case type no longer exists. Edit the filing and choose the case type.');
   let court, num;

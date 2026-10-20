@@ -425,16 +425,21 @@
           const box = el('input', { type: 'checkbox', value: c.key }); box.checked = s.efccCourts.includes(c.key);
           return el('label', { class: 'check' }, [box, ` High Court No. ${c.roman}`]);
         }));
+        const receiptRequired = el('input', { type: 'checkbox' }); receiptRequired.checked = s.receiptRequired !== false;
+        const paymentNote = el('textarea', { rows: 3, maxlength: '1000', placeholder: 'e.g. Pay at the cash office, Gombe State High Court, or into account number ..., account name ..., bank ...' }, s.paymentNote || '');
         const name = (k) => (s.courts.find(c => c.key === k) || { name: 'none yet' }).name;
         const read = (box, fields) => [...box.querySelectorAll('.settings-row')].map(r => Object.assign({ key: r.dataset.key }, ...fields.map(f => ({ [f]: r.querySelector(`[data-f="${f}"]`).value }))));
         panel.append(
-          el('p', { class: 'muted' }, 'How new cases are numbered, the filing fees staff choose from, and which courts hear EFCC matters.'),
+          el('p', { class: 'muted' }, 'How new cases are numbered, the filing fees staff choose from, the invoice and receipt, and which courts hear EFCC matters.'),
           el('h3', null, 'Suit numbers'),
           el('div', { class: 'settings-row' }, [el('span', null, 'Prefix'), prefix, el('span', { class: 'muted' }, `Numbers read ${s.prefix}/1/${new Date().getFullYear()}; each type counts on its own and starts again at 1 each year.`)]),
           el('h3', null, 'Case types and their letter'), el('p', { class: 'muted' }, 'The letter is printed raised after the number (Criminal: GM/45c/2026). Leave it empty for one type only (Civil). Each type goes in the Civil or the Criminal register book of the court.'),
           types, el('button', { class: 'btn btn--small btn--ghost', type: 'button', onclick: () => types.appendChild(typeRow({ label: '', suffix: '', book: 'civil' })) }, '+ Add case type'),
           el('h3', null, 'Fee schedule'), el('p', { class: 'muted' }, 'Staff pick fees from this list when filing; the total is worked out for them. Official cases have no fee.'),
           fees, el('button', { class: 'btn btn--small btn--ghost', type: 'button', onclick: () => fees.appendChild(feeRow({ item: '' })) }, '+ Add fee'),
+          el('h3', null, 'Invoice and receipt'),
+          el('label', { class: 'form-field form-field--full' }, [el('span', { class: 'form-field__label' }, 'Payment details printed on the invoice'), paymentNote]),
+          el('label', { class: 'check check--plain' }, [receiptRequired, ' The receipt file must be uploaded before a case is registered (untick to make the upload optional; the receipt number is still needed)']),
           el('h3', null, 'Courts that hear EFCC matters'), efcc,
           el('p', { class: 'muted' }, `Rotation: the last ordinary case was proposed for ${name(s.rotation.ordinaryLast)}; the last EFCC matter for ${name(s.rotation.efccLast)}.`),
           el('div', { class: 'card__actions' }, [el('button', { class: 'btn btn--primary', onclick: async () => {
@@ -442,7 +447,8 @@
               await api.put('/process/settings', {
                 prefix: prefix.value, caseTypes: read(types, ['label', 'suffix', 'book']).filter(t => t.label.trim()),
                 fees: read(fees, ['item', 'amount']).filter(f => f.item.trim()).map(f => ({ item: f.item, amount: Number(f.amount) })),
-                efccCourts: [...efcc.querySelectorAll('input:checked')].map(b => b.value)
+                efccCourts: [...efcc.querySelectorAll('input:checked')].map(b => b.value),
+                receiptRequired: receiptRequired.checked, paymentNote: paymentNote.value
               });
               ui.toast('Process Registry settings saved.', 'success');
               renderProcess();

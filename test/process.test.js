@@ -240,3 +240,38 @@ test('the Process Registrar alone (without the unit) files a case and registers 
   assert.equal(reg.status, 200, JSON.stringify(reg.body));
   assert.equal(reg.body.case.status, 'awaiting_assignment', 'no need to send it to themselves first');
 });
+
+test('the invoice: the fees chosen and the total, with a reference kept when issued again', async () => {
+  const r = await u.clerk.post('/api/process/cases', filing({ firstParty: 'Invoice Payer', fees: [{ item: 'Writ of summons', qty: 1 }, { item: 'Motion', qty: 2 }], receiptNumber: '' }));
+  const id = r.body.case.id;
+  const i1 = await u.clerk.post(`/api/process/cases/${id}/invoice`);
+  assert.equal(i1.status, 200, JSON.stringify(i1.body));
+  const year = new Date().getFullYear();
+  assert.equal(i1.body.case.invoice.reference, `INV/${year}/0001`);
+  assert.equal(i1.body.case.invoice.total, 8000);
+  assert.equal(i1.body.case.invoice.fees.length, 2);
+  await u.clerk.put(`/api/process/cases/${id}`, { fees: [{ item: 'Writ of summons', qty: 1 }] });
+  const i2 = await u.clerk.post(`/api/process/cases/${id}/invoice`);
+  assert.equal(i2.body.case.invoice.reference, `INV/${year}/0001`, 'the same reference');
+  assert.equal(i2.body.case.invoice.total, 5000, 'the new fees');
+  const found = await u.clerk.get(`/api/process/cases?status=&q=${encodeURIComponent(`INV/${year}/0001`)}`);
+  assert.equal(found.body.cases.length, 1, 'found by the invoice reference');
+  const o = await u.clerk.post('/api/process/cases', filing({ official: true }));
+  assert.equal((await u.clerk.post(`/api/process/cases/${o.body.case.id}/invoice`)).status, 400, 'official cases have no invoice');
+  assert.equal((await u.cj.post(`/api/process/cases/${id}/invoice`)).status, 403);
+  const next = await u.clerk.post('/api/process/cases', filing({ firstParty: 'Second Payer' }));
+  assert.equal((await u.clerk.post(`/api/process/cases/${next.body.case.id}/invoice`)).body.case.invoice.reference, `INV/${year}/0002`);
+});
+
+test('the receipt upload can be made optional; the receipt number is still needed', async () => {
+  const r = await u.clerk.post('/api/process/cases', filing({ firstParty: 'No Upload', receiptNumber: '' }));
+  const id = r.body.case.id;
+  assert.match((await u.clerk.post(`/api/process/cases/${id}/submit`)).body.error, /receipt number/);
+  await u.clerk.put(`/api/process/cases/${id}`, { receiptNumber: 'RC 77' });
+  assert.match((await u.clerk.post(`/api/process/cases/${id}/submit`)).body.error, /Upload the payment receipt/);
+  const s = await admin.put('/api/process/settings', { receiptRequired: false, paymentNote: 'Pay at the cash office.' });
+  assert.equal(s.body.receiptRequired, false);
+  assert.equal(s.body.paymentNote, 'Pay at the cash office.');
+  assert.equal((await u.clerk.post(`/api/process/cases/${id}/submit`)).status, 200);
+  await admin.put('/api/process/settings', { receiptRequired: true });
+});
