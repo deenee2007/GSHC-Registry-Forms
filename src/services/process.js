@@ -23,10 +23,11 @@ const { Unit } = require('../models');
 const KEY = 'processSettings';
 const DEFAULTS = {
   prefix: 'GM',
+  // book: which of the court's two register books the case goes in.
   caseTypes: [
-    { key: 'civil', label: 'Civil', suffix: '' },
-    { key: 'criminal', label: 'Criminal', suffix: 'c' },
-    { key: 'petition', label: 'Petition', suffix: 'p' }
+    { key: 'civil', label: 'Civil', suffix: '', book: 'civil' },
+    { key: 'criminal', label: 'Criminal', suffix: 'c', book: 'criminal' },
+    { key: 'petition', label: 'Petition', suffix: 'p', book: 'civil' }
   ],
   fees: [],          // [{ item: 'Writ of summons', amount: 2000 }]
   efccCourts: []     // unit keys of the courts that hear EFCC matters
@@ -35,10 +36,15 @@ const REMARKS = ['Judgment entered', 'Struck out', 'Withdrawn', 'Dismissed', 'Tr
 
 const meta = () => mongoose.connection.collection('appmeta');
 
+// A type saved before books existed: criminal ones (letter c) go in the
+// Criminal book, the rest in the Civil book.
+const bookOf = (t) => (t.book === 'criminal' || t.book === 'civil') ? t.book : (t.suffix === 'c' || t.key === 'criminal' ? 'criminal' : 'civil');
+
 async function getSettings() {
   const doc = await meta().findOne({ _id: KEY });
   const out = { ...DEFAULTS };
   if (doc) for (const k of Object.keys(DEFAULTS)) if (doc[k] !== undefined) out[k] = doc[k];
+  out.caseTypes = out.caseTypes.map(t => ({ ...t, book: bookOf(t) }));
   return out;
 }
 
@@ -63,7 +69,7 @@ async function setSettings(input) {
       if (seen.has(suffix)) throw bad(`Two case types use the same letter "${suffix || 'none'}". Each needs its own, so their numbers never clash.`);
       seen.add(suffix);
       const key = String(t.key || label).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 30);
-      return { key, label, suffix };
+      return { key, label, suffix, book: bookOf({ key, suffix, book: t.book }) };
     });
   }
   if (input.fees !== undefined) {

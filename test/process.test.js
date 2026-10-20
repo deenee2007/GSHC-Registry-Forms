@@ -214,3 +214,29 @@ test('summary and counts for the Process Registry and the Chief Judge', async ()
   assert.equal((await u.court3.get('/api/process/summary')).status, 403);
   assert.equal((await u.court3.get('/api/process/cases')).status, 403);
 });
+
+test('two register books: each case type goes in the Civil or the Criminal book', async () => {
+  const s = await u.clerk.get('/api/process/settings');
+  assert.deepEqual(s.body.caseTypes.map(t => `${t.key}:${t.book}`), ['civil:civil', 'criminal:criminal', 'petition:civil']);
+  const types = s.body.caseTypes.map(t => t.key === 'petition' ? { ...t, book: 'criminal' } : t);
+  const saved = await admin.put('/api/process/settings', { caseTypes: types });
+  assert.equal(saved.status, 200, JSON.stringify(saved.body));
+  assert.equal(saved.body.caseTypes.find(t => t.key === 'petition').book, 'criminal');
+  await admin.put('/api/process/settings', { caseTypes: s.body.caseTypes });
+
+  const e = await u.court3.post('/api/process/register/earlier', { unitKey: 'hc3', caseType: 'criminal', suitNumber: 'GM/5c/2025', nature: 'Armed robbery',
+    firstParty: 'The State', secondParty: 'X', filedOn: '2025-01-02', assignedOn: '2025-01-06', receivedOn: '2025-01-09' });
+  assert.equal(e.status, 201, JSON.stringify(e.body));
+  assert.equal(new Date(e.body.case.receivedAt).getDate(), 9, 'the date the file was received, as typed');
+});
+
+test('the Process Registrar alone (without the unit) files a case and registers it straight to the Chief Judge', async () => {
+  const pr = await makeUser({ fullName: 'Second Registrar', email: 'pr2@example.com', signerRoles: ['process_registrar'] });
+  const units = await pr.get('/api/catalogue/units');
+  assert.ok(units.body.units.some(x => x.key === 'process'), 'the Process Registry is in their menu');
+  const r = await pr.post('/api/process/cases', filing({ official: true, caseType: 'criminal', firstParty: 'The State' }));
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  const reg = await pr.post(`/api/process/cases/${r.body.case.id}/register`);
+  assert.equal(reg.status, 200, JSON.stringify(reg.body));
+  assert.equal(reg.body.case.status, 'awaiting_assignment', 'no need to send it to themselves first');
+});

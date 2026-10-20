@@ -238,7 +238,8 @@ New cases are filed, numbered and assigned to a court here.
    receipt number and an **upload of the payment receipt** (photo or PDF,
    kept privately). **Official** (criminal cases filed by the State, EFCC
    matters) needs no fee or receipt; ticking **EFCC matter** makes a case
-   official. Then **Send to Process Registrar**.
+   official. Then **Send to Process Registrar**. The Process Registrar may
+   file a case themselves and register it at once, with no sending.
 2. **Registration** (Process Registrar): checks the filing and the receipt,
    then **Register and Give Number**, or **Return with Comments**. Each case
    type counts on its own and starts again at 1 each year: GM/1/2026 (civil),
@@ -254,16 +255,20 @@ New cases are filed, numbered and assigned to a court here.
    assignment, the Chief Judge's signature and a QR code (the suit number in
    small print, so a slip that comes off can be matched to its file).
 5. **Case Register** (court registry): **📒 Case Register** on the court's
-   page lists its cases (case number, parties, nature, date filed, date
-   assigned, remark). **File received** when the file arrives; **Record
-   Remark** when the case is disposed of (Judgment entered, Struck out,
-   Withdrawn, Dismissed, Transferred, or Other typed in). **+ Add Earlier
-   Case** enters a case filed before the system.
+   page keeps two books, **Civil Register** and **Criminal Register**, as
+   on paper. Each is numbered from 1 and has the columns S/No, Name of case,
+   Suit number, Date of filing, Date of assignment, Type of case, Date
+   received, Date of disposal and Remarks. **File received** when the file
+   arrives; **Record Remark** with the date of disposal when the case is
+   disposed of (Judgment entered, Struck out, Withdrawn, Dismissed,
+   Transferred, or Other typed in). **+ Add Earlier Case** enters a case
+   filed before the system.
 
 Roles: give the **Process Registrar** and **Hon. Chief Judge** signing roles
-in Settings → Users; Process Registry staff need the Process Registry unit.
-Settings → **Process Registry**: the number prefix (GM), case types and their
-letters, the fee schedule, and the courts that hear EFCC matters. The Process
+in Settings → Users; Process Registry staff need the Process Registry unit
+(the Process Registrar role alone is enough to see it).
+Settings → **Process Registry**: the number prefix (GM), case types with their
+letters and register book (Civil or Criminal), the fee schedule, and the courts that hear EFCC matters. The Process
 Registry's **Summary** tab gives cases registered by type, official cases,
 fees recorded and cases assigned per court for any period. Cases are in the
 Case File, the daily backup, and Clear Test Data (which also restarts the

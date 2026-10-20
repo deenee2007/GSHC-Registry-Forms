@@ -16,7 +16,8 @@ router.get('/units', wrap(async (req, res) => {
   const ORDER = { process: -1, registry: 0, appeals: 1, execution: 2, general: 3 };
   const units = (await Unit.find({ active: true })).sort((a, b) =>
     (ORDER[a.type] - ORDER[b.type]) || ((a.courtNo || 0) - (b.courtNo || 0)) || a.name.localeCompare(b.name));
-  const visible = units.filter(u => canAccessUnit(req.user, u.key));
+  // The Process Registrar sees the Process Registry whichever units they are in.
+  const visible = units.filter(u => canAccessUnit(req.user, u.key) || (u.type === 'process' && req.user.signerRoles.includes('process_registrar')));
   res.json({ units: visible.map(u => ({ key: u.key, type: u.type, name: u.name, courtNo: u.courtNo, allowedForms: u.allowedForms, forms: catalogue.formsForUnit(u) })) });
 }));
 
