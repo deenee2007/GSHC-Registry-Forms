@@ -63,6 +63,38 @@
     box.replaceChildren(...kids);
   }
 
+  // Before going live: clear the documents made while testing, once. The
+  // section disappears for good once it has been used.
+  async function renderTestData(dash, ctx) {
+    const { ui, api } = ctx;
+    let st;
+    try { st = await api.get('/admin/test-data'); } catch (e) { return; }
+    if (!st.available) return;
+    const c = st.counts;
+    const open = () => {
+      const word = ui.el('input', { type: 'text', autocomplete: 'off', 'aria-label': 'Confirmation' });
+      ui.modal('Clear Test Data', ui.el('div', null, [
+        ui.el('div', { class: 'notice notice--warn' }, `This permanently removes all ${c.records} form(s) in the system (${c.signed} of them signed), their saved copies and notifications, and their entries in Reports. It can be done once only.`),
+        ui.el('p', null, 'Kept: users, units, form access, signing rules, signatures and PINs. A backup of everything is made first; if it fails, nothing is cleared.'),
+        ui.el('p', null, 'QR codes on printed test documents will then show "Not found".'),
+        ui.field(`Type ${st.confirmWord} to confirm`, word)
+      ]), {
+        confirmText: 'Clear Test Data', confirmClass: 'btn--danger',
+        onConfirm: async () => {
+          if (word.value.trim().toUpperCase() !== st.confirmWord) { ui.toast(`Type ${st.confirmWord} to confirm.`, 'error'); return undefined; }
+          const r = await api.post('/admin/test-data/clear', { confirm: word.value });
+          ui.toast(`Test data cleared: ${r.counts.records} form(s) removed. A backup was saved first.`, 'success', 8000);
+          window.App.router.loadDashboard();
+          return true;
+        }
+      });
+    };
+    dash.appendChild(section(ui, 'Before Going Live', ui.el('div', null, [
+      ui.el('p', null, `The system holds ${c.records} form(s) (${c.signed} signed). If these were made while testing, clear them once before staff start using the system for real cases, so test documents and their QR codes do not pass as genuine.`),
+      ui.el('div', { class: 'dash-links' }, [ui.el('button', { class: 'btn btn--danger', onclick: open }, '🗑 Clear Test Data')])
+    ])));
+  }
+
   // Court dates fixed in signed documents, soonest first.
   async function renderHearings(box, ctx, showUnit) {
     const { ui, workflow: wf } = ctx;
@@ -189,6 +221,7 @@
         const backups = ui.el('div');
         dash.appendChild(section(ui, 'Backups', backups));
         renderBackups(backups, ctx);
+        renderTestData(dash, ctx);
       }
 
       // ── Notifications ──

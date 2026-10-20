@@ -361,6 +361,21 @@ router.get('/backups/:id/download', wrap(async (req, res) => {
   res.send(buffer);
 }));
 
+// ── Clearing the test documents before full use (once only) ──
+router.get('/test-data', wrap(async (req, res) => {
+  const testData = require('../services/testData');
+  res.json({ ...(await testData.status()), confirmWord: testData.CONFIRM });
+}));
+
+router.post('/test-data/clear', wrap(async (req, res) => {
+  const testData = require('../services/testData');
+  let r;
+  try { r = await testData.clear({ confirm: req.body.confirm, by: req.user.username }); }
+  catch (e) { throw Object.assign(new HttpError(e.status || 500, e.message), { expose: true }); }
+  await audit.log(req, 'test_data_cleared', { details: { ...r.counts, backupFile: r.backupFile } });
+  res.json(r);
+}));
+
 // ── Audit log ──
 router.get('/audit', wrap(async (req, res) => {
   const q = {};
