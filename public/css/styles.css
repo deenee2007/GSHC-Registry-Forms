@@ -588,3 +588,7 @@ button.dash-card:hover { border-color: var(--green-500); }
 @media print {
   body.is-printing-slip .case-slip { border: none; }
 }
+
+/* Anything marked hidden stays hidden, whatever layout its class gives it. */
+[hidden] { display: none !important; }
+.filter-bar select { padding: .45rem .6rem; border: 1px solid var(--line); border-radius: 8px; font: inherit; font-size: .88rem; background: #fff; }

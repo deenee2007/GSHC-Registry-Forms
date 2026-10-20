@@ -34,7 +34,7 @@
   }
   const caseNo = (ui, s) => ui.el('span', { class: 'case-no', html: s ? caseNoHtml(s) : '<span class="muted">Not yet numbered</span>' });
   const badge = (ui, status) => { const [t, c] = STATUS[status] || [status, 'draft']; return ui.el('span', { class: 'badge badge--' + c }, t); };
-  const parties = (c) => `${c.firstParty} v. ${c.secondParty}`;
+  const parties = (c) => [c.firstParty, c.secondParty].filter(Boolean).join(' v. ');
   const typeLabel = (settings, key) => (settings.caseTypes.find(t => t.key === key) || { label: key }).label;
 
   function viewReceipt(id) { window.open(`/api/process/cases/${id}/receipt`, '_blank', 'noopener'); }
@@ -189,7 +189,7 @@
     try { c = (await api.get(`/process/cases/${id}`)).case; } catch (e) { ui.toast(e.message, 'error'); return; }
     const me = settings.me;
     let dialog;
-    const after = (msg) => (r) => { if (r) { ui.toast(msg, 'success', 6000); dialog && dialog.close(); onDone(); } };
+    const after = (msg) => (r) => { if (r) { ui.toast(msg, 'success', 6000); dialog && dialog.close(); onDone(); window.App.router.refreshBadges(); } };
     const act = (label, cls, fn, show) => show ? ui.el('button', { class: 'btn ' + cls, onclick: async () => { try { await fn(); } catch (e) { ui.toast(e.message, 'error', 8000); } } }, label) : null;
     const draftish = ['draft', 'returned'].includes(c.status);
     const actions = ui.el('div', { class: 'doc-preview__actions' }, [
