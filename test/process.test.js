@@ -275,3 +275,24 @@ test('the receipt upload can be made optional; the receipt number is still neede
   assert.equal((await u.clerk.post(`/api/process/cases/${id}/submit`)).status, 200);
   await admin.put('/api/process/settings', { receiptRequired: true });
 });
+
+test('new cases: on the court\'s Home and menu badge; the Chief Judge who assigns is not told as a member of that court', async () => {
+  const cjhc = await makeUser({ fullName: 'Chief Judge Five', title: 'Hon. Justice', email: 'cj5@example.com', unitKeys: ['hc5'], signerRoles: ['judge', 'chief_judge'] });
+  await cjhc.post('/api/me/signature', { password: 'Passw0rd123', dataUrl: PNG });
+  await cjhc.post('/api/me/signing-pin', { password: 'Passw0rd123', pin: '2468' });
+  const clerk5 = await makeUser({ fullName: 'Court Five Clerk', email: 'hc5@example.com', unitKeys: ['hc5'], privileges: ['view', 'create', 'edit'] });
+  assert.equal((await clerk5.get('/api/process/counts')).body.newCases, 0);
+  const c = await fileAndRegister({ firstParty: 'Badge Case' });
+  const a = await cjhc.post(`/api/process/cases/${c.id}/assign`, { unitKey: 'hc5', pin: '2468' });
+  assert.equal(a.status, 200, JSON.stringify(a.body));
+
+  assert.equal((await clerk5.get('/api/process/counts')).body.newCases, 1);
+  const nc = await clerk5.get('/api/process/new-cases');
+  assert.deepEqual(nc.body.cases.map(x => x.firstParty), ['Badge Case']);
+  assert.ok((await clerk5.get('/api/notifications')).body.notifications.some(n => /assigned to your court/.test(n.message)));
+  assert.ok(!(await cjhc.get('/api/notifications')).body.notifications.some(n => /assigned to your court/.test(n.message)), 'not to the Chief Judge who assigned it');
+  assert.equal((await u.court3.get('/api/process/new-cases')).body.cases.some(x => x.firstParty === 'Badge Case'), false, 'only its own court');
+
+  await clerk5.post(`/api/process/cases/${c.id}/received`);
+  assert.equal((await clerk5.get('/api/process/counts')).body.newCases, 0, 'gone once the file is received');
+});

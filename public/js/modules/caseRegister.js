@@ -14,10 +14,29 @@
   const esc = (v) => String(v == null ? '' : v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const BOOKS = [['civil', 'Civil Register'], ['criminal', 'Criminal Register']];
 
+  // From the menu, for someone in more than one court: which court's register.
+  async function chooseCourt(container, ctx) {
+    const { ui, api, router } = ctx;
+    const el = ui.el;
+    const courts = (await router.units()).filter(u => u.type === 'registry');
+    let fresh = [];
+    try { fresh = (await api.get('/process/new-cases')).cases; } catch (e) { /* offline */ }
+    container.append(
+      el('div', { class: 'page-head' }, [el('h1', null, '📒 Case Register'), el('p', { class: 'muted' }, 'Choose the court whose register books to open.')]),
+      el('div', { class: 'dash-stats' }, courts.map(u => {
+        const n = fresh.filter(c => c.assigned && c.assigned.key === u.key).length;
+        return el('button', { class: 'dash-card' + (n ? ' dash-card--warn' : ''), type: 'button', onclick: () => router.loadModule('caseRegister', { unit: u }) }, [
+          el('div', { class: 'dash-card__label' }, u.name), el('div', { class: 'muted' }, n ? `${n} new case${n > 1 ? 's' : ''}` : 'Open')
+        ]);
+      }))
+    );
+  }
+
   window.App.modules.caseRegister = {
     async render(container, ctx) {
       const { ui, api, router, unit, permissions } = ctx;
       const el = ui.el;
+      if (!unit) return chooseCourt(container, ctx);
       const P = window.App.processUi;
       const canWork = permissions.can('edit') || permissions.can('create');
       const settings = await api.get('/process/settings');
@@ -77,7 +96,7 @@
         const btn = (label, cls, fn) => el('button', { class: 'btn btn--small ' + cls, type: 'button', onclick: fn }, label);
         const received = (c) => c.receivedAt ? P.day(c.receivedAt)
           : canWork && c.status === 'assigned' ? btn('File received', 'btn--ok', async () => {
-            try { await api.post(`/process/cases/${c.id}/received`); ui.toast(`File ${c.suitNumber} received.`, 'success'); load(); } catch (e) { ui.toast(e.message, 'error'); }
+            try { await api.post(`/process/cases/${c.id}/received`); ui.toast(`File ${c.suitNumber} received.`, 'success'); load(); router.refreshBadges(); } catch (e) { ui.toast(e.message, 'error'); }
           }) : el('span', { class: 'reg-pending' }, 'Not yet received');
         const remarks = (c) => el('div', { class: 'reg-remark' }, [
           c.disposal ? el('span', null, c.disposal.remark) : null,

@@ -259,15 +259,19 @@ New cases are filed, numbered and assigned to a court here.
    A6 slip for the file: "Assigned to High Court No. IX", the date of
    assignment, the Chief Judge's signature and a QR code (the suit number in
    small print, so a slip that comes off can be matched to its file).
-5. **Case Register** (court registry): **📒 Case Register** on the court's
-   page keeps two books, **Civil Register** and **Criminal Register**, as
+5. **Case Register** (court registry): **📒 Case Register** in the menu
+   (and on the court's page; someone in several courts chooses the court)
+   keeps two books, **Civil Register** and **Criminal Register**, as
    on paper. Each is numbered from 1 and has the columns S/No, Name of case,
    Suit number, Date of filing, Date of assignment, Type of case, Date
    received, Date of disposal and Remarks. **File received** when the file
    arrives; **Record Remark** with the date of disposal when the case is
    disposed of (Judgment entered, Struck out, Withdrawn, Dismissed,
    Transferred, or Other typed in). **+ Add Earlier Case** enters a case
-   filed before the system.
+   filed before the system. A newly assigned case shows on the court's
+   Home (**New Cases Assigned**) and as a number beside **📒 Case Register**
+   until its file is received. The Chief Judge who assigns a case is not
+   sent the court's notice for it, even when they sit in that court.
 
 Roles: give the **Process Registrar** and **Hon. Chief Judge** signing roles
 in Settings → Users; Process Registry staff need the Process Registry unit
