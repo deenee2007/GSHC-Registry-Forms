@@ -255,6 +255,29 @@ const CaseDocumentSchema = new Schema({
   uploadedByName: String
 }, { timestamps: true });
 
+// A date in a court's diary: one case, the day and time, and the business
+// (Mention, Hearing, ...). The registry and the judges of the court share
+// it. After the sitting, the outcome is recorded; an adjournment makes the
+// next entry. Cases not in the register can be entered by number.
+const DiaryEntrySchema = new Schema({
+  unitKey:       { type: String, required: true, index: true },   // the court
+  date:          { type: String, required: true, index: true },   // YYYY-MM-DD
+  time:          { type: String, default: '' },                   // HH:MM
+  case:          { type: Schema.Types.ObjectId, ref: 'Case', index: true },
+  suitNumber:    { type: String, trim: true, required: true },
+  parties:       { type: String, trim: true, default: '' },
+  nature:        { type: String, trim: true, default: '' },
+  counsel:       { type: String, trim: true, default: '' },
+  business:      { type: String, trim: true, required: true },
+  notes:         { type: String, trim: true, default: '' },
+  status:        { type: String, enum: ['fixed', 'done'], default: 'fixed', index: true },
+  outcome:       { type: { _id: false, text: String, nextDate: String, at: Date, byName: String }, default: null },
+  previous:      { type: Schema.Types.ObjectId, ref: 'DiaryEntry' },  // the sitting this was adjourned from
+  createdBy:     { type: Schema.Types.ObjectId, ref: 'User' },
+  createdByName: String,
+  updatedByName: String
+}, { timestamps: true });
+
 // One run of the backup: the data file it wrote, or why it failed.
 const BackupSchema = new Schema({
   at:          { type: Date, default: Date.now, index: true },
@@ -282,5 +305,6 @@ module.exports = {
   Backup:       mongoose.model('Backup', BackupSchema),
   Case:         mongoose.model('Case', CaseSchema),
   CaseDocument: mongoose.model('CaseDocument', CaseDocumentSchema),
+  DiaryEntry:   mongoose.model('DiaryEntry', DiaryEntrySchema),
   CASE_STATUSES, DOC_TYPES
 };

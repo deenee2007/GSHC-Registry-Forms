@@ -406,3 +406,62 @@ test('scanned documents: added by the Process Registry and the assigned court, o
   assert.equal((await u.court3.del(`/api/process/documents/${list.body.documents[1].id}`)).status, 200);
   assert.equal((await u.court3.get(`/api/process/cases/${c.id}/documents`)).body.documents.length, 1);
 });
+
+test('court diary: dates for register cases and typed ones, shared with the judge, limits, outcomes, emails, Home dates', async () => {
+  const mail = require('../src/services/mail');
+  const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const inDays = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return iso(d); };
+  const c = await fileAndRegister({ firstParty: 'Diary Party', emails: { counsel: 'diary@example.com' } });
+  await u.cj.post(`/api/process/cases/${c.id}/assign`, { unitKey: 'hc3', pin: '1357' });
+  const judge3 = await makeUser({ fullName: 'Judge Three', title: 'Hon. Justice', email: 'judge3@example.com', unitKeys: ['hc3'], signerRoles: ['judge'] });
+  const before = mail.sent.filter(m => m.to === 'diary@example.com').length;
+
+  const s = await admin.put('/api/process/settings', { businessTypes: ['Mention', 'Hearing', 'Continuation of hearing', 'Ruling', 'Judgment', 'Report of service', 'Adoption of written addresses'] });
+  assert.equal(s.body.businessTypes.length, 7);
+
+  const e1 = await u.court3.post('/api/diary', { unitKey: 'hc3', caseId: c.id, date: inDays(3), time: '09:00', business: 'Mention' });
+  assert.equal(e1.status, 201, JSON.stringify(e1.body));
+  assert.equal(e1.body.entry.suitNumber, c.suitNumber);
+  assert.match(e1.body.entry.parties, /Diary Party v\. Ali Sani/);
+  assert.ok(mail.sent.filter(m => m.to === 'diary@example.com').slice(before).some(m => /date fixed/.test(m.subject)), 'counsel told of the date');
+
+  const typed = await judge3.post('/api/diary', { unitKey: 'hc3', suitNumber: 'GM/12/2019', parties: 'A v. B', date: inDays(3), business: 'Others', other: 'Hearing of motion' });
+  assert.equal(typed.status, 201, 'the judge writes in the diary too, and a case not in the register can be typed');
+  assert.equal(typed.body.entry.business, 'Hearing of motion');
+  const seen = await u.court3.get(`/api/diary?unitKey=hc3&from=${inDays(3)}`);
+  assert.equal(seen.body.entries.length, 2, 'the registry sees what the judge entered');
+  assert.equal((await u.clerk.get(`/api/diary?unitKey=hc3&from=${inDays(3)}`)).status, 403, 'not for other units');
+  assert.equal((await u.court3.post('/api/diary', { unitKey: 'hc3', caseId: c.id, date: inDays(4) })).status, 400, 'the business is needed');
+
+  await admin.put('/api/process/settings', { dailyLimit: 2 });
+  const full = await u.court3.post('/api/diary', { unitKey: 'hc3', suitNumber: 'GM/13/2019', date: inDays(3), business: 'Mention' });
+  assert.equal(full.status, 409);
+  assert.equal(full.body.full, true);
+  assert.equal((await u.court3.post('/api/diary', { unitKey: 'hc3', suitNumber: 'GM/13/2019', date: inDays(3), business: 'Mention', force: true })).status, 201, 'fixed anyway when told to');
+  await admin.put('/api/process/settings', { dailyLimit: 0 });
+
+  const moved = await u.court3.put(`/api/diary/${e1.body.entry.id}`, { date: inDays(5) });
+  assert.equal(moved.body.entry.date, inDays(5));
+  assert.ok(mail.sent.filter(m => m.to === 'diary@example.com').slice(before).some(m => /date changed/.test(m.subject)));
+
+  const home = await u.court3.get('/api/hearings?days=14');
+  assert.ok(home.body.hearings.some(h => h.diaryId === e1.body.entry.id && h.what === 'Mention'), 'on Home with the other court dates');
+
+  assert.equal((await u.court3.post(`/api/diary/${e1.body.entry.id}/outcome`, {})).status, 400, 'say what happened');
+  const o = await judge3.post(`/api/diary/${e1.body.entry.id}/outcome`, { outcome: 'Parties present. Adjourned for hearing.', nextDate: inDays(12), nextTime: '10:00', nextBusiness: 'Hearing' });
+  assert.equal(o.status, 200, JSON.stringify(o.body));
+  assert.equal(o.body.entry.status, 'done');
+  assert.equal(o.body.next.business, 'Hearing');
+  assert.equal(o.body.next.date, inDays(12));
+  assert.equal((await u.court3.put(`/api/diary/${e1.body.entry.id}`, { date: inDays(6) })).status, 409, 'a sitting done stays as recorded');
+
+  const end = await u.court3.post(`/api/diary/${o.body.next.id}/outcome`, { outcome: 'Judgment delivered.', disposal: 'Judgment entered' });
+  assert.equal(end.status, 200);
+  const cs = await u.court3.get(`/api/process/cases/${c.id}`);
+  assert.equal(cs.body.case.status, 'disposed', 'the disposal reaches the Case Register');
+  assert.equal(cs.body.case.disposal.remark, 'Judgment entered');
+  const forCase = await u.court3.get(`/api/diary?unitKey=hc3&caseId=${c.id}`);
+  assert.equal(forCase.body.entries.length, 2, 'the case\'s dates, for its View');
+
+  assert.equal((await u.court3.del(`/api/diary/${typed.body.entry.id}`)).status, 200);
+});

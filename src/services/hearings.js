@@ -1,6 +1,6 @@
 /*
- * src/services/hearings.js — court dates from signed documents, for the
- * Home page and the day before email.
+ * src/services/hearings.js — court dates from the court diaries and from
+ * signed documents, for the Home page and the day before email.
  *
  * Every signed (final) document that fixes a court date (hearing notice,
  * summonses, subpoenas, cause list, remand return date and so on) carries
@@ -14,7 +14,7 @@ const config = require('../config');
 const mail = require('./mail');
 const settings = require('./settings');
 const catalogue = require('../forms/catalogue');
-const { Record, Unit, User } = require('../models');
+const { Record, Unit, User, DiaryEntry } = require('../models');
 
 const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const longDay = (s) => new Date(s + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
@@ -51,6 +51,13 @@ async function list({ from, to, unitKeys }) {
         unitKey: r.unitKey, unitName: units[r.unitKey] || r.unitKey, caseNo: (r.caseNos && r.caseNos[0]) || r.ref || '', parties: parties(r.data || {}, r.summary) });
     }
   }
+  // Dates in the court diaries (still to sit).
+  const dq = { status: 'fixed', date: { $gte: from, $lte: to } };
+  if (unitKeys) dq.unitKey = { $in: unitKeys };
+  for (const e of await DiaryEntry.find(dq).limit(2000).lean()) {
+    out.push({ id: null, diaryId: String(e._id), date: e.date, time: e.time, what: e.business, formLabel: 'Court Diary',
+      unitKey: e.unitKey, unitName: units[e.unitKey] || e.unitKey, caseNo: e.suitNumber, parties: e.parties });
+  }
   return out.sort((a, b) => a.date.localeCompare(b.date) || minutes(a.time) - minutes(b.time) || a.caseNo.localeCompare(b.caseNo));
 }
 
@@ -66,12 +73,12 @@ function nextCourtDay(now) {
 function digestMessage(user, day, items, link) {
   const byUnit = new Map();
   items.forEach(i => { if (!byUnit.has(i.unitName)) byUnit.set(i.unitName, []); byUnit.get(i.unitName).push(i); });
-  const paragraphs = [`Dear ${user.fullName},`, `These court dates fixed in signed documents are on ${longDay(day)}:`];
+  const paragraphs = [`Dear ${user.fullName},`, `These court dates are on ${longDay(day)}:`];
   for (const [unit, list] of byUnit) {
     paragraphs.push(`${unit}:`);
     list.forEach(i => paragraphs.push(`${i.time ? i.time + ' · ' : ''}${i.caseNo || 'No case number'}${i.parties ? ' · ' + i.parties : ''} · ${i.what}`));
   }
-  paragraphs.push('Dates come from hearing notices, summonses, subpoenas, cause lists and other signed documents. A date changed in court but not yet on a new document will not show here.');
+  paragraphs.push('Dates come from the court diary and from hearing notices, summonses, subpoenas, cause lists and other signed documents.');
   return {
     subject: `GSHC Registry: ${items.length} court date(s) on ${longDay(day)}`,
     ...mail.layout({ heading: `Court dates for ${longDay(day)}`, paragraphs, button: 'Open GSHC Registry', link,

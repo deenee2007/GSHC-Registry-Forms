@@ -95,13 +95,13 @@
     ])));
   }
 
-  // Court dates fixed in signed documents, soonest first.
+  // Court dates in the court diaries and in signed documents, soonest first.
   async function renderHearings(box, ctx, showUnit) {
     const { ui, workflow: wf } = ctx;
     let r;
     try { r = await ctx.api.get('/hearings?days=14'); } catch (e) { box.remove(); return; }
     const all = r.hearings;
-    if (!all.length) { box.replaceChildren(ui.el('p', { class: 'muted' }, 'No court dates in the next 14 days in signed documents.')); return; }
+    if (!all.length) { box.replaceChildren(ui.el('p', { class: 'muted' }, 'No court dates in the next 14 days.')); return; }
     const dayLabel = (s) => {
       const d = new Date(s + 'T00:00:00');
       const t = new Date(); t.setHours(0, 0, 0, 0);
@@ -118,7 +118,11 @@
         { label: 'Parties', value: h => h.parties },
         { label: 'What', value: h => h.what },
         ...(showUnit ? [{ label: 'Unit', value: h => h.unitName }] : [])
-      ], shown, [{ label: 'Open', onClick: h => wf.openDocument(h.id) }]),
+      ], shown, [{ label: 'Open', onClick: async h => {
+        if (!h.diaryId) return wf.openDocument(h.id);
+        const u = (await ctx.router.units()).find(x => x.key === h.unitKey);
+        if (u) ctx.router.loadModule('diary', { unit: u, date: h.date });
+      } }]),
       ...(all.length > shown.length ? [ui.el('p', { class: 'muted' }, `Showing the first ${shown.length} of ${all.length}.`)] : [])
     );
   }

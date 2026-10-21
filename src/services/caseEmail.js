@@ -2,7 +2,8 @@
  * src/services/caseEmail.js — short emails to the parties and counsel of a
  * case (the addresses typed at filing) as it moves on: the invoice issued,
  * the case registered with its suit number, assigned to a court, and the
- * file received at that court's registry.
+ * file received at that court's registry, and each date fixed for it in
+ * the court diary (or changed).
  *
  * The emails say only the stage of the case, never what is in the file.
  * Each one sent (or failed) is noted on the case. A failure never stops
@@ -44,12 +45,18 @@ const STAGES = {
       'The Process Registry will send the file to the registry of that court.'
     ]
   }),
+  hearing: (c, s, unit, e) => ({
+    subject: `${c.suitNumber}: ${e.changed ? 'date changed' : 'date fixed'}, ${ordinal(e.date + 'T12:00:00Z')}`,
+    paragraphs: [
+      `Suit No. ${c.suitNumber}, ${parties(c)}, ${e.changed ? 'has been moved to' : 'is fixed for'} ${e.business} before High Court No. ${roman(unit)} on ${new Date(e.date + 'T12:00:00Z').toLocaleDateString('en-GB', { weekday: 'long' })}, ${ordinal(e.date + 'T12:00:00Z')}${e.time ? ` at ${e.time}` : ''}.`
+    ]
+  }),
   received: (c, s, unit) => ({
     subject: `${c.suitNumber}: file received at High Court No. ${roman(unit)}`,
     paragraphs: [`The file of Suit No. ${c.suitNumber}, ${parties(c)}, was received at the registry of High Court No. ${roman(unit)} on ${ordinal(c.receivedAt || new Date())}.`]
   })
 };
-const LABELS = { invoice: 'Invoice issued', registered: 'Registered', assigned: 'Assigned', received: 'File received' };
+const LABELS = { invoice: 'Invoice issued', registered: 'Registered', assigned: 'Assigned', received: 'File received', hearing: 'Court date' };
 
 const addresses = (c) => {
   const e = c.emails || {};
@@ -58,13 +65,13 @@ const addresses = (c) => {
 
 // Send the email for a stage to everyone on the case; note each on the case
 // and save it. unit: the court, for the assigned and received stages.
-async function notify(c, stage, unit) {
+async function notify(c, stage, unit, extra) {
   try {
     const to = addresses(c);
     if (!to.length || !mail.enabled()) return;
     const s = await processSvc.getSettings();
     if (s.partyEmails === false) return;
-    const m = STAGES[stage](c, s, unit);
+    const m = STAGES[stage](c, s, unit, extra);
     const msg = {
       subject: `Gombe State High Court: ${m.subject}`,
       ...mail.layout({

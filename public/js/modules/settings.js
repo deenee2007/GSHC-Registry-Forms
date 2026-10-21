@@ -425,6 +425,9 @@
           const box = el('input', { type: 'checkbox', value: c.key }); box.checked = s.efccCourts.includes(c.key);
           return el('label', { class: 'check' }, [box, ` High Court No. ${c.roman}`]);
         }));
+        const bizRow = (b) => removable([el('input', { type: 'text', value: b, placeholder: 'e.g. Adoption of written addresses', 'data-f': 'name' })]);
+        const business = rowsOf(s.businessTypes || [], bizRow);
+        const dailyLimit = el('input', { type: 'number', min: '0', max: '500', value: String(s.dailyLimit || 0), class: 'narrow', 'aria-label': 'Daily limit' });
         const partyEmails = el('input', { type: 'checkbox' }); partyEmails.checked = s.partyEmails !== false;
         const receiptRequired = el('input', { type: 'checkbox' }); receiptRequired.checked = s.receiptRequired !== false;
         const paymentNote = el('textarea', { rows: 3, maxlength: '1000', placeholder: 'e.g. Pay at the cash office, Gombe State High Court, or into account number ..., account name ..., bank ...' }, s.paymentNote || '');
@@ -443,6 +446,9 @@
           el('label', { class: 'check check--plain' }, [receiptRequired, ' The receipt file must be uploaded before a case is registered (untick to make the upload optional; the receipt number is still needed)']),
           el('h3', null, 'Email updates to parties and counsel'),
           el('label', { class: 'check check--plain' }, [partyEmails, ' Email the parties and counsel (where addresses are given at filing) when the invoice is issued, the case is registered, assigned and the file received']),
+          el('h3', null, 'Court diary: what a case can come up for'), el('p', { class: 'muted' }, 'Offered when fixing a date; Others (typed in) is always there too.'),
+          business, el('button', { class: 'btn btn--small btn--ghost', type: 'button', onclick: () => business.appendChild(bizRow('')) }, '+ Add business'),
+          el('div', { class: 'settings-row' }, [el('span', null, 'Cases a day in each court'), dailyLimit, el('span', { class: 'muted' }, 'Staff are warned when a day is full. 0: no limit.')]),
           el('h3', null, 'Courts that hear EFCC matters'), efcc,
           el('p', { class: 'muted' }, `Rotation: the last ordinary case was proposed for ${name(s.rotation.ordinaryLast)}; the last EFCC matter for ${name(s.rotation.efccLast)}.`),
           el('div', { class: 'card__actions' }, [el('button', { class: 'btn btn--primary', onclick: async () => {
@@ -451,7 +457,8 @@
                 prefix: prefix.value, caseTypes: read(types, ['label', 'suffix', 'book']).filter(t => t.label.trim()),
                 fees: read(fees, ['item', 'amount']).filter(f => f.item.trim()).map(f => ({ item: f.item, amount: Number(f.amount) })),
                 efccCourts: [...efcc.querySelectorAll('input:checked')].map(b => b.value),
-                receiptRequired: receiptRequired.checked, partyEmails: partyEmails.checked, paymentNote: paymentNote.value
+                receiptRequired: receiptRequired.checked, partyEmails: partyEmails.checked,
+                businessTypes: read(business, ['name']).map(b => b.name.trim()).filter(Boolean), dailyLimit: Number(dailyLimit.value) || 0, paymentNote: paymentNote.value
               });
               ui.toast('Process Registry settings saved.', 'success');
               renderProcess();

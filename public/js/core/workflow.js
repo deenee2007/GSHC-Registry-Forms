@@ -60,10 +60,11 @@
 
   // ── Fill or edit a form ──
   // record: a server record (with data), or an offline entry ({ localId, ... }).
-  async function openForm({ unitKey, formType, record }) {
+  // values: boxes already filled for a new form (the cause list drawn from the diary).
+  async function openForm({ unitKey, formType, record, values }) {
     const def = formDef(formType);
     if (!def) { ui().toast('This form is not available.', 'error'); return null; }
-    const f = ui().form(def.schema, record ? record.data : null);
+    const f = ui().form(def.schema, record ? record.data : values || null);
     const offlineEntry = record && record.localId ? record : null;
     // Every save stores every field, so a field missing from a saved draft
     // was added to the form after the draft was made.
@@ -72,7 +73,7 @@
       added.length ? ui().el('div', { class: 'notice notice--warn' }, `This form has changed since this draft was saved. Please check these boxes before saving: ${added.map(x => x.label).join('; ')}.`) : null,
       f.node
     ]);
-    if (!record) offerPrefill(def, formType, f.node, body);
+    if (!record && !values) offerPrefill(def, formType, f.node, body);
 
     return ui().modal(def.label, body, {
       confirmText: 'Save Draft',

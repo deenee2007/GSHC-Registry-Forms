@@ -605,6 +605,30 @@ button.dash-card:hover { border-color: var(--green-500); }
 .case-docs { margin-top: 1.2rem; border-top: 1px solid var(--line); padding-top: .8rem; }
 .case-docs__head { display: flex; justify-content: space-between; align-items: center; gap: .5rem; margin-bottom: .5rem; }
 .case-docs__head h3 { margin: 0; font-size: 1rem; }
+/* Court diary */
+.diary-nav { flex-wrap: wrap; align-items: center; }
+.diary-nav input[type=date] { padding: .45rem .6rem; border: 1px solid var(--line); border-radius: 8px; font: inherit; }
+.diary-actions { display: flex; gap: .5rem; flex-wrap: wrap; margin-left: auto; }
+.diary-title { margin: .8rem 0 .4rem; font-size: 1.15rem; color: var(--green-900); }
+.diary-day { margin-bottom: 1rem; }
+.diary-day h3 { font-size: .95rem; margin: .6rem 0 .4rem; }
+.diary-day--empty p { margin: 0; }
+.diary-month { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.diary-month__head { font-size: .75rem; font-weight: 700; color: var(--muted); text-align: center; padding: .3rem 0; }
+.diary-month__day { min-height: 4.2rem; background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: .35rem; text-align: left; display: flex; flex-direction: column; gap: .2rem; cursor: pointer; font: inherit; }
+.diary-month__day.is-other { opacity: .45; }
+.diary-month__day.is-today { border-color: var(--green-700); box-shadow: inset 0 0 0 1px var(--green-700); }
+.diary-month__day.has-cases { background: var(--green-50); }
+.diary-month__num { font-weight: 700; font-size: .85rem; }
+.diary-month__count { font-size: .72rem; color: var(--green-900); }
+.case-pick-wrap { display: flex; flex-direction: column; gap: .35rem; margin-bottom: .6rem; }
+.case-pick-wrap input[type=search] { padding: .5rem .7rem; border: 1px solid var(--line); border-radius: 8px; font: inherit; font-size: .9rem; }
+.case-pick { width: 100%; border: 1px solid var(--line); border-radius: 8px; font: inherit; font-size: .88rem; }
+.check-row { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: .5rem; }
+.cl-row { align-items: center; }
+.cl-n { width: 1.6rem; color: var(--muted); }
+.cl-text { flex: 1; min-width: 0; }
+@media (max-width: 720px) { .diary-month__day { min-height: 3rem; padding: .2rem; } .diary-month__count { font-size: .62rem; } .diary-actions { margin-left: 0; width: 100%; } }
 .pick-list { max-height: 50vh; overflow: auto; border: 1px solid var(--line); border-radius: 8px; padding: .4rem .6rem; margin: .5rem 0; }
 .pick-row { display: flex; gap: .5rem; align-items: flex-start; padding: .3rem 0; border-bottom: 1px solid var(--line); }
 .pick-row:last-child { border-bottom: none; }
