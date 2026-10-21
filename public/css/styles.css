@@ -601,7 +601,11 @@ button.dash-card:hover { border-color: var(--green-500); }
 .invoice-pay { border: 1px solid #000; padding: 6px 8px; margin: 10px 0; white-space: pre-line; }
 .invoice-note { margin: 8px 0; font-style: italic; }
 .case-no { white-space: nowrap; font-weight: 600; }
-.case-no sup, .slip-ref sup { font-size: .7em; }
+.case-no sup { font-size: .7em; }
+.pick-list { max-height: 50vh; overflow: auto; border: 1px solid var(--line); border-radius: 8px; padding: .4rem .6rem; margin: .5rem 0; }
+.pick-row { display: flex; gap: .5rem; align-items: flex-start; padding: .3rem 0; border-bottom: 1px solid var(--line); }
+.pick-row:last-child { border-bottom: none; }
+.dispatch-sign { width: 40%; height: 2.2em; }
 .case-details { margin-top: .8rem; display: grid; gap: .35rem; }
 .case-details .btn { margin-left: .5rem; }
 .fee-lines { display: flex; flex-direction: column; gap: .4rem; }
@@ -621,17 +625,21 @@ button.dash-card:hover { border-color: var(--green-500); }
 .case-slip { width: 148mm; height: 105mm; box-sizing: border-box; padding: 8mm 10mm; font-family: "Times New Roman", Times, serif;
   color: #000; background: #fff; display: flex; flex-direction: column; text-align: center; border: 1px dashed #999; }
 .slip-court { font-size: 10pt; letter-spacing: .08em; font-weight: 700; }
-.slip-label { font-size: 11pt; margin-top: 5mm; letter-spacing: .12em; }
-.slip-assigned { font-size: 24pt; font-weight: 700; margin-top: 1mm; }
-.slip-date { font-size: 11pt; margin-top: 2mm; }
+.slip-label { font-size: 10.5pt; margin-top: 3mm; letter-spacing: .12em; }
+.slip-assigned { font-size: 22pt; font-weight: 700; margin-top: 0; }
+.slip-suit { font-size: 12.5pt; font-weight: 700; margin-top: 2mm; }
+.slip-suit sup { font-size: .7em; }
+.slip-parties { font-size: 11pt; margin-top: .5mm; line-height: 1.2; max-height: 2.4em; overflow: hidden; }
+.slip-date { font-size: 10.5pt; margin-top: 1.5mm; }
+.case-slip { break-after: page; page-break-after: always; }
+.case-slip:last-child { break-after: auto; page-break-after: auto; }
 .slip-foot { display: flex; justify-content: space-between; align-items: flex-end; margin-top: auto; }
 .slip-sign { width: 70mm; font-size: 10pt; }
 .slip-sign img { display: block; height: 16mm; max-width: 60mm; margin: 0 auto -2mm; object-fit: contain; }
 .slip-line { border-top: 1px solid #000; margin-bottom: 1mm; }
 .slip-cap { font-weight: 700; }
 .slip-qr { font-size: 7pt; }
-.slip-qr img { width: 24mm; height: 24mm; display: block; }
-.slip-ref { font-size: 8pt; color: #333; margin-top: 2mm; text-align: left; }
+.slip-qr img { width: 22mm; height: 22mm; display: block; }
 @media print {
   body.is-printing-slip .case-slip { border: none; }
 }

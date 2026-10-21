@@ -178,12 +178,13 @@
         if (nc && nc.cases.length) {
           const P = window.App.processUi;
           const open = (c) => { const u = units.find(x => x.key === c.assigned.key); if (u) router.loadModule('caseRegister', { unit: u }); };
-          dash.appendChild(section(ui, `New Cases Assigned · ${nc.cases.length} awaiting the file`, ui.table([
+          dash.appendChild(section(ui, `New Cases Assigned · ${nc.cases.length}`, ui.table([
             { label: 'Suit number', node: c => P.caseNo(ui, c.suitNumber) },
             { label: 'Name of case', value: c => P.parties(c) },
             { label: 'Type of case', value: c => c.nature || '' },
             ...(myCourts.length > 1 ? [{ label: 'Court', value: c => c.assigned ? c.assigned.name : '' }] : []),
-            { label: 'Date of assignment', value: c => P.day(c.assignedAt) }
+            { label: 'Date of assignment', value: c => P.day(c.assignedAt) },
+            { label: 'File', node: c => c.status === 'dispatched' ? ui.el('span', { class: 'badge badge--final' }, `Dispatched ${P.day(c.dispatchedAt)}: mark it received`) : ui.el('span', { class: 'badge badge--pending' }, 'Still at the Process Registry') }
           ], nc.cases, [{ label: 'Open Register', onClick: open }])));
         }
       }

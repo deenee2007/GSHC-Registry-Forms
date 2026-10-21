@@ -183,7 +183,7 @@ const FileRef = new Schema({
 // draft → submitted (to the Process Registrar) → awaiting_assignment (number
 // given) → assigned (by the Chief Judge) → received (by the court) → disposed.
 // "returned" goes back to the filer with the Process Registrar's comment.
-const CASE_STATUSES = ['draft', 'submitted', 'returned', 'awaiting_assignment', 'assigned', 'received', 'disposed'];
+const CASE_STATUSES = ['draft', 'submitted', 'returned', 'awaiting_assignment', 'assigned', 'dispatched', 'received', 'disposed'];
 
 // A case filed at the Process Registry: registered with the next suit
 // number of its type, assigned to a court by the Hon. Chief Judge, then
@@ -229,6 +229,8 @@ const CaseSchema = new Schema({
   verifyUrl:     String,
   contentHash:   String,
 
+  dispatchedAt:  Date,                                // the Process Registry sent the file to the court
+  dispatchedByName: String,
   receivedAt:    Date,
   receivedByName: String,
   disposal:      { type: { _id: false, remark: String, date: String, byName: String, at: Date }, default: null },

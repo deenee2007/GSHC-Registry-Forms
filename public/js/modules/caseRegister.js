@@ -94,10 +94,17 @@
         // As in the book: the action sits in its own column (File received under
         // Date received, Record Remark under Remarks), so there is no Actions column.
         const btn = (label, cls, fn) => el('button', { class: 'btn btn--small ' + cls, type: 'button', onclick: fn }, label);
-        const received = (c) => c.receivedAt ? P.day(c.receivedAt)
-          : canWork && c.status === 'assigned' ? btn('File received', 'btn--ok', async () => {
+        // File received only once the Process Registry has dispatched the file.
+        const received = (c) => {
+          if (c.receivedAt) return P.day(c.receivedAt);
+          const note = el('span', { class: 'reg-pending' }, c.status === 'dispatched' ? `Dispatched ${P.day(c.dispatchedAt)}` : 'File still at the Process Registry');
+          if (!canWork || !['assigned', 'dispatched'].includes(c.status)) return note;
+          const b = btn('File received', 'btn--ok', async () => {
             try { await api.post(`/process/cases/${c.id}/received`); ui.toast(`File ${c.suitNumber} received.`, 'success'); load(); router.refreshBadges(); } catch (e) { ui.toast(e.message, 'error'); }
-          }) : el('span', { class: 'reg-pending' }, 'Not yet received');
+          });
+          if (c.status !== 'dispatched') { b.disabled = true; b.title = 'Waiting for the Process Registry to dispatch the file'; }
+          return el('div', { class: 'reg-remark' }, [b, note]);
+        };
         const remarks = (c) => el('div', { class: 'reg-remark' }, [
           c.disposal ? el('span', null, c.disposal.remark) : null,
           canWork ? btn(c.disposal ? 'Change' : 'Record Remark', 'btn--ghost', () => remark(c)) : null

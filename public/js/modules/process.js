@@ -17,7 +17,7 @@
 
   const STATUS = {
     draft: ['Draft', 'draft'], submitted: ['With Process Registrar', 'pending'], returned: ['Returned', 'returned'],
-    awaiting_assignment: ['Awaiting Assignment', 'pending'], assigned: ['Assigned', 'final'],
+    awaiting_assignment: ['Awaiting Assignment', 'pending'], assigned: ['Assigned, file at Process Registry', 'pending'], dispatched: ['File dispatched', 'final'],
     received: ['File received', 'final'], disposed: ['Disposed', 'final']
   };
   const esc = (v) => String(v == null ? '' : v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -95,6 +95,7 @@
       row('Registered', c.registeredAt ? `${day(c.registeredAt)} by ${c.registeredByName}` : ''),
       row('Proposed court', c.proposed && c.status === 'awaiting_assignment' ? c.proposed.name : ''),
       row('Assigned to', c.assigned ? `High Court No. ${c.assigned.roman} on ${day(c.assignedAt)}${c.assignment ? ', by ' + [c.assignment.title, c.assignment.name].filter(Boolean).join(' ') : ''}` : ''),
+      row('File dispatched', c.dispatchedAt ? `${day(c.dispatchedAt)} by ${c.dispatchedByName}` : ''),
       row('File received', c.receivedAt ? `${day(c.receivedAt)} by ${c.receivedByName}` : ''),
       row('Remark', c.disposal ? `${c.disposal.remark} (${day(c.disposal.date)})` : ''),
       c.status === 'returned' && c.returnComment ? ui.el('div', { class: 'notice notice--warn' }, `Returned by ${c.returnedByName}: ${c.returnComment}`) : null
@@ -127,29 +128,101 @@
     </article>`, '@page { size: A5; margin: 10mm; }');
   }
 
-  // The small slip fixed to the file: the court, the date, the Chief
-  // Judge's signature and the QR code (and, in small print, the suit
-  // number, so a slip that comes off can be matched to its file).
-  async function printSlip(id) {
-    const { api, ui } = window.App;
-    let c;
-    try { c = (await api.get(`/process/cases/${id}`)).case; } catch (e) { ui.toast(e.message, 'error'); return; }
-    if (!c.assigned || !c.assignment) { ui.toast('The case is not assigned yet.', 'error'); return; }
-    await printPage(`<article class="case-slip">
+  // "Musa Bello and others" when a side has several parties (one per line).
+  function shortParty(s) {
+    const lines = String(s || '').split(/\n+/).map(x => x.trim().replace(/^\(?\d+[.)]\s*/, '')).filter(Boolean);
+    if (!lines.length) return '';
+    const first = lines[0].length > 60 ? lines[0].slice(0, 57).trim() + '…' : lines[0];
+    return lines.length > 1 ? `${first} and others` : first;
+  }
+  const slipParties = (c) => [shortParty(c.firstParty), shortParty(c.secondParty)].filter(Boolean).join(' v. ');
+
+  // The small slip fixed to the file: the court, the suit number and the
+  // parties (so a slip that comes off can be traced to its file), the date,
+  // the Chief Judge's signature and the QR code.
+  function slipHtml(c) {
+    return `<article class="case-slip">
       <div class="slip-court">GOMBE STATE HIGH COURT OF JUSTICE</div>
       <div class="slip-label">ASSIGNED TO</div>
       <div class="slip-assigned">HIGH COURT No. ${esc(c.assigned.roman)}</div>
+      <div class="slip-suit">Suit No. ${caseNoHtml(c.suitNumber)}</div>
+      <div class="slip-parties">${esc(slipParties(c))}</div>
       <div class="slip-date">Date of assignment: ${esc(ordinalDate(c.assignedAt))}</div>
       <div class="slip-foot">
         <div class="slip-sign"><img src="${esc(c.signatureUrl)}" alt="Signature"><div class="slip-line"></div>
           <div>${esc([c.assignment.title, c.assignment.name].filter(Boolean).join(' '))}</div><div class="slip-cap">Chief Judge</div></div>
         <div class="slip-qr"><img src="${esc(c.qrDataUrl)}" alt="QR code"><div>${esc(c.verifyCode)}</div></div>
       </div>
-      <div class="slip-ref">${caseNoHtml(c.suitNumber)}</div>
-    </article>`, '@page { size: 148mm 105mm; margin: 0; }', 'is-printing-slip');
+    </article>`;
   }
 
-  window.App.processUi = { caseNoHtml, caseNo, badge, details, viewReceipt, printSlip, printPage, amountWords, parties, day, naira, STATUS };
+  // One slip, or several at once (one A6 page each).
+  async function printSlips(ids) {
+    const { api, ui } = window.App;
+    let list;
+    try { list = await Promise.all(ids.map(id => api.get(`/process/cases/${id}`).then(r => r.case))); } catch (e) { ui.toast(e.message, 'error'); return; }
+    list = list.filter(c => c.assigned && c.assignment);
+    if (!list.length) { ui.toast('The case is not assigned yet.', 'error'); return; }
+    await printPage(list.map(slipHtml).join(''), '@page { size: 148mm 105mm; margin: 0; }', 'is-printing-slip');
+  }
+  const printSlip = (id) => printSlips([id]);
+
+  // Optional: a list of the files dispatched, by court, for the receiving clerk to sign.
+  function printDispatchList(cases) {
+    const byCourt = {};
+    cases.forEach(c => (byCourt[c.assigned.key] = byCourt[c.assigned.key] || { court: c.assigned, list: [] }).list.push(c));
+    const groups = Object.values(byCourt).sort((a, b) => a.court.courtNo - b.court.courtNo).map(g => `
+      <h3>High Court No. ${esc(g.court.roman)}</h3>
+      <table class="doc-table"><thead><tr><th>S/No</th><th>Suit number</th><th>Name of case</th><th>Received by (name and signature)</th><th>Date</th></tr></thead>
+      <tbody>${g.list.map((c, i) => `<tr><td>${i + 1}</td><td>${caseNoHtml(c.suitNumber)}</td><td>${esc(slipParties(c))}</td><td class="dispatch-sign"></td><td></td></tr>`).join('')}</tbody></table>`).join('');
+    return printPage(`<article class="court-doc report-print">
+      <header class="doc-masthead"><img class="doc-emblem" src="/assets/highcourt.png" alt="">
+        <div class="doc-titleblock"><div class="doc-line1">THE JUDICIARY</div><div class="doc-line2">GOMBE STATE HIGH COURT OF JUSTICE</div><div class="doc-line3">PROCESS REGISTRY · DISPATCH LIST</div></div>
+        <img class="doc-emblem" src="/assets/coat.png" alt=""></header><div class="doc-rule"></div>
+      <p>Files dispatched on ${esc(ordinalDate(cases[0].dispatchedAt || new Date()))} by ${esc(cases[0].dispatchedByName || '')}.</p>
+      ${groups}
+      <footer class="doc-footer"><span>Printed ${esc(day(new Date()))}</span><span>Powered by the Directorate of ICT, Gombe State High Court of Justice</span></footer>
+    </article>`, '@page { size: A4; margin: 12mm; }');
+  }
+
+  // Choose assigned cases to print slips for, or to dispatch.
+  async function pickAssigned(ctx, mode, onDone) {
+    const { ui, api } = ctx;
+    const el = ui.el;
+    let list;
+    try { list = (await api.get('/process/cases?status=assigned')).cases; } catch (e) { ui.toast(e.message, 'error'); return; }
+    if (!list.length) { ui.toast('No assigned case is waiting at the Process Registry.', 'info'); return; }
+    const boxes = list.map(c => { const b = el('input', { type: 'checkbox', value: c.id }); b.checked = true; return b; });
+    const all = el('input', { type: 'checkbox' }); all.checked = true;
+    all.addEventListener('change', () => boxes.forEach(b => { b.checked = all.checked; }));
+    const withList = el('input', { type: 'checkbox' });
+    const body = el('div', null, [
+      el('p', { class: 'muted' }, mode === 'dispatch'
+        ? 'Tick the files leaving the Process Registry now. Each court is told, and can then mark the file received.'
+        : 'Tick the cases to print. Each slip prints on its own A6 card with the suit number and parties, to match it to its file.'),
+      el('label', { class: 'check check--plain' }, [all, ' All']),
+      el('div', { class: 'pick-list' }, list.map((c, i) => el('label', { class: 'check check--plain pick-row' }, [boxes[i],
+        el('span', null, [caseNo(ui, c.suitNumber), ` ${slipParties(c)} · High Court No. ${c.assigned.roman}`])]))),
+      mode === 'dispatch' ? el('label', { class: 'check check--plain' }, [withList, ' Also print a Dispatch List for the receiving clerks to sign (optional)']) : null
+    ]);
+    const picked = await ui.modal(mode === 'dispatch' ? 'Dispatch Files' : 'Print Slips', body, {
+      confirmText: mode === 'dispatch' ? 'Dispatch' : 'Print',
+      onConfirm: async () => {
+        const ids = boxes.filter(b => b.checked).map(b => b.value);
+        if (!ids.length) throw new Error('Tick at least one case.');
+        if (mode !== 'dispatch') return ids;
+        const r = await api.post('/process/dispatch', { ids });
+        ui.toast(`${r.dispatched} file${r.dispatched > 1 ? 's' : ''} dispatched. The courts have been told.`, 'success', 6000);
+        return r;
+      }
+    });
+    if (!picked) return;
+    if (mode === 'dispatch') { if (withList.checked) await printDispatchList(picked.cases); }
+    else await printSlips(picked);
+    if (onDone) onDone();
+  }
+
+  window.App.processUi = { caseNoHtml, caseNo, badge, details, viewReceipt, printSlip, printSlips, printPage, amountWords, shortParty, parties, day, naira, STATUS };
 
   // ── The filing form ──
   function filingForm(ctx, settings, existing) {
@@ -159,7 +232,8 @@
     const input = (val, attrs) => el('input', { type: 'text', value: val || '', ...(attrs || {}) });
     const caseType = el('select', null, settings.caseTypes.map(t => el('option', { value: t.key }, t.label)));
     caseType.value = v.caseType;
-    const first = el('textarea', { rows: 2 }, v.firstParty || ''), second = el('textarea', { rows: 2 }, v.secondParty || '');
+    const several = 'Where there are several, one per line (the slip shows the first and "and others")';
+    const first = el('textarea', { rows: 2, placeholder: several }, v.firstParty || ''), second = el('textarea', { rows: 2, placeholder: several }, v.secondParty || '');
     const nature = input(v.nature, { placeholder: 'e.g. Land, Contract, Matrimonial' });
     const proc = input(v.process, { placeholder: 'e.g. Writ of summons, Originating summons, Petition, Charge' });
     const counsel = input(v.counsel), counselAddress = el('textarea', { rows: 2 }, v.counselAddress || '');
@@ -272,7 +346,12 @@
         const r = await api.post(`/process/cases/${c.id}/register`);
         after(`Registered as ${r.case.suitNumber}. Proposed for ${r.case.proposed.name}; awaiting the Chief Judge.`)(true);
       }, (draftish || c.status === 'submitted') && me.registrar),
-      act('🖨  Print Assignment Slip', 'btn--primary', async () => printSlip(c.id), !!c.assigned && !c.earlier)
+      act('🖨  Print Assignment Slip', 'btn--primary', async () => printSlip(c.id), !!c.assigned && !c.earlier),
+      act('📦  Dispatch File', 'btn--ok', async () => {
+        if (!confirm(`Dispatch the file of ${c.suitNumber} to High Court No. ${c.assigned.roman}? The court can then mark it received.`)) return;
+        await api.post('/process/dispatch', { ids: [c.id] });
+        after(`File ${c.suitNumber} dispatched. The court has been told.`)(true);
+      }, c.status === 'assigned' && me.inProcess)
     ]);
     ui.modal(c.suitNumber ? `Case ${c.suitNumber}` : 'Case Filing', ui.el('div', null, [actions, badge(ui, c.status), details(ui, c, settings)]),
       { noFooter: true, wide: true, onOpen: (o) => { dialog = o; } });
@@ -324,7 +403,7 @@
       async function renderFilings() {
         const status = el('select', { 'aria-label': 'Status' }, [
           ['draft,returned,submitted', 'Not yet registered'], ['submitted', 'With Process Registrar'], ['returned', 'Returned'],
-          ['awaiting_assignment', 'Awaiting assignment'], ['assigned', 'Assigned (print the slip)'], ['received,disposed', 'With the courts'], ['', 'All']
+          ['awaiting_assignment', 'Awaiting assignment'], ['assigned', 'Assigned (slip and dispatch)'], ['dispatched', 'Dispatched'], ['received,disposed', 'With the courts'], ['', 'All']
         ].map(([v, t]) => el('option', { value: v }, t)));
         status.value = filter;
         const search = el('input', { type: 'search', class: 'search-input', placeholder: '🔍  Search suit no., party, nature, invoice or receipt no.', value: term });
@@ -333,6 +412,8 @@
         panel.replaceChildren(
           el('div', { class: 'toolbar' }, [
             canFile ? el('button', { class: 'btn btn--primary', onclick: async () => { const r = await filingForm(ctx, settings); if (r) { load(); openCase(ctx, settings, r.id, load); } } }, '+ New Filing') : null,
+            canFile ? el('button', { class: 'btn btn--ghost', onclick: () => pickAssigned(ctx, 'slips', load) }, '🖨 Print Slips') : null,
+            canFile ? el('button', { class: 'btn btn--ghost', onclick: () => pickAssigned(ctx, 'dispatch', () => { load(); window.App.router.refreshBadges(); }) }, '📦 Dispatch Files') : null,
             el('button', { class: 'btn btn--ghost', onclick: () => load() }, '↻ Refresh')
           ]),
           el('div', { class: 'filter-bar' }, [search, status]),
@@ -355,7 +436,7 @@
             { label: 'Court', value: c => c.assigned ? `High Court No. ${c.assigned.roman}` : c.proposed ? `Proposed: ${c.proposed.name}` : '' }
           ], r.cases, [
             { label: 'Open', onClick: c => openCase(ctx, settings, c.id, load) },
-            { label: '🖨 Slip', show: c => c.status === 'assigned', onClick: c => printSlip(c.id) }
+            { label: '🖨 Slip', show: c => ['assigned', 'dispatched'].includes(c.status), onClick: c => printSlip(c.id) }
           ]));
         }
         load();

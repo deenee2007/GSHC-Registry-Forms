@@ -181,6 +181,16 @@ test('the court sees its new case, marks the file received and records the dispo
   const c = reg.body.cases[0];
   assert.equal(c.status, 'assigned');
   assert.equal((await u.court3.get('/api/process/register?unitKey=hc4')).status, 403, 'only its own court');
+  const early = await u.court3.post(`/api/process/cases/${c.id}/received`);
+  assert.equal(early.status, 409, 'not before the Process Registry dispatches the file');
+  assert.match(early.body.error, /still at the Process Registry/);
+  assert.equal((await u.court3.post('/api/process/dispatch', { ids: [c.id] })).status, 403, 'only the Process Registry dispatches');
+  const d0 = await u.clerk.post('/api/process/dispatch', { ids: [c.id] });
+  assert.equal(d0.status, 200, JSON.stringify(d0.body));
+  assert.equal(d0.body.cases[0].status, 'dispatched');
+  assert.ok(d0.body.cases[0].dispatchedAt);
+  assert.ok((await u.court3.get('/api/notifications')).body.notifications.some(n => /dispatched to your court/.test(n.message)), 'the court is told');
+  assert.equal((await u.clerk.post('/api/process/dispatch', { ids: [c.id] })).status, 409, 'not twice');
   assert.equal((await u.court3.post(`/api/process/cases/${c.id}/received`)).body.case.status, 'received');
   const d1 = await u.court3.post(`/api/process/cases/${c.id}/disposal`, { remark: 'Other', other: '' });
   assert.equal(d1.status, 400, 'Other needs words');
@@ -286,6 +296,9 @@ test('new cases: on the court\'s Home and menu badge; the Chief Judge who assign
   const a = await cjhc.post(`/api/process/cases/${c.id}/assign`, { unitKey: 'hc5', pin: '2468' });
   assert.equal(a.status, 200, JSON.stringify(a.body));
 
+  assert.equal((await clerk5.get('/api/process/counts')).body.newCases, 0, 'the count is of files dispatched, waiting to be received');
+  assert.equal((await clerk5.get('/api/process/new-cases')).body.cases[0].status, 'assigned', 'Home lists it, the file still at the Process Registry');
+  await u.clerk.post('/api/process/dispatch', { ids: [c.id] });
   assert.equal((await clerk5.get('/api/process/counts')).body.newCases, 1);
   const nc = await clerk5.get('/api/process/new-cases');
   assert.deepEqual(nc.body.cases.map(x => x.firstParty), ['Badge Case']);
@@ -295,4 +308,17 @@ test('new cases: on the court\'s Home and menu badge; the Chief Judge who assign
 
   await clerk5.post(`/api/process/cases/${c.id}/received`);
   assert.equal((await clerk5.get('/api/process/counts')).body.newCases, 0, 'gone once the file is received');
+});
+
+test('several files dispatched at once; each court told of its own', async () => {
+  const a = await fileAndRegister({ firstParty: 'Batch One' });
+  const b = await fileAndRegister({ firstParty: 'Batch Two' });
+  assert.equal((await u.cj.post(`/api/process/cases/${a.id}/assign`, { unitKey: 'hc2', pin: '1357' })).status, 200);
+  assert.equal((await u.cj.post(`/api/process/cases/${b.id}/assign`, { unitKey: 'hc6', pin: '1357' })).status, 200);
+  const r = await u.clerk.post('/api/process/dispatch', { ids: [a.id, b.id, 'not-an-id'] });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.dispatched, 2);
+  const listed = await u.clerk.get('/api/process/cases?status=dispatched');
+  assert.ok(['Batch One', 'Batch Two'].every(p => listed.body.cases.some(c => c.firstParty === p)));
+  assert.equal((await u.clerk.post('/api/process/dispatch', { ids: [] })).status, 400);
 });
