@@ -255,10 +255,14 @@ New cases are filed, numbered and assigned to a court here.
    registered cases with the proposed court. The Chief Judge keeps it or
    chooses another and assigns with their signing PIN. The rotation
    continues from the court proposed.
-4. **Slip** (Process Registry): **🖨 Print Assignment Slip** prints a small
-   A6 slip for the file: "Assigned to High Court No. IX", the date of
-   assignment, the Chief Judge's signature and a QR code (the suit number in
-   small print, so a slip that comes off can be matched to its file).
+4. **Slip and dispatch** (Process Registry): **🖨 Print Assignment Slip**
+   (or **🖨 Print Slips** for several, one A6 card each) prints the slip for
+   the file: "Assigned to High Court No. IX", the suit number and the
+   parties (first named on each side, "and others"), the date of
+   assignment, the Chief Judge's signature and a QR code. **📦 Dispatch
+   Files** marks the files sent to their courts (each court is told), with
+   an optional Dispatch List for the receiving clerks to sign. The court can
+   mark a file received only after it is dispatched.
 5. **Case Register** (court registry): **📒 Case Register** in the menu
    (and on the court's page; someone in several courts chooses the court)
    keeps two books, **Civil Register** and **Criminal Register**, as

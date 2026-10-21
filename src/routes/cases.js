@@ -57,7 +57,7 @@ router.get('/', wrap(async (req, res) => {
     }
   }
   // Registered cases from the Process Registry: filing, assignment, disposal.
-  const regs = await Case.find({ caseNos: match, status: { $in: ['awaiting_assignment', 'assigned', 'received', 'disposed'] } })
+  const regs = await Case.find({ caseNos: match, status: { $in: ['awaiting_assignment', 'assigned', 'dispatched', 'received', 'disposed'] } })
     .select('caseNos status firstParty secondParty registeredAt assignedAt assignedUnit disposal earlier').lean();
   const courtNo = Object.fromEntries((await Unit.find({ type: 'registry' }, 'key courtNo').lean()).map(u => [u.key, u.courtNo]));
   for (const c of regs) {

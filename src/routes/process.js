@@ -4,7 +4,7 @@
  *   draft ──submit──▶ submitted ──register (number given)──▶ awaiting_assignment
  *     ▲                   │                                       │ Chief Judge assigns
  *     └──── returned ◀────┘                                       ▼
- *                                         assigned ──file received──▶ received ──remark──▶ disposed
+ *               assigned ──dispatch (file sent)──▶ dispatched ──file received──▶ received ──remark──▶ disposed
  *
  * Process Registry staff file new cases and print the invoice the filer
  * takes to pay; then the receipt number and (unless the administrator made
@@ -12,7 +12,8 @@
  * registers each one, which gives the next suit number of its type and
  * proposes the next court in turn. The Hon. Chief Judge assigns it with
  * their PIN; the signed assignment prints as a small slip with a QR code,
- * and the case appears in that court's Case Register.
+ * and the case appears in that court's Case Register. The court can mark
+ * the file received only after the Process Registry dispatches it.
  */
 const express = require('express');
 const multer = require('multer');
@@ -72,6 +73,7 @@ function serialize(c, units, extra = {}) {
     proposed: court(o.proposedUnit), assigned: court(o.assignedUnit), assignedAt: o.assignedAt,
     assignment: o.assignment ? { name: o.assignment.name, title: o.assignment.title, signedAt: o.assignment.signedAt } : null,
     verifyCode: o.verifyCode, verifyUrl: o.verifyUrl,
+    dispatchedAt: o.dispatchedAt, dispatchedByName: o.dispatchedByName,
     receivedAt: o.receivedAt, receivedByName: o.receivedByName, disposal: o.disposal || null,
     ...extra
   };
@@ -144,7 +146,7 @@ router.put('/settings', wrap(async (req, res) => {
 // The courts whose register this person keeps: the court registries they are in.
 const myCourts = async (u) => (await Unit.find({ type: 'registry', active: true, key: { $in: u.unitKeys } }, 'key').lean()).map(x => x.key).filter(k => inCourt(u, k));
 // New cases: assigned to one of those courts, the file not yet received.
-const newCasesQuery = (keys) => ({ status: 'assigned', assignedUnit: { $in: keys }, earlier: { $ne: true } });
+const newCasesQuery = (keys) => ({ status: { $in: ['assigned', 'dispatched'] }, assignedUnit: { $in: keys }, earlier: { $ne: true } });
 
 // Numbers for the menu badges.
 router.get('/counts', wrap(async (req, res) => {
@@ -152,7 +154,7 @@ router.get('/counts', wrap(async (req, res) => {
   const [awaiting, toRegister, newCases] = await Promise.all([
     isCJ(req.user) ? Case.countDocuments({ status: 'awaiting_assignment' }) : 0,
     isRegistrar(req.user) && inProcess(req.user) ? Case.countDocuments({ status: 'submitted' }) : 0,
-    courts.length ? Case.countDocuments(newCasesQuery(courts)) : 0
+    courts.length ? Case.countDocuments({ ...newCasesQuery(courts), status: 'dispatched' }) : 0 // files to receive
   ]);
   res.json({ awaitingAssignment: awaiting, toRegister, newCases });
 }));
@@ -171,7 +173,7 @@ router.get('/cases', wrap(async (req, res) => {
   if (req.query.status) q.status = { $in: String(req.query.status).split(',') };
   if (!inProcess(req.user)) {
     if (!isCJ(req.user)) throw new HttpError(403, 'The Process Registry list is for its staff and the Hon. Chief Judge.');
-    q.status = { $in: (req.query.status ? String(req.query.status).split(',') : ['awaiting_assignment']).filter(s => ['awaiting_assignment', 'assigned', 'received', 'disposed'].includes(s)) };
+    q.status = { $in: (req.query.status ? String(req.query.status).split(',') : ['awaiting_assignment']).filter(s => ['awaiting_assignment', 'assigned', 'dispatched', 'received', 'disposed'].includes(s)) };
   }
   if (req.query.q) {
     const rx = new RegExp(escapeRegex(String(req.query.q).slice(0, 80)), 'i');
@@ -351,9 +353,33 @@ router.post('/cases/:id/assign', wrap(async (req, res) => {
   const roman = processSvc.roman(unit.courtNo);
   // Not to the Chief Judge who made the assignment, even where they sit in that court too.
   const others = { _id: { $ne: req.user._id } };
-  await tell(await processPeople(others), `${c.suitNumber} was assigned to High Court No. ${roman}. Print the assignment slip for the file.`, 'process', `Case assigned to High Court No. ${roman}`);
+  await tell(await processPeople(others), `${c.suitNumber} was assigned to High Court No. ${roman}. Print the assignment slip and dispatch the file.`, 'process', `Case assigned to High Court No. ${roman}`);
   await tell(await User.find({ active: true, unitKeys: unit.key, ...others }), `New case ${c.suitNumber} (${c.firstParty} v. ${c.secondParty}) assigned to your court. The file will come from the Process Registry.`, `register:${unit.key}`, 'New case assigned to your court');
   res.json({ case: serialize(c, await unitNames()) });
+}));
+
+// Dispatch: the Process Registry sends the files of assigned cases to their
+// courts (one or several at once). Each court is told its files are on the way.
+router.post('/dispatch', wrap(async (req, res) => {
+  if (!inProcess(req.user) || !(can(req.user, 'edit') || can(req.user, 'create') || isRegistrar(req.user))) throw new HttpError(403, 'Only the Process Registry dispatches files.');
+  const ids = [...new Set((Array.isArray(req.body.ids) ? req.body.ids : []).map(String))].filter(id => mongoose.isValidObjectId(id)).slice(0, 200);
+  if (!ids.length) throw new HttpError(400, 'Choose the files to dispatch.');
+  const list = await Case.find({ _id: { $in: ids }, status: 'assigned' });
+  if (!list.length) throw new HttpError(409, 'None of these files is waiting to be dispatched.');
+  const now = new Date();
+  for (const c of list) {
+    Object.assign(c, { status: 'dispatched', dispatchedAt: now, dispatchedByName: req.user.fullName });
+    await c.save();
+    await audit.log(req, 'case_dispatched', { unitKey: c.assignedUnit, details: { caseId: String(c._id), suitNumber: c.suitNumber, court: c.assignedUnit } });
+  }
+  const byCourt = {};
+  list.forEach(c => (byCourt[c.assignedUnit] = byCourt[c.assignedUnit] || []).push(c.suitNumber));
+  for (const [key, nums] of Object.entries(byCourt)) {
+    const what = nums.length === 1 ? `The file of ${nums[0]} has` : `${nums.length} files (${nums.join(', ')}) have`;
+    await tell(await User.find({ active: true, unitKeys: key, _id: { $ne: req.user._id } }), `${what} been dispatched to your court. Mark each file received when it arrives.`, `register:${key}`, nums.length === 1 ? 'File dispatched to your court' : 'Files dispatched to your court');
+  }
+  const units = await unitNames();
+  res.json({ dispatched: list.length, cases: list.map(c => serialize(c, units)) });
 }));
 
 // ── A court's Case Register ──
@@ -361,7 +387,7 @@ router.get('/register', wrap(async (req, res) => {
   const unitKey = String(req.query.unitKey || '');
   if (!inCourt(req.user, unitKey)) throw new HttpError(403, 'You do not have access to this court\'s register.');
   const [list, units] = await Promise.all([
-    Case.find({ assignedUnit: unitKey, status: { $in: ['assigned', 'received', 'disposed'] } }).sort({ assignedAt: -1 }).limit(2000),
+    Case.find({ assignedUnit: unitKey, status: { $in: ['assigned', 'dispatched', 'received', 'disposed'] } }).sort({ assignedAt: -1 }).limit(2000),
     unitNames()
   ]);
   res.json({ cases: list.map(c => serialize(c, units)), remarks: processSvc.REMARKS });
@@ -374,7 +400,8 @@ function assertCourtWork(user, c) {
 router.post('/cases/:id/received', wrap(async (req, res) => {
   const c = await load(req.params.id, req.user);
   assertCourtWork(req.user, c);
-  if (c.status !== 'assigned') throw new HttpError(409, 'The file was already marked as received.');
+  if (c.status === 'assigned') throw new HttpError(409, 'The file is still at the Process Registry. It can be marked received once the Process Registry dispatches it.');
+  if (c.status !== 'dispatched') throw new HttpError(409, 'The file was already marked as received.');
   Object.assign(c, { status: 'received', receivedAt: new Date(), receivedByName: req.user.fullName });
   await c.save();
   await audit.log(req, 'case_file_received', { unitKey: c.assignedUnit, details: { caseId: String(c._id), suitNumber: c.suitNumber } });
@@ -384,7 +411,7 @@ router.post('/cases/:id/received', wrap(async (req, res) => {
 router.post('/cases/:id/disposal', wrap(async (req, res) => {
   const c = await load(req.params.id, req.user);
   assertCourtWork(req.user, c);
-  if (!['assigned', 'received', 'disposed'].includes(c.status)) throw new HttpError(409, 'This case is not in a court register.');
+  if (!['assigned', 'dispatched', 'received', 'disposed'].includes(c.status)) throw new HttpError(409, 'This case is not in a court register.');
   let remark = String(req.body.remark || '').trim();
   if (remark === 'Other') remark = String(req.body.other || '').trim();
   if (!remark) throw new HttpError(400, 'Choose the remark, or type it under Other.');
