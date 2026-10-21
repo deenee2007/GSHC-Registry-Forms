@@ -241,7 +241,12 @@ New cases are filed, numbered and assigned to a court here.
    printing again after the fees change keeps the reference). When the
    filer returns, the receipt number and an **upload of the payment
    receipt** (photo or PDF, kept privately; the administrator can make the
-   upload optional). **Official** (criminal cases filed by the State, EFCC
+   upload optional). Optionally, the email addresses of the parties and
+   counsel: each gets a short email when the invoice is issued, the case is
+   registered, assigned to a court, and its file received there. The emails
+   give only the stage, and each one sent is noted on the case. They can be
+   switched off in Settings → Process Registry. They use the Brevo account
+   (the free plan allows about 300 emails a day in all). **Official** (criminal cases filed by the State, EFCC
    matters) needs no fee or receipt; ticking **EFCC matter** makes a case
    official. Then **Send to Process Registrar**. The Process Registrar may
    file a case themselves and register it at once, with no sending.

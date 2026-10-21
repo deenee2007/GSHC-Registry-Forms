@@ -90,7 +90,9 @@
       c.official ? null : row('Invoice', c.invoice ? `${c.invoice.reference}, issued ${day(c.invoice.issuedAt)} by ${c.invoice.issuedByName}` : 'Not yet issued'),
       invoiceStale(c) ? ui.el('div', { class: 'notice notice--warn' }, 'The fees changed after the invoice was issued. Print the invoice again so it shows the new fees (the reference stays the same).') : null,
       c.official ? null : row('Receipt', ui.el('span', null, [c.receiptNumber || 'No number',
-        c.receipt ? ui.el('button', { class: 'btn btn--small btn--ghost', type: 'button', onclick: () => viewReceipt(c.id) }, '📄 View receipt') : ' · not uploaded'])),
+        c.receipt ? (settings.me && (settings.me.inProcess || settings.me.chiefJudge) ? ui.el('button', { class: 'btn btn--small btn--ghost', type: 'button', onclick: () => viewReceipt(c.id) }, '📄 View receipt') : ' · uploaded') : ' · not uploaded'])),
+      row('Email updates to', emailList(c)),
+      row('Emails sent', emailSent(c)),
       row('Filed by', c.createdByName),
       row('Registered', c.registeredAt ? `${day(c.registeredAt)} by ${c.registeredByName}` : ''),
       row('Proposed court', c.proposed && c.status === 'awaiting_assignment' ? c.proposed.name : ''),
@@ -102,6 +104,13 @@
     ]);
   }
 
+  const emailList = (c) => { const e = c.emails || {}; return [['First party', e.firstParty], ['Second party', e.secondParty], ['Counsel', e.counsel]].filter(([, l]) => l && l.length).map(([k, l]) => `${k}: ${l.join(', ')}`).join('; '); };
+  // "Registered 21 Oct 2026 (3 sent)", one per stage, latest first.
+  function emailSent(c) {
+    const by = {};
+    (c.emailLog || []).forEach(e => { const k = e.stage + day(e.at); (by[k] = by[k] || { label: e.label, at: e.at, ok: 0, failed: 0 })[e.ok ? 'ok' : 'failed']++; });
+    return Object.values(by).reverse().map(g => `${g.label} ${day(g.at)} (${g.ok} sent${g.failed ? `, ${g.failed} failed` : ''})`).join('; ');
+  }
   const feeKey = (fees) => JSON.stringify((fees || []).map(f => [f.item, Number(f.amount), Number(f.qty)]));
   const invoiceStale = (c) => !c.official && c.invoice && feeKey(c.invoice.fees) !== feeKey(c.fees);
 
@@ -241,6 +250,9 @@
     const efcc = el('input', { type: 'checkbox' }); efcc.checked = !!v.efcc;
     const official = el('input', { type: 'checkbox' }); official.checked = !!v.official;
     const receiptNumber = input(v.receiptNumber);
+    const ve = v.emails || {};
+    const emailBox = (list) => input((list || []).join(', '), { type: 'email', multiple: 'multiple', placeholder: 'name@example.com (several: separate with commas)' });
+    const firstEmail = emailBox(ve.firstParty), secondEmail = emailBox(ve.secondParty), counselEmail = emailBox(ve.counsel);
     const receiptFile = el('input', { type: 'file', accept: 'image/png,image/jpeg,application/pdf' });
 
     // Fee lines from the schedule, or Other with a typed amount.
@@ -290,6 +302,10 @@
       f('Second party * (Defendant, Respondent, Accused)', second, true),
       f('Nature of case *', nature), f('Originating process', proc),
       f('Counsel', counsel), f('Counsel address', counselAddress),
+      settings.partyEmails === false ? null : el('div', { class: 'form-grid form-field--full' }, [
+        el('p', { class: 'form-field__help form-field--full' }, 'Email updates (optional): each address given gets a short email when the invoice is issued, the case is registered, assigned to a court and the file received there.'),
+        f('First party email', firstEmail), f('Second party email', secondEmail), f('Counsel email', counselEmail)
+      ]),
       el('label', { class: 'check check--plain form-field--full' }, [efcc, ' EFCC matter (goes in turn to the courts that hear EFCC matters)']),
       el('label', { class: 'check check--plain form-field--full' }, [official, ' Official: no filing fee (criminal cases filed by the State, EFCC matters)']),
       paidBox
@@ -299,7 +315,8 @@
       onConfirm: async () => {
         const payload = { caseType: caseType.value, firstParty: first.value, secondParty: second.value, nature: nature.value, process: proc.value,
           counsel: counsel.value, counselAddress: counselAddress.value, filedOn: filedOn.value, efcc: efcc.checked, official: official.checked,
-          fees: official.checked ? [] : lineRows.map(r => r.value()).filter(x => x.item), receiptNumber: receiptNumber.value };
+          fees: official.checked ? [] : lineRows.map(r => r.value()).filter(x => x.item), receiptNumber: receiptNumber.value,
+          ...(settings.partyEmails === false ? {} : { emails: { firstParty: firstEmail.value, secondParty: secondEmail.value, counsel: counselEmail.value } }) };
         let r = existing ? await api.put(`/process/cases/${existing.id}`, payload) : await api.post('/process/cases', payload);
         if (!official.checked && receiptFile.files[0]) {
           const form = new FormData();

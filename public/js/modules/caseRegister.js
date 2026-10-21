@@ -110,7 +110,7 @@
           canWork ? btn(c.disposal ? 'Change' : 'Record Remark', 'btn--ghost', () => remark(c)) : null
         ]);
         const COLS = [
-          ['S/No', 'c-sn', c => String(c.sn)], ['Name of case', 'c-name', c => P.parties(c)], ['Suit number', 'c-suit', c => P.caseNo(ui, c.suitNumber)],
+          ['S/No', 'c-sn', c => String(c.sn)], ['Name of case', 'c-name', c => P.parties(c)], ['Suit number', 'c-suit', c => el('div', { class: 'reg-remark' }, [P.caseNo(ui, c.suitNumber), btn('View', 'btn--ghost', () => view(c))])],
           ['Date of filing', 'c-date', c => P.day(c.filedOn)], ['Date of assignment', 'c-date', c => P.day(c.assignedAt)], ['Type of case', 'c-type', c => c.nature || ''],
           ['Date received', 'c-date', received], ['Date of disposal', 'c-date', c => c.disposal ? P.day(c.disposal.date) : ''], ['Remarks', 'c-remark', remarks]
         ];
@@ -121,6 +121,16 @@
             return el('td', { class: cls, 'data-label': label }, typeof v === 'string' ? v : [v]);
           }))))
         ])]));
+      }
+
+      // The whole case: its filing, assignment, dispatch, receipt and remark.
+      async function view(c) {
+        let full;
+        try { full = (await api.get(`/process/cases/${c.id}`)).case; } catch (e) { ui.toast(e.message, 'error'); return; }
+        let dialog;
+        const close = el('button', { class: 'btn btn--ghost', onclick: () => dialog.close() }, '✕  Close');
+        ui.modal(`Case ${full.suitNumber}`, el('div', null, [el('div', { class: 'doc-preview__actions' }, [close]), P.badge(ui, full.status), P.details(ui, full, settings)]),
+          { noFooter: true, wide: true, onOpen: (o) => { dialog = o; } });
       }
 
       function remark(c) {

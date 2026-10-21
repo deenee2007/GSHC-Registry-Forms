@@ -27,6 +27,7 @@ const catalogue = require('../forms/catalogue');
 const audit = require('../services/audit');
 const mail = require('../services/mail');
 const settings = require('../services/settings');
+const caseEmail = require('../services/caseEmail');
 const { verifyPin } = require('./me');
 const { HttpError, requireLogin, canAccessUnit, can, isAdmin } = require('../middleware/auth');
 
@@ -73,6 +74,8 @@ function serialize(c, units, extra = {}) {
     proposed: court(o.proposedUnit), assigned: court(o.assignedUnit), assignedAt: o.assignedAt,
     assignment: o.assignment ? { name: o.assignment.name, title: o.assignment.title, signedAt: o.assignment.signedAt } : null,
     verifyCode: o.verifyCode, verifyUrl: o.verifyUrl,
+    emails: { firstParty: (o.emails && o.emails.firstParty) || [], secondParty: (o.emails && o.emails.secondParty) || [], counsel: (o.emails && o.emails.counsel) || [] },
+    emailLog: (o.emailLog || []).map(e => ({ stage: e.stage, label: caseEmail.LABELS[e.stage] || e.stage, to: e.to, at: e.at, ok: e.ok })),
     dispatchedAt: o.dispatchedAt, dispatchedByName: o.dispatchedByName,
     receivedAt: o.receivedAt, receivedByName: o.receivedByName, disposal: o.disposal || null,
     ...extra
@@ -124,6 +127,12 @@ async function cleanCase(body) {
     out.feeTotal = Math.round(out.fees.reduce((n, f) => n + f.amount * f.qty, 0) * 100) / 100;
   }
   if (out.official) { out.fees = []; out.feeTotal = 0; }
+  if (body.emails !== undefined) {
+    const e = body.emails || {};
+    try {
+      out.emails = { firstParty: caseEmail.cleanEmails(e.firstParty, 'first party'), secondParty: caseEmail.cleanEmails(e.secondParty, 'second party'), counsel: caseEmail.cleanEmails(e.counsel, 'counsel') };
+    } catch (err) { throw new HttpError(400, err.message); }
+  }
   return out;
 }
 
@@ -268,6 +277,7 @@ router.post('/cases/:id/invoice', wrap(async (req, res) => {
   c.invoice = { reference, issuedAt: new Date(), issuedByName: req.user.fullName, fees: c.fees.map(f => ({ item: f.item, amount: f.amount, qty: f.qty })), total: c.feeTotal };
   await c.save();
   await audit.log(req, 'case_invoice_issued', { unitKey: 'process', details: { caseId: String(c._id), reference, total: c.feeTotal } });
+  await caseEmail.notify(c, 'invoice');
   res.json({ case: serialize(c, await unitNames()) });
 }));
 
@@ -323,6 +333,7 @@ router.post('/cases/:id/register', wrap(async (req, res) => {
   Object.assign(c, { ...num, status: 'awaiting_assignment', proposedUnit: court.key, registeredBy: req.user._id, registeredByName: req.user.fullName,
     registeredAt: new Date(), caseNos: [catalogue.normalizeCase(num.suitNumber)], returnComment: undefined });
   await c.save();
+  await caseEmail.notify(c, 'registered');
   await audit.log(req, 'case_registered', { unitKey: 'process', details: { caseId: String(c._id), suitNumber: num.suitNumber, proposed: court.key } });
   await tell(await User.find({ active: true, signerRoles: 'chief_judge' }), `${num.suitNumber} (${c.firstParty} v. ${c.secondParty}) is awaiting assignment. Proposed: ${court.name}.`, 'assign', 'Case awaiting assignment');
   res.json({ case: serialize(c, await unitNames()) });
@@ -349,6 +360,7 @@ router.post('/cases/:id/assign', wrap(async (req, res) => {
   c.verifyUrl = `${verification.baseUrl(req)}/verify/${c.verifyCode}`;
   c.contentHash = verification.hashCase(c);
   await c.save();
+  await caseEmail.notify(c, 'assigned', unit);
   await audit.log(req, 'case_assigned', { unitKey: unit.key, details: { caseId: String(c._id), suitNumber: c.suitNumber, court: unit.key, proposed: c.proposedUnit } });
   const roman = processSvc.roman(unit.courtNo);
   // Not to the Chief Judge who made the assignment, even where they sit in that court too.
@@ -404,6 +416,7 @@ router.post('/cases/:id/received', wrap(async (req, res) => {
   if (c.status !== 'dispatched') throw new HttpError(409, 'The file was already marked as received.');
   Object.assign(c, { status: 'received', receivedAt: new Date(), receivedByName: req.user.fullName });
   await c.save();
+  await caseEmail.notify(c, 'received', await Unit.findOne({ key: c.assignedUnit }));
   await audit.log(req, 'case_file_received', { unitKey: c.assignedUnit, details: { caseId: String(c._id), suitNumber: c.suitNumber } });
   res.json({ case: serialize(c, await unitNames()) });
 }));

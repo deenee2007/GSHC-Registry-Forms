@@ -33,7 +33,8 @@ const DEFAULTS = {
   fees: [],          // [{ item: 'Writ of summons', amount: 2000 }]
   efccCourts: [],    // unit keys of the courts that hear EFCC matters
   receiptRequired: true, // the receipt file must be uploaded before registration
-  paymentNote: ''    // printed on the invoice: where and how to pay
+  paymentNote: '',   // printed on the invoice: where and how to pay
+  partyEmails: true  // email the parties and counsel at each stage (where addresses were given)
 };
 const REMARKS = ['Judgment entered', 'Struck out', 'Withdrawn', 'Dismissed', 'Transferred'];
 
@@ -90,6 +91,7 @@ async function setSettings(input) {
     next.efccCourts = [...new Set((input.efccCourts || []).map(String))].filter(k => courts.has(k));
   }
   if (input.receiptRequired !== undefined) next.receiptRequired = !!input.receiptRequired;
+  if (input.partyEmails !== undefined) next.partyEmails = !!input.partyEmails;
   if (input.paymentNote !== undefined) next.paymentNote = String(input.paymentNote || '').trim().slice(0, 1000);
   await meta().updateOne({ _id: KEY }, { $set: next }, { upsert: true });
   return next;
