@@ -53,6 +53,9 @@
     if (permissions.isAdmin(user) || (permissions.can('reports', user) && user.unitKeys.length)) {
       _nav.appendChild(navItem('📊  Reports', () => loadModule('reports'), { 'data-nav': 'reports' }));
     }
+    if (permissions.isAdmin(user) || (user.signerRoles || []).includes('chief_judge')) {
+      _nav.appendChild(navItem('📈  Court Statistics', () => loadModule('statistics'), { 'data-nav': 'statistics' }));
+    }
 
     if (list.length) group('Units');
     list.forEach(u => _nav.appendChild(navItem(u.name, () => loadUnit(u), { 'data-unit': u.key }, u.type === 'process' ? 'process' : null)));

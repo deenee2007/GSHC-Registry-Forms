@@ -235,7 +235,7 @@
     );
   }
 
-  window.App.diaryUi = { fix, longDay };
+  window.App.diaryUi = { fix, outcome, longDay };
 
   window.App.modules.diary = {
     async render(container, ctx) {
@@ -319,7 +319,7 @@
             ? el('span', null, [el('span', { class: 'badge badge--final' }, 'Sat'), ' ', e.outcome.text, e.outcome.nextDate ? ` Adjourned to ${longDay(e.outcome.nextDate)}.` : ''])
             : el('span', null, e.notes || '') }
         ], list, meta.canWrite ? [
-          { label: 'Record Outcome', class: 'btn--ok', show: e => e.status === 'fixed', onClick: async e => { if (await outcome(ctx, e, meta.businessTypes, remarks)) load(); } },
+          { label: 'Record Outcome', class: 'btn--ok', show: e => e.status === 'fixed' && e.date <= iso(new Date()), onClick: async e => { if (await outcome(ctx, e, meta.businessTypes, remarks)) load(); } },
           { label: 'Change', show: e => e.status === 'fixed', onClick: async e => { if (await edit(ctx, e, meta.businessTypes)) load(); } },
           { label: 'Remove', class: 'btn--danger', onClick: async e => {
             if (!confirm(`Remove ${e.suitNumber} (${e.business}, ${longDay(e.date)}) from the diary?`)) return;

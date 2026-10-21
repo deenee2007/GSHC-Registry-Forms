@@ -95,6 +95,39 @@
     ])));
   }
 
+  // Today's cases from the Court Diary, court by court, with Record Outcome.
+  // A judge always sees the panel; others only on a day with cases.
+  async function renderToday(box, ctx, units) {
+    const { ui, api, router, user } = ctx;
+    const el = ui.el;
+    let r;
+    try { r = await api.get('/diary/today'); } catch (e) { box.remove(); return; }
+    const judge = (user.signerRoles || []).includes('judge');
+    const courts = r.courts.filter(c => c.entries.length || judge);
+    if (!courts.length) { box.remove(); return; }
+    const P = window.App.processUi, D = window.App.diaryUi;
+    const openDiary = (c, date) => { const u = units.find(x => x.key === c.key); if (u) router.loadModule('diary', { unit: u, date }); };
+    box.replaceChildren(...courts.map(c => {
+      const done = c.entries.filter(e => e.status === 'done').length;
+      const head = `Today in Court · High Court No. ${c.roman} · ${c.entries.length ? `${c.entries.length} case${c.entries.length > 1 ? 's' : ''}${done ? `, ${done} done` : ''}` : 'no case fixed'}`;
+      return section(ui, head, el('div', null, [
+        c.entries.length ? ui.table([
+          { label: 'Time', value: e => e.time || '' },
+          { label: 'Suit number', node: e => P.caseNo(ui, e.suitNumber) },
+          { label: 'Name of case', value: e => e.parties || '' },
+          { label: 'Coming up for', value: e => e.business },
+          { label: 'Outcome', node: e => e.status === 'done' ? el('span', null, [el('span', { class: 'badge badge--final' }, 'Sat'), ' ', e.outcome.text]) : el('span', { class: 'muted' }, 'To sit') }
+        ], c.entries, c.canWrite ? [{ label: 'Record Outcome', class: 'btn--ok', show: e => e.status === 'fixed', onClick: async e => {
+          if (await D.outcome(ctx, e, r.businessTypes, r.remarks)) renderToday(box, ctx, units);
+        } }] : null) : el('p', { class: 'muted' }, 'No case is fixed for today in the Court Diary.'),
+        el('div', { class: 'dash-links' }, [
+          el('button', { class: 'btn btn--ghost btn--small', onclick: () => openDiary(c, r.date) }, '📅 Open the diary'),
+          c.tomorrow ? el('button', { class: 'btn btn--ghost btn--small', onclick: () => openDiary(c, r.tomorrow) }, `Tomorrow: ${c.tomorrow} case${c.tomorrow > 1 ? 's' : ''}`) : null
+        ])
+      ]));
+    }));
+  }
+
   // Court dates in the court diaries and in signed documents, soonest first.
   async function renderHearings(box, ctx, showUnit) {
     const { ui, workflow: wf } = ctx;
@@ -152,6 +185,13 @@
           'Your signature or signing PIN is not set up yet, so you cannot sign forms. ',
           ui.el('button', { class: 'btn btn--small btn--primary', onclick: () => router.loadModule('signature') }, 'Set up My Signature')
         ]));
+      }
+
+      // ── Today in Court: the day's cases in the person's courts (judges and court staff) ──
+      if (units.some(u => u.type === 'registry' && user.unitKeys.includes(u.key))) {
+        const box = ui.el('div');
+        dash.appendChild(box);
+        renderToday(box, ctx, units);
       }
 
       let stats = null;

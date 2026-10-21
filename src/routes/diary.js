@@ -93,6 +93,29 @@ async function loadEntry(id, user) {
   return e;
 }
 
+// Home, "Today in Court": today's entries in each court the person is in.
+router.get('/today', wrap(async (req, res) => {
+  const pad = (n) => String(n).padStart(2, '0');
+  const d = new Date(), t = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
+  const day = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const tomorrow = `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}`;
+  const units = (await Unit.find({ type: 'registry', active: true, key: { $in: req.user.unitKeys } }).lean())
+    .filter(u => canView(req.user, u.key)).sort((a, b) => (a.courtNo || 0) - (b.courtNo || 0));
+  if (!units.length) return res.json({ date: day, courts: [] });
+  const keys = units.map(u => u.key);
+  const [list, next, s] = await Promise.all([
+    DiaryEntry.find({ unitKey: { $in: keys }, date: day }).sort({ time: 1, createdAt: 1 }),
+    DiaryEntry.aggregate([{ $match: { unitKey: { $in: keys }, date: tomorrow, status: 'fixed' } }, { $group: { _id: '$unitKey', n: { $sum: 1 } } }]),
+    processSvc.getSettings()
+  ]);
+  res.json({
+    date: day, tomorrow, businessTypes: s.businessTypes, remarks: processSvc.REMARKS,
+    courts: units.map(u => ({ key: u.key, name: u.name, roman: processSvc.roman(u.courtNo), canWrite: canWrite(req.user, u.key),
+      tomorrow: (next.find(x => x._id === u.key) || { n: 0 }).n,
+      entries: list.filter(e => e.unitKey === u.key).map(e => serialize(e, req.user)) }))
+  });
+}));
+
 // The entries of a court between two days (or of one case).
 router.get('/', wrap(async (req, res) => {
   const unit = await court(req.query.unitKey);
@@ -145,6 +168,8 @@ router.post('/:id/outcome', wrap(async (req, res) => {
   const e = await loadEntry(req.params.id, req.user);
   if (!canWrite(req.user, e.unitKey)) throw new HttpError(403, 'Only the staff and judges of this court write in its diary.');
   const b = req.body || {};
+  const pad = (n) => String(n).padStart(2, '0'), now = new Date();
+  if (e.date > `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`) throw new HttpError(409, 'This sitting has not yet taken place. Record its outcome on the day or after.');
   const text = String(b.outcome || '').trim().slice(0, 1000);
   if (!text) throw new HttpError(400, 'Say what happened at the sitting.');
   let next = null;
