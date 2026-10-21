@@ -100,7 +100,8 @@
           const note = el('span', { class: 'reg-pending' }, c.status === 'dispatched' ? `Dispatched ${P.day(c.dispatchedAt)}` : 'File still at the Process Registry');
           if (!canWork || !['assigned', 'dispatched'].includes(c.status)) return note;
           const b = btn('File received', 'btn--ok', async () => {
-            try { await api.post(`/process/cases/${c.id}/received`); ui.toast(`File ${c.suitNumber} received.`, 'success'); load(); router.refreshBadges(); } catch (e) { ui.toast(e.message, 'error'); }
+            try { await api.post(`/process/cases/${c.id}/received`); ui.toast(`File ${c.suitNumber} received.`, 'success'); load(); router.refreshBadges(); } catch (e) { ui.toast(e.message, 'error'); return; }
+            if (window.App.diaryUi && confirm(`File ${c.suitNumber} received. Fix its first date in the Court Diary now?`)) window.App.diaryUi.fix(ctx, unit, { caseId: c.id });
           });
           if (c.status !== 'dispatched') { b.disabled = true; b.title = 'Waiting for the Process Registry to dispatch the file'; }
           return el('div', { class: 'reg-remark' }, [b, note]);
@@ -129,7 +130,17 @@
         try { full = (await api.get(`/process/cases/${c.id}`)).case; } catch (e) { ui.toast(e.message, 'error'); return; }
         let dialog;
         const close = el('button', { class: 'btn btn--ghost', onclick: () => dialog.close() }, '✕  Close');
-        ui.modal(`Case ${full.suitNumber}`, el('div', null, [el('div', { class: 'doc-preview__actions' }, [close]), P.badge(ui, full.status), P.details(ui, full, settings), P.documentsPanel(ui, api, full.id)]),
+        const fixBtn = canWork && window.App.diaryUi ? el('button', { class: 'btn btn--primary', onclick: async () => { dialog.close(); await window.App.diaryUi.fix(ctx, unit, { caseId: full.id }); } }, '📅 Fix a Date') : null;
+        const dates = el('div', { class: 'case-docs' });
+        api.get(`/diary?unitKey=${encodeURIComponent(unit.key)}&caseId=${full.id}`).then(r => {
+          const D = window.App.diaryUi;
+          dates.replaceChildren(el('h3', null, `Court dates (${r.entries.length})`), r.entries.length ? ui.table([
+            { label: 'Date', value: e => D.longDay(e.date) + (e.time ? `, ${e.time}` : '') },
+            { label: 'Coming up for', value: e => e.business },
+            { label: 'Outcome', value: e => e.status === 'done' ? e.outcome.text : 'To come' }
+          ], r.entries) : el('p', { class: 'muted' }, 'No date in the Court Diary yet.'));
+        }).catch(() => dates.remove());
+        ui.modal(`Case ${full.suitNumber}`, el('div', null, [el('div', { class: 'doc-preview__actions' }, [close, fixBtn]), P.badge(ui, full.status), P.details(ui, full, settings), dates, P.documentsPanel(ui, api, full.id)]),
           { noFooter: true, wide: true, onOpen: (o) => { dialog = o; } });
       }
 

@@ -34,7 +34,10 @@ const DEFAULTS = {
   efccCourts: [],    // unit keys of the courts that hear EFCC matters
   receiptRequired: true, // the receipt file must be uploaded before registration
   paymentNote: '',   // printed on the invoice: where and how to pay
-  partyEmails: true  // email the parties and counsel at each stage (where addresses were given)
+  partyEmails: true, // email the parties and counsel at each stage (where addresses were given)
+  // The business of a sitting, for the court diary (Others is always offered too).
+  businessTypes: ['Mention', 'Hearing', 'Continuation of hearing', 'Ruling', 'Judgment', 'Report of service'],
+  dailyLimit: 0      // most cases in a court's diary on one day; 0: no limit
 };
 const REMARKS = ['Judgment entered', 'Struck out', 'Withdrawn', 'Dismissed', 'Transferred'];
 
@@ -92,6 +95,16 @@ async function setSettings(input) {
   }
   if (input.receiptRequired !== undefined) next.receiptRequired = !!input.receiptRequired;
   if (input.partyEmails !== undefined) next.partyEmails = !!input.partyEmails;
+  if (input.businessTypes !== undefined) {
+    if (!Array.isArray(input.businessTypes)) throw bad('Invalid list of business.');
+    next.businessTypes = [...new Set(input.businessTypes.map(b => String(b || '').trim().slice(0, 60)).filter(b => b && b.toLowerCase() !== 'others'))];
+    if (!next.businessTypes.length) throw bad('Keep at least one kind of business for the diary.');
+  }
+  if (input.dailyLimit !== undefined) {
+    const n = parseInt(input.dailyLimit, 10) || 0;
+    if (n < 0 || n > 500) throw bad('The daily limit must be between 0 (no limit) and 500.');
+    next.dailyLimit = n;
+  }
   if (input.paymentNote !== undefined) next.paymentNote = String(input.paymentNote || '').trim().slice(0, 1000);
   await meta().updateOne({ _id: KEY }, { $set: next }, { upsert: true });
   return next;

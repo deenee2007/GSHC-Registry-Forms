@@ -54,6 +54,7 @@ function createApp() {
   api.use('/cases', require('./routes/cases'));
   api.use('/hearings', require('./routes/hearings'));
   api.use('/process', require('./routes/process'));
+  api.use('/diary', require('./routes/diary'));
   api.use((req, res, next) => next(new HttpError(404, 'Not found.')));
 
   // Public verification needs no session.
@@ -79,7 +80,7 @@ function createApp() {
       // Unexpected errors stay vague; an error meant for the user (expose) keeps its words.
       if (!err.expose) message = 'Something went wrong on the server. Please try again.';
     }
-    res.status(status).json({ error: message });
+    res.status(status).json({ error: message, ...(err.extra || {}) });
   });
 
   return app;

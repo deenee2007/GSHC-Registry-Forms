@@ -48,6 +48,7 @@
     // The court's register books; with more than one court, a choice of court first.
     const courts = list.filter(u => u.type === 'registry');
     if (courts.length) _nav.appendChild(navItem('📒  Case Register', () => loadModule('caseRegister', courts.length === 1 ? { unit: courts[0] } : {}), { 'data-nav': 'caseRegister' }, 'newcases'));
+    if (courts.length) _nav.appendChild(navItem('📅  Court Diary', () => loadModule('diary', courts.length === 1 ? { unit: courts[0] } : {}), { 'data-nav': 'diary' }));
 
     if (permissions.isAdmin(user) || (permissions.can('reports', user) && user.unitKeys.length)) {
       _nav.appendChild(navItem('📊  Reports', () => loadModule('reports'), { 'data-nav': 'reports' }));

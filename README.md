@@ -292,6 +292,20 @@ Case File but cannot open them. The uploader may delete a document the
 same day, an administrator at any time; each upload and deletion is in
 the audit log.
 
+**Court Diary.** **📅 Court Diary** in the menu gives each court one diary,
+shared by its registry and its judges. **+ Fix a Date** takes a case from
+the Case Register (or one typed in), the date and time, and what it is
+coming up for: the list is set in Settings → Process Registry (Mention,
+Hearing, Continuation of hearing, Ruling, Judgment, Report of service to
+start with; Others is always offered), with an optional limit of cases a
+day for each court (a warning, which staff can pass). **Record Outcome**
+after the sitting notes what happened and the next date (a new entry),
+and a disposal goes to the Case Register. Parties and counsel with an
+email are told each date fixed or changed. Day, week and month views;
+diary dates also show on Home and in the day before email. **📋 Draw Cause
+List** takes the day's cases in order, with any others added, into the
+court's Cause List form to check, save and sign as usual.
+
 Roles: give the **Process Registrar** and **Hon. Chief Judge** signing roles
 in Settings → Users; Process Registry staff need the Process Registry unit
 (the Process Registrar role alone is enough to see it).
