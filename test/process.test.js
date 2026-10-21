@@ -322,3 +322,45 @@ test('several files dispatched at once; each court told of its own', async () =>
   assert.ok(['Batch One', 'Batch Two'].every(p => listed.body.cases.some(c => c.firstParty === p)));
   assert.equal((await u.clerk.post('/api/process/dispatch', { ids: [] })).status, 400);
 });
+
+test('email updates to parties and counsel at each stage, noted on the case', async () => {
+  const mail = require('../src/services/mail');
+  const bad = await u.clerk.post('/api/process/cases', filing({ emails: { firstParty: 'not-an-email' } }));
+  assert.equal(bad.status, 400);
+  assert.match(bad.body.error, /not a valid email address/);
+  const start = mail.sent.length;
+  const ours = ['party@example.com', 'party2@example.com', 'counsel@example.com'];
+  const toParties = () => mail.sent.slice(start).filter(m => ours.includes(m.to));
+  const r = await u.clerk.post('/api/process/cases', filing({ firstParty: 'Email Party', emails: { firstParty: 'party@example.com, Party2@Example.com', secondParty: '', counsel: 'counsel@example.com' } }));
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  assert.deepEqual(r.body.case.emails.firstParty, ['party@example.com', 'party2@example.com']);
+  const id = r.body.case.id;
+  await u.clerk.post(`/api/process/cases/${id}/invoice`);
+  const inv = toParties();
+  assert.equal(inv.length, 3, 'invoice to each address');
+  assert.match(inv[0].subject, /Invoice for your filing/);
+  assert.match(inv[0].text, /INV\/\d{4}\/\d{4}/);
+  await uploadReceipt(id);
+  await u.clerk.post(`/api/process/cases/${id}/submit`);
+  const reg = await u.registrar.post(`/api/process/cases/${id}/register`);
+  const num = reg.body.case.suitNumber;
+  assert.ok(toParties().some(m => m.subject.includes(`Case registered as ${num}`)));
+  await u.cj.post(`/api/process/cases/${id}/assign`, { unitKey: 'hc3', pin: '1357' });
+  assert.ok(toParties().some(m => m.subject.includes(`${num} assigned to High Court No. III`)));
+  await u.clerk.post('/api/process/dispatch', { ids: [id] });
+  await u.court3.post(`/api/process/cases/${id}/received`);
+  const all = toParties();
+  assert.equal(all.length, 12, 'four stages, three addresses');
+  assert.ok(all.some(m => /file received at High Court No\. III/.test(m.subject)));
+  assert.ok(all.every(m => !/Writ of summons|RC 1001/.test(m.text)), 'no fees or receipt details beyond the invoice');
+  const view = await u.court3.get(`/api/process/cases/${id}`);
+  assert.equal(view.status, 200, 'the court can open the case');
+  assert.deepEqual([...new Set(view.body.case.emailLog.map(e => e.stage))], ['invoice', 'registered', 'assigned', 'received']);
+
+  await admin.put('/api/process/settings', { partyEmails: false });
+  const n = mail.sent.filter(m => m.to === 'counsel@example.com').length;
+  const r2 = await u.clerk.post('/api/process/cases', filing({ emails: { counsel: 'counsel@example.com' } }));
+  await u.clerk.post(`/api/process/cases/${r2.body.case.id}/invoice`);
+  assert.equal(mail.sent.filter(m => m.to === 'counsel@example.com').length, n, 'switched off in Settings');
+  await admin.put('/api/process/settings', { partyEmails: true });
+});

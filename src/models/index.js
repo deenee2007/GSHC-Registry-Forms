@@ -208,6 +208,9 @@ const CaseSchema = new Schema({
   feeTotal:      { type: Number, default: 0 },
   receiptNumber: { type: String, trim: true, default: '' },
   receipt:       { type: FileRef, default: null },
+  // Email updates on the stage of the case, to the addresses given at filing.
+  emails:        { type: { _id: false, firstParty: [String], secondParty: [String], counsel: [String] }, default: () => ({ firstParty: [], secondParty: [], counsel: [] }) },
+  emailLog:      { type: [{ _id: false, stage: String, to: String, at: Date, ok: Boolean }], default: [] },
   // The invoice given to the filer to go and pay: its reference and what it listed.
   invoice:       { type: { _id: false, reference: String, issuedAt: Date, issuedByName: String,
                    fees: [{ _id: false, item: String, amount: Number, qty: Number }], total: Number }, default: null },
