@@ -306,6 +306,18 @@ diary dates also show on Home and in the day before email. **📋 Draw Cause
 List** takes the day's cases in order, with any others added, into the
 court's Cause List form to check, save and sign as usual.
 
+**Today in Court.** Home shows each court's cases for the day from the
+diary, with **Record Outcome** (only on or after the day of a sitting), and
+the number fixed for tomorrow; always for judges, and for court staff on a
+day with cases.
+
+**Court Statistics** (Hon. Chief Judge and administrators): for a period,
+cases assigned and disposed of, sittings and adjournments per court; as
+they stand today, cases pending with their average and oldest age and in
+bands (under 1 year, 1 to 3, 3 to 5, over 5); each court's pending cases,
+oldest first, with adjournments and the next date. Print, or download for
+Excel (CSV).
+
 Roles: give the **Process Registrar** and **Hon. Chief Judge** signing roles
 in Settings → Users; Process Registry staff need the Process Registry unit
 (the Process Registrar role alone is enough to see it).

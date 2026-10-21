@@ -447,12 +447,14 @@ test('court diary: dates for register cases and typed ones, shared with the judg
   const home = await u.court3.get('/api/hearings?days=14');
   assert.ok(home.body.hearings.some(h => h.diaryId === e1.body.entry.id && h.what === 'Mention'), 'on Home with the other court dates');
 
+  assert.equal((await u.court3.post(`/api/diary/${e1.body.entry.id}/outcome`, { outcome: 'Too soon' })).status, 409, 'not before the sitting');
+  await u.court3.put(`/api/diary/${e1.body.entry.id}`, { date: inDays(-6) }); // entered after the event
   assert.equal((await u.court3.post(`/api/diary/${e1.body.entry.id}/outcome`, {})).status, 400, 'say what happened');
-  const o = await judge3.post(`/api/diary/${e1.body.entry.id}/outcome`, { outcome: 'Parties present. Adjourned for hearing.', nextDate: inDays(12), nextTime: '10:00', nextBusiness: 'Hearing' });
+  const o = await judge3.post(`/api/diary/${e1.body.entry.id}/outcome`, { outcome: 'Parties present. Adjourned for hearing.', nextDate: inDays(-2), nextTime: '10:00', nextBusiness: 'Hearing' });
   assert.equal(o.status, 200, JSON.stringify(o.body));
   assert.equal(o.body.entry.status, 'done');
   assert.equal(o.body.next.business, 'Hearing');
-  assert.equal(o.body.next.date, inDays(12));
+  assert.equal(o.body.next.date, inDays(-2));
   assert.equal((await u.court3.put(`/api/diary/${e1.body.entry.id}`, { date: inDays(6) })).status, 409, 'a sitting done stays as recorded');
 
   const end = await u.court3.post(`/api/diary/${o.body.next.id}/outcome`, { outcome: 'Judgment delivered.', disposal: 'Judgment entered' });
@@ -464,4 +466,37 @@ test('court diary: dates for register cases and typed ones, shared with the judg
   assert.equal(forCase.body.entries.length, 2, 'the case\'s dates, for its View');
 
   assert.equal((await u.court3.del(`/api/diary/${typed.body.entry.id}`)).status, 200);
+});
+
+test('court statistics for the Chief Judge; Today in Court on Home', async () => {
+  const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const today = iso(new Date());
+  assert.equal((await u.court3.get('/api/statistics')).status, 403, 'not for court staff');
+  const from = (() => { const d = new Date(); d.setDate(d.getDate() - 30); return iso(d); })();
+  const s = await u.cj.get(`/api/statistics?from=${from < `${new Date().getFullYear()}-01-01` ? from : `${new Date().getFullYear()}-01-01`}&to=${today}`);
+  assert.equal(s.status, 200, JSON.stringify(s.body));
+  const hc3 = s.body.courts.find(c => c.key === 'hc3');
+  assert.ok(hc3.assigned >= 3, 'cases assigned to High Court 3 this year');
+  assert.ok(hc3.disposed >= 2, 'disposed of in the period, from the register and from the diary');
+  assert.ok(hc3.pending >= 1);
+  assert.ok(hc3.sittings >= 2, 'sittings recorded in the diary');
+  assert.ok(hc3.adjournments >= 1);
+  assert.equal(s.body.courts.length, 9);
+  assert.equal(s.body.totals.pending, s.body.courts.reduce((n, c) => n + c.pending, 0));
+  assert.equal(Object.values(hc3.bands).reduce((n, x) => n + x, 0), hc3.pending, 'every pending case in one band');
+  assert.equal((await u.cj.get('/api/statistics?from=2026-12-01&to=2026-01-01')).status, 400);
+  const p = await u.cj.get('/api/statistics/pending?unitKey=hc3');
+  assert.equal(p.body.cases.length, hc3.pending);
+  assert.ok(p.body.cases.every((c, i, a) => i === 0 || a[i - 1].years >= c.years), 'oldest first');
+  assert.equal((await admin.get('/api/statistics')).status, 200, 'administrators too');
+
+  const pend = p.body.cases.find(c => !c.earlier);
+  const e = await u.court3.post('/api/diary', { unitKey: 'hc3', caseId: pend.id, date: today, time: '08:30', business: 'Mention' });
+  assert.equal(e.status, 201, JSON.stringify(e.body));
+  const t = await u.court3.get('/api/diary/today');
+  const c3 = t.body.courts.find(c => c.key === 'hc3');
+  assert.ok(c3.entries.some(x => x.id === e.body.entry.id));
+  assert.equal(c3.canWrite, true);
+  assert.ok(t.body.businessTypes.includes('Mention') && t.body.remarks.length);
+  assert.deepEqual((await u.clerk.get('/api/diary/today')).body.courts, [], 'nothing for someone in no court');
 });
