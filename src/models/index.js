@@ -241,6 +241,20 @@ const CaseSchema = new Schema({
 }, { timestamps: true });
 CaseSchema.index({ suitNumber: 1 }, { unique: true, partialFilterExpression: { suitNumber: { $type: 'string' } } });
 
+// A scanned document attached to a case (writ, motion, affidavit, exhibit, ...).
+const DOC_TYPES = ['Writ of summons', 'Statement of claim', 'Statement of defence', 'Originating summons', 'Petition', 'Motion',
+  'Affidavit', 'Counter affidavit', 'Written address', 'Exhibit', 'Charge', 'Proof of evidence', 'Order', 'Judgment', 'Ruling'];
+const CaseDocumentSchema = new Schema({
+  case:          { type: Schema.Types.ObjectId, ref: 'Case', required: true, index: true },
+  title:         { type: String, trim: true, required: true },
+  docType:       { type: String, trim: true, default: '' },  // one of DOC_TYPES, or typed under Others
+  filedOn:       String,                                     // YYYY-MM-DD: when the document was filed in court
+  file:          { type: FileRef, required: true },
+  unitKey:       String,                                     // where it was uploaded: 'process' or the court
+  uploadedBy:    { type: Schema.Types.ObjectId, ref: 'User' },
+  uploadedByName: String
+}, { timestamps: true });
+
 // One run of the backup: the data file it wrote, or why it failed.
 const BackupSchema = new Schema({
   at:          { type: Date, default: Date.now, index: true },
@@ -267,5 +281,6 @@ module.exports = {
   DocumentCopy: mongoose.model('DocumentCopy', DocumentCopySchema),
   Backup:       mongoose.model('Backup', BackupSchema),
   Case:         mongoose.model('Case', CaseSchema),
-  CASE_STATUSES
+  CaseDocument: mongoose.model('CaseDocument', CaseDocumentSchema),
+  CASE_STATUSES, DOC_TYPES
 };

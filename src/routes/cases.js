@@ -8,7 +8,7 @@
  * contents; drafts in other units are not listed at all.
  */
 const express = require('express');
-const { Record, Unit, Case } = require('../models');
+const { Record, Unit, Case, CaseDocument } = require('../models');
 const { roman } = require('../services/process');
 const catalogue = require('../forms/catalogue');
 const { HttpError, requireLogin, canAccessUnit, can, isAdmin } = require('../middleware/auth');
@@ -59,6 +59,9 @@ router.get('/', wrap(async (req, res) => {
   // Registered cases from the Process Registry: filing, assignment, disposal.
   const regs = await Case.find({ caseNos: match, status: { $in: ['awaiting_assignment', 'assigned', 'dispatched', 'received', 'disposed'] } })
     .select('caseNos status firstParty secondParty registeredAt assignedAt assignedUnit disposal earlier').lean();
+  // Scanned documents of those cases; opened by those who can see the case.
+  const canSeeCase = require('./process').canSeeCase;
+  const scans = await CaseDocument.find({ case: { $in: regs.map(c => c._id) } }).select('case title docType filedOn unitKey uploadedByName createdAt').lean();
   const courtNo = Object.fromEntries((await Unit.find({ type: 'registry' }, 'key courtNo').lean()).map(u => [u.key, u.courtNo]));
   for (const c of regs) {
     const label = c.status === 'awaiting_assignment' ? 'Case filed (awaiting assignment)'
@@ -74,6 +77,17 @@ router.get('/', wrap(async (req, res) => {
     for (const caseNo of (c.caseNos || []).filter(n => (exact ? n === q : n.includes(q)))) {
       if (!cases.has(caseNo)) cases.set(caseNo, []);
       cases.get(caseNo).unshift(item); // the filing comes first in its case
+    }
+    const open = canSeeCase(req.user, c);
+    for (const d of scans.filter(x => same(x.case, c._id))) {
+      const scan = {
+        id: null, canOpen: false, fileUrl: open ? `/api/process/documents/${d._id}/file` : null,
+        formType: 'scan', formLabel: `Scanned: ${d.title}${d.docType && d.docType !== d.title ? ` (${d.docType})` : ''}`,
+        unitKey: d.unitKey, unitName: d.unitKey === 'process' ? 'Process Registry' : (units[d.unitKey] || d.unitKey), status: 'final',
+        date: d.filedOn ? new Date(d.filedOn + 'T12:00:00Z') : d.createdAt, createdAt: d.createdAt,
+        summary: `${c.firstParty} v. ${c.secondParty}`, createdByName: open ? d.uploadedByName : ''
+      };
+      for (const caseNo of (c.caseNos || []).filter(n => (exact ? n === q : n.includes(q)))) cases.get(caseNo).push(scan);
     }
   }
 

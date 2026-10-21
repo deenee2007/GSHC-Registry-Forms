@@ -48,7 +48,8 @@
         const body = el('div', null, [
           P.details(ui, c, settings),
           ui.field('Assign to', court, c.efcc ? 'EFCC matter: the courts proposed in turn are those set to hear EFCC matters.' : 'The court next in turn is chosen; the rotation continues from it whichever court you choose.'),
-          ui.field('Your signing PIN', pin, 'Your signature is placed on the assignment, and the slip carries a QR code to check it.')
+          ui.field('Your signing PIN', pin, 'Your signature is placed on the assignment, and the slip carries a QR code to check it.'),
+          P.documentsPanel(ui, api, c.id)
         ]);
         ui.modal(`Assign ${c.suitNumber}`, body, {
           confirmText: '✔ Assign', confirmClass: 'btn--ok',

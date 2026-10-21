@@ -1,6 +1,8 @@
 /*
- * src/services/fileStore.js — private files attached to cases (payment
- * receipts): a photo (PNG, JPEG) or a PDF, up to 5 MB.
+ * src/services/fileStore.js — private files attached to cases: payment
+ * receipts (up to 5 MB) and scanned case documents (up to 10 MB, the most
+ * Cloudinary takes for one such file on its free plan); each a photo
+ * (PNG, JPEG) or a PDF.
  *
  * With CLOUDINARY_URL set, each file is a private ("authenticated") raw
  * asset that only this server can read. Without it (local development and
@@ -10,6 +12,7 @@ const crypto = require('crypto');
 const config = require('../config');
 
 const MAX_BYTES = 5 * 1024 * 1024;
+const DOC_MAX_BYTES = 10 * 1024 * 1024;
 
 let cloudinary = null;
 if (config.cloudinaryUrl) {
@@ -29,11 +32,14 @@ function sniff(buffer) {
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
 
 async function save(buffer, originalName, folder = 'receipts') {
+  const doc = folder === 'documents';
   if (!buffer || !buffer.length) throw fail('No file received.');
-  if (buffer.length > MAX_BYTES) throw fail('The file must be under 5 MB. A photo or a PDF of the receipt is enough.');
+  if (buffer.length > (doc ? DOC_MAX_BYTES : MAX_BYTES)) throw fail(doc
+    ? 'The file must be under 10 MB. Scan at 200 dpi in greyscale, or upload a long document in parts.'
+    : 'The file must be under 5 MB. A photo or a PDF of the receipt is enough.');
   const contentType = sniff(buffer);
-  if (!contentType) throw fail('Upload a photo (PNG or JPEG) or a PDF of the receipt.');
-  const name = String(originalName || 'receipt').replace(/[^A-Za-z0-9 ._-]+/g, '').slice(0, 80) || 'receipt';
+  if (!contentType) throw fail(doc ? 'Upload a PDF or a photo (PNG or JPEG) of the document.' : 'Upload a photo (PNG or JPEG) or a PDF of the receipt.');
+  const name = String(originalName || (doc ? 'document' : 'receipt')).replace(/[^A-Za-z0-9 ._-]+/g, '').slice(0, 80) || (doc ? 'document' : 'receipt');
   const base = { contentType, name, bytes: buffer.length, uploadedAt: new Date() };
   if (!cloudinary) return { ...base, provider: 'inline', dataUrl: `data:${contentType};base64,${buffer.toString('base64')}` };
   const publicId = `${config.cloudinaryFolder}/${folder}/${Date.now()}_${crypto.randomBytes(6).toString('hex')}`;
@@ -57,4 +63,11 @@ async function read(ref) {
   return { contentType: ref.contentType || 'application/octet-stream', buffer: Buffer.from(await res.arrayBuffer()) };
 }
 
-module.exports = { save, read, MAX_BYTES };
+// Remove a stored file (a document deleted). Inline files go with their record.
+async function remove(ref) {
+  if (!ref || ref.provider !== 'cloudinary' || !cloudinary) return;
+  try { await cloudinary.uploader.destroy(ref.publicId, { resource_type: 'raw', type: 'authenticated' }); }
+  catch (e) { console.error('Could not remove a stored file:', e.message); }
+}
+
+module.exports = { save, read, remove, MAX_BYTES, DOC_MAX_BYTES };
