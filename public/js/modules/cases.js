@@ -74,9 +74,9 @@
             { label: 'Date', value: d => day(d.date) },
             { label: 'Form', value: d => d.formLabel },
             { label: 'Unit', value: d => d.unitName },
-            { label: 'Status', node: d => ui.statusBadge(d.status) },
-            { label: 'Prepared by', value: d => d.canOpen ? d.createdByName : 'Not in your unit' }
-          ], c.documents, [{ label: 'Open', show: d => d.canOpen, onClick: d => wf.openDocument(d.id) }])
+            { label: 'Status', node: d => d.formType === 'scan' ? ui.el('span', { class: 'badge badge--final' }, 'Scanned') : ui.statusBadge(d.status) },
+            { label: 'Prepared by', value: d => d.canOpen || d.fileUrl ? d.createdByName : 'Not in your unit' }
+          ], c.documents, [{ label: 'Open', show: d => d.canOpen || !!d.fileUrl, onClick: d => d.fileUrl ? window.open(d.fileUrl, '_blank', 'noopener') : wf.openDocument(d.id) }])
         ]);
       }
 

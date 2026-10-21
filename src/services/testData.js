@@ -10,7 +10,7 @@
  */
 const mongoose = require('mongoose');
 const backup = require('./backup');
-const { Record, DocumentCopy, Notification, AuditLog, Case } = require('../models');
+const { Record, DocumentCopy, Notification, AuditLog, Case, CaseDocument } = require('../models');
 
 const CONFIRM = 'CLEAR TEST DATA';
 const KEY = 'testDataCleared';
@@ -56,7 +56,7 @@ async function clear({ confirm, by }) {
     AuditLog.deleteMany({ action: /^case_/ }),
     // Process Registry test cases: suit numbers start again at 1, and the
     // court rotation starts again from High Court 1.
-    Case.deleteMany({}),
+    Case.deleteMany({}), CaseDocument.deleteMany({}), // the scanned files stay in the backup's store
     meta().deleteMany({ _id: { $in: [/^hearingDigest:/, /^caseSeq:/, /^invoiceSeq:/, /^rotation:/] } })
   ]);
   return { counts: before, backupFile: saved.file };

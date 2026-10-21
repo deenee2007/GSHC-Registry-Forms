@@ -129,7 +129,7 @@
         try { full = (await api.get(`/process/cases/${c.id}`)).case; } catch (e) { ui.toast(e.message, 'error'); return; }
         let dialog;
         const close = el('button', { class: 'btn btn--ghost', onclick: () => dialog.close() }, '✕  Close');
-        ui.modal(`Case ${full.suitNumber}`, el('div', null, [el('div', { class: 'doc-preview__actions' }, [close]), P.badge(ui, full.status), P.details(ui, full, settings)]),
+        ui.modal(`Case ${full.suitNumber}`, el('div', null, [el('div', { class: 'doc-preview__actions' }, [close]), P.badge(ui, full.status), P.details(ui, full, settings), P.documentsPanel(ui, api, full.id)]),
           { noFooter: true, wide: true, onOpen: (o) => { dialog = o; } });
       }
 

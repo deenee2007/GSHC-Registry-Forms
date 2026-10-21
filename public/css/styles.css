@@ -602,6 +602,9 @@ button.dash-card:hover { border-color: var(--green-500); }
 .invoice-note { margin: 8px 0; font-style: italic; }
 .case-no { white-space: nowrap; font-weight: 600; }
 .case-no sup { font-size: .7em; }
+.case-docs { margin-top: 1.2rem; border-top: 1px solid var(--line); padding-top: .8rem; }
+.case-docs__head { display: flex; justify-content: space-between; align-items: center; gap: .5rem; margin-bottom: .5rem; }
+.case-docs__head h3 { margin: 0; font-size: 1rem; }
 .pick-list { max-height: 50vh; overflow: auto; border: 1px solid var(--line); border-radius: 8px; padding: .4rem .6rem; margin: .5rem 0; }
 .pick-row { display: flex; gap: .5rem; align-items: flex-start; padding: .3rem 0; border-bottom: 1px solid var(--line); }
 .pick-row:last-child { border-bottom: none; }

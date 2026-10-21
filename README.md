@@ -282,6 +282,16 @@ New cases are filed, numbered and assigned to a court here.
    until its file is received. The Chief Judge who assigns a case is not
    sent the court's notice for it, even when they sit in that court.
 
+**Scanned documents.** Each case has **Documents**: the Process Registry
+(at filing) and the assigned court's staff add scanned PDFs or photos (up
+to 10 MB each, the most Cloudinary's free plan takes for one file; a long
+document goes in parts), with the type, title and date filed. They are
+kept privately in Cloudinary and open only for the Process Registry, the
+Chief Judge and the assigned court; other users see them listed in the
+Case File but cannot open them. The uploader may delete a document the
+same day, an administrator at any time; each upload and deletion is in
+the audit log.
+
 Roles: give the **Process Registrar** and **Hon. Chief Judge** signing roles
 in Settings → Users; Process Registry staff need the Process Registry unit
 (the Process Registrar role alone is enough to see it).

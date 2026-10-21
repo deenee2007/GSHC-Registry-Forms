@@ -231,7 +231,71 @@
     if (onDone) onDone();
   }
 
-  window.App.processUi = { caseNoHtml, caseNo, badge, details, viewReceipt, printSlip, printSlips, printPage, amountWords, shortParty, parties, day, naira, STATUS };
+  // ── Scanned documents of a case: the list, Open, Delete, and + Add Document ──
+  const size = (n) => n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`;
+  function documentsPanel(ui, api, caseId) {
+    const el = ui.el;
+    const box = el('div', { class: 'case-docs' }, el('p', { class: 'muted' }, 'Loading documents…'));
+    async function load() {
+      let r;
+      try { r = await api.get(`/process/cases/${caseId}/documents`); } catch (e) { box.replaceChildren(el('p', { class: 'muted' }, e.offline ? 'Documents need the internet.' : e.message)); return; }
+      box.replaceChildren(
+        el('div', { class: 'case-docs__head' }, [el('h3', null, `Documents (${r.documents.length})`),
+          r.canUpload ? el('button', { class: 'btn btn--small btn--primary', type: 'button', onclick: () => add(r.docTypes) }, '+ Add Document') : null]),
+        r.documents.length ? ui.table([
+          { label: 'Date filed', value: d => day(d.filedOn) },
+          { label: 'Title', value: d => d.title },
+          { label: 'Type', value: d => d.docType && d.docType !== d.title ? d.docType : '' },
+          { label: 'Size', value: d => size(d.bytes) },
+          { label: 'Added by', value: d => `${d.uploadedByName}, ${day(d.uploadedAt)}` }
+        ], r.documents, [
+          { label: 'Open', onClick: d => window.open(d.url, '_blank', 'noopener') },
+          { label: 'Delete', class: 'btn--danger', show: d => d.canDelete, onClick: async d => {
+            if (!confirm(`Delete "${d.title}" from this case?`)) return;
+            try { await api.del(`/process/documents/${d.id}`); ui.toast('Document deleted.', 'success'); load(); } catch (e) { ui.toast(e.message, 'error'); }
+          } }
+        ]) : el('p', { class: 'muted' }, r.canUpload ? 'No scanned documents yet. Use + Add Document to attach the writ, motions, affidavits, exhibits and so on.' : 'No scanned documents yet.')
+      );
+    }
+    function add(types) {
+      const type = el('select', null, [...types, 'Others'].map(t => el('option', { value: t }, t === 'Others' ? 'Others (type it)' : t)));
+      const other = el('input', { type: 'text', placeholder: 'Type of document' });
+      const title = el('input', { type: 'text', placeholder: 'e.g. Motion on notice for interlocutory injunction (optional)' });
+      const filed = el('input', { type: 'date', value: new Date().toISOString().slice(0, 10) });
+      const files = el('input', { type: 'file', accept: 'application/pdf,image/png,image/jpeg', multiple: 'multiple' });
+      const otherRow = ui.field('Type of document', other);
+      const sync = () => { otherRow.hidden = type.value !== 'Others'; };
+      type.addEventListener('change', sync); sync();
+      ui.modal('Add Document', el('div', null, [
+        ui.field('Document', type), otherRow, ui.field('Title', title, 'Leave empty to use the type of document.'), ui.field('Date filed', filed),
+        ui.field('Scanned file(s)', files, 'PDF or photo, up to 10 MB each. Scan at 200 dpi in greyscale. Choose several files for a long document: each is kept as a part.')
+      ]), {
+        confirmText: 'Upload',
+        onConfirm: async () => {
+          const list = [...files.files];
+          if (!list.length) throw new Error('Choose the scanned file.');
+          const big = list.find(f => f.size > 10 * 1024 * 1024);
+          if (big) throw new Error(`${big.name} is over 10 MB. Scan at 200 dpi in greyscale, or split it into parts.`);
+          for (let i = 0; i < list.length; i++) {
+            const form = new FormData();
+            form.append('docType', type.value); form.append('other', other.value); form.append('filedOn', filed.value);
+            const t = title.value.trim() || (type.value === 'Others' ? other.value.trim() : type.value);
+            form.append('title', list.length > 1 ? `${t} (part ${i + 1} of ${list.length})` : t);
+            form.append('file', list[i]);
+            ui.toast(`Uploading ${list.length > 1 ? `part ${i + 1} of ${list.length}` : list[i].name}…`, 'info', 3000);
+            await api.post(`/process/cases/${caseId}/documents`, form);
+          }
+          ui.toast(list.length > 1 ? `${list.length} parts added.` : 'Document added.', 'success');
+          load();
+          return true;
+        }
+      });
+    }
+    load();
+    return box;
+  }
+
+  window.App.processUi = { caseNoHtml, caseNo, badge, details, documentsPanel, viewReceipt, printSlip, printSlips, printPage, amountWords, shortParty, parties, day, naira, STATUS };
 
   // ── The filing form ──
   function filingForm(ctx, settings, existing) {
@@ -370,7 +434,7 @@
         after(`File ${c.suitNumber} dispatched. The court has been told.`)(true);
       }, c.status === 'assigned' && me.inProcess)
     ]);
-    ui.modal(c.suitNumber ? `Case ${c.suitNumber}` : 'Case Filing', ui.el('div', null, [actions, badge(ui, c.status), details(ui, c, settings)]),
+    ui.modal(c.suitNumber ? `Case ${c.suitNumber}` : 'Case Filing', ui.el('div', null, [actions, badge(ui, c.status), details(ui, c, settings), documentsPanel(ui, api, c.id)]),
       { noFooter: true, wide: true, onOpen: (o) => { dialog = o; } });
   }
 

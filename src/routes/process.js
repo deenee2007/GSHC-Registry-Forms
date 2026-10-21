@@ -18,7 +18,7 @@
 const express = require('express');
 const multer = require('multer');
 const mongoose = require('mongoose');
-const { Case, Unit, User, Notification } = require('../models');
+const { Case, CaseDocument, Unit, User, Notification, DOC_TYPES } = require('../models');
 const processSvc = require('../services/process');
 const fileStore = require('../services/fileStore');
 const store = require('../services/signatureStore');
@@ -35,6 +35,9 @@ const router = express.Router();
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 router.use(requireLogin);
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: fileStore.MAX_BYTES, files: 1 } });
+const docMulter = multer({ storage: multer.memoryStorage(), limits: { fileSize: fileStore.DOC_MAX_BYTES, files: 1 } }).single('file');
+const docUpload = (req, res, next) => docMulter(req, res, (err) => next(err && err.code === 'LIMIT_FILE_SIZE'
+  ? new HttpError(400, 'The file must be under 10 MB. Scan at 200 dpi in greyscale, or upload a long document in parts.') : err));
 
 // ── Who may do what ──
 // The Process Registrar works in the Process Registry even without the unit.
@@ -139,7 +142,7 @@ async function cleanCase(body) {
 // ── Settings (read by everyone who works with cases; changed by admins) ──
 router.get('/settings', wrap(async (req, res) => {
   const [s, courts, rot] = await Promise.all([processSvc.getSettings(), processSvc.courts(), processSvc.rotationState()]);
-  res.json({ ...s, remarks: processSvc.REMARKS, rotation: rot,
+  res.json({ ...s, remarks: processSvc.REMARKS, docTypes: DOC_TYPES, rotation: rot,
     courts: courts.map(c => ({ key: c.key, name: c.name, courtNo: c.courtNo, roman: processSvc.roman(c.courtNo) })),
     me: { inProcess: inProcess(req.user), registrar: isRegistrar(req.user), chiefJudge: isCJ(req.user) } });
 }));
@@ -232,6 +235,9 @@ router.delete('/cases/:id', wrap(async (req, res) => {
   if (!['draft', 'returned'].includes(c.status) || !inProcess(req.user)) throw new HttpError(409, 'Only a filing not yet registered can be deleted.');
   if (String(c.createdBy) !== String(req.user._id) && !can(req.user, 'delete') && !isRegistrar(req.user)) throw new HttpError(403, 'You may delete only your own filings.');
   await Case.deleteOne({ _id: c._id });
+  const docs = await CaseDocument.find({ case: c._id });
+  await Promise.all(docs.map(d => fileStore.remove(d.file)));
+  await CaseDocument.deleteMany({ case: c._id });
   await audit.log(req, 'case_deleted', { unitKey: 'process', details: { caseId: String(c._id), parties: `${c.firstParty} v. ${c.secondParty}` } });
   res.json({ deleted: true });
 }));
@@ -279,6 +285,68 @@ router.post('/cases/:id/invoice', wrap(async (req, res) => {
   await audit.log(req, 'case_invoice_issued', { unitKey: 'process', details: { caseId: String(c._id), reference, total: c.feeTotal } });
   await caseEmail.notify(c, 'invoice');
   res.json({ case: serialize(c, await unitNames()) });
+}));
+
+// ── Scanned documents of a case ──
+// The Process Registry (at filing) and the assigned court's staff upload;
+// everyone who can see the case can open them. The uploader may delete a
+// document on the day it was uploaded; after that, only an administrator.
+const canUploadDoc = (u, c) => (inProcess(u) && (can(u, 'create') || can(u, 'edit') || isRegistrar(u))) ||
+  (inCourt(u, c.assignedUnit) && (can(u, 'create') || can(u, 'edit')));
+const sameDay = (a, b) => new Date(a).toDateString() === new Date(b).toDateString();
+const canDeleteDoc = (u, d) => isAdmin(u) || (String(d.uploadedBy) === String(u._id) && sameDay(d.createdAt, new Date()));
+const serializeDoc = (d, u) => ({
+  id: String(d._id), title: d.title, docType: d.docType, filedOn: d.filedOn || '',
+  name: d.file.name, contentType: d.file.contentType, bytes: d.file.bytes,
+  uploadedByName: d.uploadedByName, uploadedAt: d.createdAt, url: `/api/process/documents/${d._id}/file`, canDelete: canDeleteDoc(u, d)
+});
+async function loadDoc(id, user) {
+  if (!mongoose.isValidObjectId(id)) throw new HttpError(404, 'Document not found.');
+  const d = await CaseDocument.findById(id);
+  if (!d) throw new HttpError(404, 'Document not found.');
+  return { d, c: await load(d.case, user) };
+}
+
+router.get('/cases/:id/documents', wrap(async (req, res) => {
+  const c = await load(req.params.id, req.user);
+  const docs = await CaseDocument.find({ case: c._id }).sort({ filedOn: 1, createdAt: 1 });
+  res.json({ documents: docs.map(d => serializeDoc(d, req.user)), canUpload: canUploadDoc(req.user, c), docTypes: DOC_TYPES });
+}));
+
+router.post('/cases/:id/documents', docUpload, wrap(async (req, res) => {
+  const c = await load(req.params.id, req.user);
+  if (!canUploadDoc(req.user, c)) throw new HttpError(403, 'Only the Process Registry and the staff of the assigned court add documents to this case.');
+  if (!req.file) throw new HttpError(400, 'Choose the scanned document (PDF or photo).');
+  let docType = String(req.body.docType || '').trim().slice(0, 80);
+  if (docType === 'Others') docType = String(req.body.other || '').trim().slice(0, 80);
+  const title = String(req.body.title || '').trim().slice(0, 200) || docType;
+  if (!title) throw new HttpError(400, 'Give the document a title or choose its type.');
+  const filedOn = DAY.test(req.body.filedOn || '') ? req.body.filedOn : undefined;
+  let file;
+  try { file = await fileStore.save(req.file.buffer, req.file.originalname, 'documents'); }
+  catch (e) { throw Object.assign(new HttpError(e.status || 500, e.message), { expose: true }); }
+  const unitKey = inCourt(req.user, c.assignedUnit) && !req.user.unitKeys.includes('process') ? c.assignedUnit : 'process';
+  const d = await CaseDocument.create({ case: c._id, title, docType, filedOn, file, unitKey, uploadedBy: req.user._id, uploadedByName: req.user.fullName });
+  await audit.log(req, 'case_document_added', { unitKey, details: { caseId: String(c._id), suitNumber: c.suitNumber, documentId: String(d._id), title, bytes: file.bytes } });
+  res.status(201).json({ document: serializeDoc(d, req.user) });
+}));
+
+router.get('/documents/:id/file', wrap(async (req, res) => {
+  const { d } = await loadDoc(req.params.id, req.user);
+  const f = await fileStore.read(d.file);
+  if (!f) throw new HttpError(404, 'The document file is missing.');
+  const name = (d.file.name || 'document').replace(/"/g, '');
+  res.set('Content-Type', f.contentType).set('Content-Disposition', `inline; filename="${name}"`).set('Cache-Control', 'private, no-store');
+  res.send(f.buffer);
+}));
+
+router.delete('/documents/:id', wrap(async (req, res) => {
+  const { d, c } = await loadDoc(req.params.id, req.user);
+  if (!canDeleteDoc(req.user, d)) throw new HttpError(403, 'Only the person who uploaded it can delete a document, on the same day. After that, ask an administrator.');
+  await fileStore.remove(d.file);
+  await CaseDocument.deleteOne({ _id: d._id });
+  await audit.log(req, 'case_document_deleted', { unitKey: d.unitKey, details: { caseId: String(c._id), suitNumber: c.suitNumber, title: d.title } });
+  res.json({ deleted: true });
 }));
 
 // What registration needs: a fee and its receipt, unless the case is official.
@@ -487,5 +555,6 @@ router.get('/summary', wrap(async (req, res) => {
   });
 }));
 
+router.canSeeCase = canSee;
 module.exports = router;
 module.exports.inProcess = inProcess;

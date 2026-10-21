@@ -364,3 +364,45 @@ test('email updates to parties and counsel at each stage, noted on the case', as
   assert.equal(mail.sent.filter(m => m.to === 'counsel@example.com').length, n, 'switched off in Settings');
   await admin.put('/api/process/settings', { partyEmails: true });
 });
+
+test('scanned documents: added by the Process Registry and the assigned court, opened by those who see the case', async () => {
+  const c = await fileAndRegister({ firstParty: 'Docs Party' });
+  const add = (client, id, fields, buf = PDF, name = 'writ.pdf') => {
+    const form = new FormData();
+    Object.entries(fields).forEach(([k, v]) => form.append(k, v));
+    form.append('file', new Blob([buf]), name);
+    return client.upload(`/api/process/cases/${id}/documents`, form);
+  };
+  const d1 = await add(u.clerk, c.id, { docType: 'Writ of summons', filedOn: '2026-10-21' });
+  assert.equal(d1.status, 201, JSON.stringify(d1.body));
+  assert.equal(d1.body.document.title, 'Writ of summons', 'the type when no title is given');
+  assert.equal(d1.body.document.canDelete, true);
+  assert.equal((await add(u.clerk, c.id, { docType: 'Others', other: '' })).status, 400, 'a title or a type is needed');
+  assert.equal((await add(u.clerk, c.id, { docType: 'Motion' }, Buffer.from('not a pdf'), 'x.exe')).status, 400, 'PDF or photo only');
+  assert.equal((await add(u.clerk, c.id, { docType: 'Exhibit' }, Buffer.concat([PDF, Buffer.alloc(11 * 1024 * 1024)]))).status, 400, 'under 10 MB');
+  assert.equal((await add(u.court3, c.id, { docType: 'Motion' })).status, 403, 'not yet the court\'s case');
+
+  assert.equal((await u.cj.post(`/api/process/cases/${c.id}/assign`, { unitKey: 'hc3', pin: '1357' })).status, 200);
+  const d2 = await add(u.court3, c.id, { docType: 'Others', other: 'Notice of appeal', title: 'Notice of appeal filed by the defendant', filedOn: '2026-11-02' });
+  assert.equal(d2.status, 201, JSON.stringify(d2.body));
+  const list = await u.court3.get(`/api/process/cases/${c.id}/documents`);
+  assert.deepEqual(list.body.documents.map(d => d.title), ['Writ of summons', 'Notice of appeal filed by the defendant']);
+  assert.equal(list.body.canUpload, true);
+  assert.equal(list.body.documents[0].canDelete, false, 'only the uploader deletes');
+  const file = await u.cj.get(list.body.documents[1].url);
+  assert.equal(file.status, 200);
+  assert.equal(file.headers.get('content-type'), 'application/pdf');
+  const other = await makeUser({ fullName: 'Court Four Clerk', email: 'hc4@example.com', unitKeys: ['hc4'], privileges: ['view', 'create'] });
+  assert.equal((await other.get(list.body.documents[0].url)).status, 403, 'other courts cannot open them');
+
+  const cf = await u.court3.get(`/api/cases?q=${encodeURIComponent(c.suitNumber)}&exact=1`);
+  const scans = cf.body.cases[0].documents.filter(d => d.formType === 'scan');
+  assert.equal(scans.length, 2, 'in the Case File');
+  assert.ok(scans.every(d => d.fileUrl));
+  const cf4 = await other.get(`/api/cases?q=${encodeURIComponent(c.suitNumber)}&exact=1`);
+  assert.ok(cf4.body.cases[0].documents.filter(d => d.formType === 'scan').every(d => !d.fileUrl), 'listed but not openable for other courts');
+
+  assert.equal((await u.clerk.del(`/api/process/documents/${list.body.documents[1].id}`)).status, 403);
+  assert.equal((await u.court3.del(`/api/process/documents/${list.body.documents[1].id}`)).status, 200);
+  assert.equal((await u.court3.get(`/api/process/cases/${c.id}/documents`)).body.documents.length, 1);
+});
