@@ -68,7 +68,7 @@
         "label": "Court Place / Court Room",
         "type": "text",
         "required": true,
-        "defaultValue": "High Court of Justice, Gombe"
+        "help": "The court and its number, e.g. High Court No. 1. On a court registry's forms it is filled in for you."
       },
       {
         "name": "appearanceDate",
@@ -80,6 +80,7 @@
         "name": "appearanceTime",
         "label": "Time of Appearance",
         "type": "text",
+        "defaultValue": "9:00",
         "required": true,
         "help": "Example: 9:00"
       },
@@ -88,6 +89,7 @@
         "label": "Time Period",
         "type": "select",
         "required": true,
+        "defaultValue": "forenoon",
         "options": [
           "forenoon",
           "afternoon"
@@ -219,6 +221,7 @@
         "name": "appearanceTime",
         "label": "Time of Appearance",
         "type": "text",
+        "defaultValue": "9:00",
         "required": true,
         "help": "Example: 9:00"
       },
@@ -308,6 +311,7 @@
         "name": "productionTime",
         "label": "Production Time",
         "type": "text",
+        "defaultValue": "9:00",
         "required": true,
         "help": "Example: 9:00"
       },
@@ -406,7 +410,7 @@
         "label": "Court to Appear Before",
         "type": "text",
         "required": true,
-        "defaultValue": "High Court of Justice, Gombe"
+        "help": "The court and its number, e.g. High Court No. 1. On a court registry's forms it is filled in for you."
       },
       {
         "name": "appearanceDate",
@@ -418,6 +422,7 @@
         "name": "appearanceTime",
         "label": "Appearance Time",
         "type": "text",
+        "defaultValue": "9:00",
         "required": true
       },
       {
@@ -593,7 +598,7 @@
         "label": "Court to Attend",
         "type": "text",
         "required": true,
-        "defaultValue": "High Court of Justice, Gombe"
+        "help": "The court and its number, e.g. High Court No. 1. On a court registry's forms it is filled in for you."
       },
       {
         "name": "offenceDescription",
@@ -611,6 +616,7 @@
         "name": "appearanceTime",
         "label": "Time of Appearance",
         "type": "text",
+        "defaultValue": "9:00",
         "required": true
       },
       {
@@ -1013,6 +1019,7 @@
         "name": "attendanceTime",
         "label": "Attendance Time",
         "type": "text",
+        "defaultValue": "9:00",
         "required": true
       },
       {
@@ -1106,6 +1113,7 @@
         "name": "attendanceTime",
         "label": "Attendance Time",
         "type": "text",
+        "defaultValue": "9:00",
         "required": true
       },
       {
@@ -1194,6 +1202,7 @@
         "name": "hearingTime",
         "label": "Hearing Time",
         "type": "text",
+        "defaultValue": "9:00",
         "required": true
       },
       {
