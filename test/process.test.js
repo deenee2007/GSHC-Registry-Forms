@@ -673,44 +673,15 @@ test('warrant of arrest and order to produce: the court to bring before is the c
   assert.equal((await u.court3.get(`/api/cases/fill?formType=order-to-produce-prisoner&caseId=${c.id}`)).body.values.courtToProduceBefore, 'High Court No. 3');
 });
 
-test('the official court fees (Legal Notice No. 1 of 2023): loaded once by themselves, percentage and per unit fees, loaded again on request', async () => {
+test('withdrawing the official fee schedule: an edited list is kept; it runs once', async () => {
   const mongoose = require('mongoose');
   const meta = mongoose.connection.collection('appmeta');
-  assert.ok(await meta.findOne({ _id: 'officialFeesLoaded:gombe-2023' }), 'loaded on the first start');
-  assert.equal(await processSvc.loadOfficialFeesOnce(() => {}), false, 'and never again by itself');
-  const s0 = await admin.get('/api/process/settings');
-  assert.match(s0.body.feeSource.name, /Legal Notice No\. 1 of 2023/);
-
-  const before = s0.body.fees;
-  assert.equal((await u.clerk.post('/api/process/settings/official-fees')).status, 403, 'administrators only');
-  const r = await admin.post('/api/process/settings/official-fees');
-  assert.equal(r.status, 200, JSON.stringify(r.body));
-  assert.equal(r.body.loaded, 101);
-  const fee = (item) => r.body.fees.find(f => f.item.startsWith(item));
-  assert.equal(fee('9(a)(i) Writ of summons').amount, 4000);
-  assert.equal(fee('1(a) Not exceeding').amount, 20000);
-  assert.equal(fee('13(c) Deposit').amount, 20000);
-  assert.equal(fee('18(k)(ii)').amount, 50);
-  assert.equal(fee('3(c) Claim of arrears of rent').percent, 2);
-  assert.equal(fee('16(j) Resealing').percent, 1.5);
-  assert.equal(fee('9(e) Each exhibit').group, '9. Filing of court processes');
-  assert.deepEqual((await meta.findOne({ _id: 'feesBefore:gombe-2023' })).fees, before, 'the list replaced is kept');
-
-  const f = await u.clerk.post('/api/process/cases', filing({ firstParty: 'Fees Party', fees: [
-    { item: fee('9(a)(i)').item, qty: 1 }, { item: fee('9(e) Each exhibit').item, qty: 3 },
-    { item: fee('1(d)').item, qty: 2 }, { item: fee('3(c)').item, base: 500000 }] }));
-  assert.equal(f.status, 201, JSON.stringify(f.body));
-  assert.equal(f.body.case.feeTotal, 4000 + 600 + 20000 + 10000, 'writ, 3 exhibits, 2 × per ₦1,000,000, 2% of ₦500,000');
-  const rent = f.body.case.fees.find(x => x.percent);
-  assert.equal(rent.base, 500000);
-  assert.equal(rent.amount, 10000);
-  assert.equal((await u.clerk.post('/api/process/cases', filing({ fees: [{ item: fee('3(c)').item }] }))).status, 400, 'a percentage fee needs its amount');
-
-  // Corrections in Settings are kept: the list is the one saved.
-  const fixed = r.body.fees.map(x => x.item.startsWith('9(d) Sealing') ? { ...x, amount: 250 } : x);
-  const saved = await admin.put('/api/process/settings', { fees: fixed });
-  assert.equal(saved.status, 200, JSON.stringify(saved.body));
-  assert.equal(saved.body.fees.find(x => x.item.startsWith('9(d)')).amount, 250);
-  assert.equal(saved.body.fees.find(x => x.item.startsWith('3(c)')).percent, 2, 'a percentage fee stays a percentage when saved');
-  assert.equal((await admin.put('/api/process/settings', { fees: [{ item: 'X', percent: 150 }] })).status, 400);
+  await meta.deleteMany({ _id: { $in: ['officialFeesUndone:gombe-2023', 'officialFeesLoaded:gombe-2023', 'feesBefore:gombe-2023'] } });
+  assert.equal(await processSvc.undoOfficialFeesOnce(() => {}), null, 'nothing to do where it was never loaded');
+  await meta.deleteOne({ _id: 'officialFeesUndone:gombe-2023' });
+  await meta.insertMany([{ _id: 'officialFeesLoaded:gombe-2023' }, { _id: 'feesBefore:gombe-2023', fees: [{ item: 'Old fee', amount: 1 }] }]);
+  const now = (await processSvc.getSettings()).fees;
+  assert.equal(await processSvc.undoOfficialFeesOnce(() => {}), 'kept', 'a list that is not exactly the official one stays');
+  assert.deepEqual((await processSvc.getSettings()).fees, now);
+  assert.equal(await processSvc.undoOfficialFeesOnce(() => {}), null, 'only once');
 });

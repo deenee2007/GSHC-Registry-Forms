@@ -282,18 +282,6 @@ New cases are filed, numbered and assigned to a court here.
    until its file is received. The Chief Judge who assigns a case is not
    sent the court's notice for it, even when they sit in that court.
 
-**Court fees.** The fee list comes from the First Schedule of the Gombe
-State High Court (Increase of Court Fees) Rules, 2023 (Legal Notice No. 1
-of 2023, in force from 22 December 2023): 101 fees under their item
-numbers, by section (`src/forms/feeSchedule2023.js`). It is loaded once by
-itself on the first start after it was added (the list it replaces is kept
-in appmeta); after that the list in Settings → Process Registry is the one
-used and can be corrected, and **Load the official schedule again**
-restores it. A fee per unit (each exhibit, per page, per ₦1,000,000 or
-part thereof) is multiplied by the number staff enter; a percentage fee
-(seven items, such as 2% of arrears of rent) is worked out on the amount
-staff enter, which shows on the invoice.
-
 **Fill a form from a case.** In the court registries and the Execution
 Unit, **📝 Fill a Form** (Case Register View, Case File, Court Diary) or
 **Choose a case** at the top of a new form fills the form from a

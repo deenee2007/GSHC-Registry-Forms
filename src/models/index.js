@@ -206,8 +206,7 @@ const CaseSchema = new Schema({
   filedOn:       String,                              // YYYY-MM-DD
   efcc:          { type: Boolean, default: false },
   official:      { type: Boolean, default: false },  // no filing fee (criminal cases filed by the State, EFCC matters)
-  // base: for a percentage fee, the amount it was worked out on
-  fees:          { type: [{ _id: false, item: String, amount: Number, qty: Number, base: Number, percent: Number }], default: [] },
+  fees:          { type: [{ _id: false, item: String, amount: Number, qty: Number }], default: [] },
   feeTotal:      { type: Number, default: 0 },
   receiptNumber: { type: String, trim: true, default: '' },
   receipt:       { type: FileRef, default: null },
@@ -216,7 +215,7 @@ const CaseSchema = new Schema({
   emailLog:      { type: [{ _id: false, stage: String, to: String, at: Date, ok: Boolean }], default: [] },
   // The invoice given to the filer to go and pay: its reference and what it listed.
   invoice:       { type: { _id: false, reference: String, issuedAt: Date, issuedByName: String,
-                   fees: [{ _id: false, item: String, amount: Number, qty: Number, base: Number, percent: Number }], total: Number }, default: null },
+                   fees: [{ _id: false, item: String, amount: Number, qty: Number }], total: Number }, default: null },
 
   status:        { type: String, enum: CASE_STATUSES, default: 'draft', index: true },
   returnComment: String,
