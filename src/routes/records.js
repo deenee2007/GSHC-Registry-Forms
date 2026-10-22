@@ -236,6 +236,7 @@ router.get('/:id/history', wrap(async (req, res) => {
 }));
 
 // ── Drafts ──
+const UNIT_COURT = ['courtPlace', 'appearanceCourt'];
 router.post('/', wrap(async (req, res) => {
   const unitKey = String(req.body.unitKey || '');
   const formType = String(req.body.formType || '');
@@ -243,7 +244,15 @@ router.post('/', wrap(async (req, res) => {
   if (!unit) throw new HttpError(404, 'Unit not found.');
   if (!canAccessUnit(req.user, unitKey) || !can(req.user, 'create')) throw new HttpError(403, 'You do not have permission to create records here.');
   if (!catalogue.formsForUnit(unit).includes(formType)) throw new HttpError(400, 'This form is not available to this unit.');
-  const { data, error } = catalogue.cleanData(formType, req.body.data);
+  // A court registry's form names its court where the form asks for the
+  // court to appear before (or where it was issued) and the box is empty.
+  const input = { ...(req.body.data && typeof req.body.data === 'object' ? req.body.data : {}) };
+  if (unit.type === 'registry' && unit.courtNo) {
+    for (const f of catalogue.get(formType).schema) {
+      if (UNIT_COURT.includes(f.name) && !String(input[f.name] || '').trim() && f.defaultValue === undefined) input[f.name] = `High Court No. ${unit.courtNo}`;
+    }
+  }
+  const { data, error } = catalogue.cleanData(formType, input);
   if (error) throw new HttpError(400, error);
   const rec = new Record({
     unitKey, formType, data, ...catalogue.describe(formType, data),
@@ -263,7 +272,8 @@ router.put('/:id', wrap(async (req, res) => {
   if (req.body.version !== undefined && Number(req.body.version) !== rec.__v) {
     throw new HttpError(409, 'This record was changed by someone else. Reload it before saving.');
   }
-  const { data, error } = catalogue.cleanData(rec.formType, req.body.data);
+  // A box left out of the update keeps what was saved (a box cleared is sent empty).
+  const { data, error } = catalogue.cleanData(rec.formType, { ...(rec.data || {}), ...(req.body.data && typeof req.body.data === 'object' ? req.body.data : {}) });
   if (error) throw new HttpError(400, error);
   rec.data = data;
   Object.assign(rec, catalogue.describe(rec.formType, data));

@@ -77,6 +77,14 @@
     if (!record && !values) offerPrefill(def, formType, f.node, body);
     // A new form in a court registry or the Execution Unit can be filled from a case.
     const unit = unitKey ? (await App.router.units()).find(u => u.key === unitKey) : null;
+    // A court registry's new forms name the court (High Court No. 9) where
+    // they ask for the court to appear before and where they were issued.
+    if (!record && unit && unit.type === 'registry' && unit.courtNo) {
+      def.schema.filter(x => UNIT_COURT.includes(x.name)).forEach(x => {
+        const inp = f.node.querySelector(`[name="${x.name}"]`);
+        if (inp && (!inp.value.trim() || inp.value === String(x.defaultValue === undefined ? '' : x.defaultValue))) inp.value = `High Court No. ${unit.courtNo}`;
+      });
+    }
     if (!record && !values && unit && ['registry', 'execution'].includes(unit.type)) offerCasePicker(def, formType, f.node, body, fill);
 
     return ui().modal(def.label, body, {
@@ -145,6 +153,8 @@
       if (inp) inp.addEventListener('change', check);
     });
   }
+  const UNIT_COURT = ['courtPlace', 'appearanceCourt', 'issuedAt', 'issuePlace'];
+
   // Put a case's values into the form: empty boxes, and court boxes still at
   // their starting value. The boxes filled are marked until edited.
   function applyFill(def, formNode, r) {

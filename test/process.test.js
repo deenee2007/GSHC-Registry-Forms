@@ -636,3 +636,28 @@ test('fill a form from a case: its number, parties, addresses, court and judge; 
   assert.equal(byNo.body.values.plaintiff, 'Fill Plaintiff', 'by suit number too (the Case File)');
   assert.equal((await u.court3.get('/api/cases/fill?formType=nothing&caseId=' + id)).status, 400);
 });
+
+test('summonses: the court to appear before is the court and its number; times start at 9:00', async () => {
+  const catalogue = require('../src/forms/catalogue');
+  const field = (form, name) => catalogue.forms[form].schema.find(f => f.name === name);
+  assert.equal(field('civil-summons', 'courtPlace').defaultValue, undefined, 'no longer "High Court of Justice, Gombe"');
+  assert.match(field('civil-summons', 'courtPlace').help, /High Court No\. 1/);
+  assert.equal(field('criminal-summons', 'appearanceCourt').defaultValue, undefined);
+  for (const [form, name] of [['civil-summons', 'appearanceTime'], ['criminal-summons', 'appearanceTime'], ['witness-summons', 'appearanceTime'], ['bail-bond', 'appearanceTime'], ['hearing-notice', 'hearingTime'], ['subpoena-ad-testificandum', 'attendanceTime'], ['order-to-produce-prisoner', 'productionTime']]) {
+    assert.equal(field(form, name).defaultValue, '9:00', `${form}: ${name}`);
+  }
+  assert.equal(field('civil-summons', 'timePeriod').defaultValue, 'forenoon');
+
+  const c = await fileAndRegister({ firstParty: 'Court Place Party' });
+  await u.cj.post(`/api/process/cases/${c.id}/assign`, { unitKey: 'hc3', pin: '1357' });
+  const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const day = (() => { const d = new Date(); d.setDate(d.getDate() + 8); return iso(d); })();
+  const e = await u.court3.post('/api/diary', { unitKey: 'hc3', caseId: c.id, date: day, time: '14:30', business: 'Hearing' });
+  const r = (await u.court3.get(`/api/cases/fill?formType=civil-summons&diaryId=${e.body.entry.id}`)).body;
+  assert.equal(r.values.courtPlace, 'High Court No. 3');
+  assert.ok(r.replace.includes('courtPlace'));
+  assert.equal(r.values.appearanceDate, day);
+  assert.equal(r.values.appearanceTime, '2:30', 'as the form writes it');
+  assert.equal(r.values.timePeriod, 'afternoon');
+  assert.equal((await u.court3.get(`/api/cases/fill?formType=criminal-summons&caseId=${c.id}`)).body.values.appearanceCourt, 'High Court No. 3');
+});

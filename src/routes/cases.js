@@ -160,7 +160,7 @@ const TITLE = ['suitTitle', 'caseTitle'];
 const OFFENCE = ['offence', 'offenceDescription', 'offenceOrClaim'];
 // Court boxes written as the court and its number; these replace the
 // starting value ("Gombe") the form puts in them.
-const COURT_AT = ['issuedAt', 'issuePlace'];
+const COURT_AT = ['issuedAt', 'issuePlace', 'courtPlace', 'appearanceCourt'];
 const COURT_NUMBER = ['courtNo', 'courtNumber'];
 const oneLine = (s) => String(s || '').trim().replace(/\s*\n+\s*/g, ', ');
 
@@ -196,7 +196,12 @@ async function caseValues(def, formType, c, extra) {
   const dates = catalogue.COURT_DATES[formType];
   if (extra && extra.date && dates) {
     set(dates.date, extra.date, true);
-    if (dates.time && extra.time) set(dates.time, extra.time, true);
+    if (dates.time && extra.time) {
+      // "14:30" as the forms write it: "2:30" (with afternoon where the form asks)
+      const [h, m] = extra.time.split(':').map(Number);
+      set(dates.time, `${h % 12 || 12}:${String(m).padStart(2, '0')}`, true);
+      if (def.schema.some(f => f.name === 'timePeriod')) set('timePeriod', h < 12 ? 'forenoon' : 'afternoon', true);
+    }
     if (def.schema.some(f => f.name === 'stage')) set('stage', extra.business, true);
   }
   return { values, replace };
