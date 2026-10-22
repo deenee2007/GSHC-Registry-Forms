@@ -282,6 +282,19 @@ New cases are filed, numbered and assigned to a court here.
    until its file is received. The Chief Judge who assigns a case is not
    sent the court's notice for it, even when they sit in that court.
 
+**Register import.** **⬆ Import Register** in the Case Register brings in
+a court's existing book from Excel (.xlsx) or CSV, using the template's
+columns (S/No, Register, Name of case, Suit number, Date of filing, Date of
+assignment, Type of case, Date received, Date of disposal, Remarks, Next
+date, Coming up for; in any order, found by their headings). Dates are read
+day first, or as Excel dates. Every row is checked and shown before
+anything is saved: a row with no suit number, an unreadable date, or a
+suit number already in a register (or twice in the sheet) is left out.
+The case type comes from the Register column or the letter in the suit
+number. A next date still to come goes into the Court Diary. The file is
+read with Node's own zlib (no spreadsheet library); old .xls files must be
+saved as .xlsx first.
+
 **Scanned documents.** Each case has **Documents**: the Process Registry
 (at filing) and the assigned court's staff add scanned PDFs or photos (up
 to 10 MB each, the most Cloudinary's free plan takes for one file; a long

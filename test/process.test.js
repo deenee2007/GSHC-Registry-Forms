@@ -500,3 +500,91 @@ test('court statistics for the Chief Judge; Today in Court on Home', async () =>
   assert.ok(t.body.businessTypes.includes('Mention') && t.body.remarks.length);
   assert.deepEqual((await u.clerk.get('/api/diary/today')).body.courts, [], 'nothing for someone in no court');
 });
+
+test('register import: dates read day first, the parties split, the book chosen', () => {
+  const imp = require('../src/services/registerImport');
+  assert.equal(imp.readDate('12/03/2024'), '2024-03-12', 'day first');
+  assert.equal(imp.readDate('5-1-21'), '2021-01-05');
+  assert.equal(imp.readDate('12th March, 2024'), '2024-03-12');
+  assert.equal(imp.readDate('12 Mar 2024'), '2024-03-12');
+  assert.equal(imp.readDate('2024-03-12'), '2024-03-12');
+  assert.equal(imp.readDate(45363), '2024-03-12', 'an Excel day number');
+  assert.equal(imp.readDate(''), '');
+  assert.equal(imp.readDate('31/02/2024'), null, 'no such day');
+  assert.equal(imp.readDate('sometime'), null);
+  assert.deepEqual(imp.splitParties('Musa Bello vs. Ali Sani'), ['Musa Bello', 'Ali Sani']);
+  assert.deepEqual(imp.splitParties('The State v Yakubu Adamu & 2 Ors'), ['The State', 'Yakubu Adamu & 2 Ors']);
+  const types = [{ key: 'civil', label: 'Civil', suffix: '', book: 'civil' }, { key: 'criminal', label: 'Criminal', suffix: 'c', book: 'criminal' }, { key: 'petition', label: 'Petition', suffix: 'p', book: 'civil' }];
+  assert.equal(imp.caseTypeFor('Criminal', 'GM/9/2020', types).type.key, 'criminal');
+  assert.equal(imp.caseTypeFor('', 'GM/45p/2023', types).type.key, 'petition', 'from the letter in the number');
+  assert.equal(imp.caseTypeFor('', 'GM/45/2023', types).guessed, true);
+  assert.deepEqual(Object.keys(imp.mapHeadings(['S/No', 'Register (Civil or Criminal)', 'Name of case', 'Suit number', 'Date of filing', 'Date of assignment', 'Type of case', 'Date received', 'Date of disposal', 'Remarks', 'Next date', 'Coming up for'])).sort(),
+    ['assigned', 'business', 'disposal', 'filed', 'nature', 'nextDate', 'parties', 'received', 'register', 'remarks', 'sn', 'suit']);
+});
+
+test('register import from Excel and CSV: checked first, then saved, next dates into the diary', async () => {
+  const { xlsx, serial } = require('./helpers/xlsx');
+  const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const soon = (() => { const d = new Date(); d.setDate(d.getDate() + 10); return iso(d); })();
+  const head = ['S/No', 'Register (Civil or Criminal)', 'Name of case', 'Suit number', 'Date of filing', 'Date of assignment', 'Type of case', 'Date received', 'Date of disposal', 'Remarks', 'Next date', 'Coming up for'];
+  const book = xlsx([
+    ['HIGH COURT 4 REGISTER'], head,
+    [1, 'Civil', 'Adamu Musa v. Gombe Line Ltd', 'GM/101/2019', serial('2019-02-04'), serial('2019-02-11'), 'Contract', serial('2019-02-14'), '', '', soon, 'Hearing'],
+    [2, 'Criminal', 'The State v. Bala Yusuf', 'GM/7c/2018', '03/05/2018', '10/05/2018', 'Theft', '11/05/2018', '20/01/2022', 'Accused discharged', '', ''],
+    [3, '', 'Hauwa Ali v. Ibrahim Ali', 'GM/12p/2021', '', '', 'Divorce', '', '', '', '', ''],
+    [4, 'Civil', 'No Number v. Anyone', '', '', '', '', '', '', '', '', ''],
+    [5, 'Civil', 'Bad Date v. Someone', 'GM/55/2020', '31/02/2020', '', '', '', '', '', '', ''],
+    [6, 'Civil', 'Twice v. Over', 'GM/101/2019', '', '', '', '', '', '', '', ''],
+    []
+  ]);
+  const clerk4 = await makeUser({ fullName: 'Court Four Registry', email: 'reg4@example.com', unitKeys: ['hc4'], privileges: ['view', 'create', 'edit'] });
+  const send = (client, buf, name, commit, unitKey = 'hc4') => {
+    const form = new FormData();
+    form.append('unitKey', unitKey); form.append('commit', commit ? '1' : '0'); form.append('file', new Blob([buf]), name);
+    return client.upload('/api/process/register/import', form);
+  };
+  assert.equal((await send(u.court3, book, 'hc4.xlsx', false)).status, 403, 'only the court\'s own staff');
+  const pre = await send(clerk4, book, 'hc4.xlsx', false);
+  assert.equal(pre.status, 200, JSON.stringify(pre.body));
+  assert.equal(pre.body.preview, true);
+  assert.equal(pre.body.toAdd, 3);
+  assert.equal(pre.body.skipped, 3);
+  const byLine = Object.fromEntries(pre.body.rows.map(r => [r.line, r]));
+  assert.match(byLine[6].problems[0], /No suit number/);
+  assert.match(byLine[7].problems[0], /Date of filing "31\/02\/2020" cannot be read/);
+  assert.match(byLine[8].problems[0], /twice/);
+  assert.equal(byLine[5].book, 'civil', 'a petition goes in the Civil book');
+  assert.equal(byLine[4].status, 'Disposed of');
+  assert.equal(byLine[3].next.date, soon);
+  assert.equal(await Case.countDocuments({ suitNumber: 'GM/101/2019' }), 0, 'nothing saved by the check');
+
+  const done = await send(clerk4, book, 'hc4.xlsx', true);
+  assert.equal(done.status, 200, JSON.stringify(done.body));
+  assert.equal(done.body.added, 3);
+  assert.equal(done.body.dates, 1);
+  const reg = await clerk4.get('/api/process/register?unitKey=hc4');
+  const civil = reg.body.cases.find(c => c.suitNumber === 'GM/101/2019');
+  assert.equal(civil.firstParty, 'Adamu Musa');
+  assert.equal(civil.secondParty, 'Gombe Line Ltd');
+  assert.equal(civil.filedOn, '2019-02-04');
+  assert.equal(new Date(civil.assignedAt).toISOString().slice(0, 10), '2019-02-11');
+  const crim = reg.body.cases.find(c => c.suitNumber === 'GM/7c/2018');
+  assert.equal(crim.status, 'disposed');
+  assert.equal(crim.disposal.remark, 'Accused discharged');
+  assert.equal(crim.disposal.date, '2022-01-20');
+  const diary = await clerk4.get(`/api/diary?unitKey=hc4&from=${soon}`);
+  assert.ok(diary.body.entries.some(e => e.suitNumber === 'GM/101/2019' && e.business === 'Hearing'));
+  const again = await send(clerk4, book, 'hc4.xlsx', false);
+  assert.equal(again.body.toAdd, 0, 'imported cases are not added twice');
+
+  const csv = Buffer.from('﻿Suit number;Name of case;Register;Date received\r\n"GM/300/2017";"Gambo, Musa v. Ali";Criminal;"1 June 2017"\r\n');
+  const c = await send(clerk4, csv, 'more.csv', true);
+  assert.equal(c.status, 200, JSON.stringify(c.body));
+  assert.equal(c.body.added, 1);
+  const g = (await clerk4.get('/api/process/register?unitKey=hc4')).body.cases.find(x => x.suitNumber === 'GM/300/2017');
+  assert.equal(g.firstParty, 'Gambo, Musa');
+  assert.equal(g.caseType, 'criminal');
+  assert.equal((await send(clerk4, Buffer.from('a,b\r\n1,2'), 'x.csv', false)).body.error.includes('Suit number'), true, 'a sheet without the heading is refused');
+  const xls = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0, 0, 0, 0]);
+  assert.match((await send(clerk4, xls, 'old.xls', false)).body.error, /old Excel/);
+});

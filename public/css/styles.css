@@ -605,6 +605,9 @@ button.dash-card:hover { border-color: var(--green-500); }
 .case-docs { margin-top: 1.2rem; border-top: 1px solid var(--line); padding-top: .8rem; }
 .case-docs__head { display: flex; justify-content: space-between; align-items: center; gap: .5rem; margin-bottom: .5rem; }
 .case-docs__head h3 { margin: 0; font-size: 1rem; }
+/* Register import */
+.import-steps { padding-left: 1.2rem; display: grid; gap: .5rem; margin: 0 0 1rem; }
+.import-problem { color: var(--danger); font-weight: 600; font-size: .85rem; }
 /* Court statistics */
 .stats-h { font-size: 1rem; margin: 1.2rem 0 .5rem; color: var(--green-900); }
 /* Court diary */

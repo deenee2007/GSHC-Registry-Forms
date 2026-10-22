@@ -55,6 +55,7 @@
         el('div', { class: 'toolbar' }, [
           el('button', { class: 'btn btn--ghost', onclick: () => router.loadUnit(unit) }, '← Back to forms'),
           canWork ? el('button', { class: 'btn btn--primary', onclick: addEarlier }, '+ Add Earlier Case') : null,
+          canWork ? el('button', { class: 'btn btn--ghost', onclick: importRegister }, '⬆ Import Register') : null,
           el('button', { class: 'btn btn--ghost', onclick: () => printRegister() }, '🖨 Print Register')
         ]),
         tabsBar,
@@ -159,6 +160,75 @@
             ui.toast('Saved in the register.', 'success'); load(); return true;
           }
         });
+      }
+
+      // The court's existing book from Excel or CSV: the template, a check of
+      // every row (nothing saved), then the import of the rows that passed.
+      const TEMPLATE = ['S/No', 'Register (Civil or Criminal)', 'Name of case', 'Suit number', 'Date of filing', 'Date of assignment', 'Type of case', 'Date received', 'Date of disposal', 'Remarks', 'Next date', 'Coming up for'];
+      function downloadTemplate() {
+        const blob = new Blob(['\ufeff' + TEMPLATE.join(',') + '\r\n'], { type: 'text/csv;charset=utf-8' });
+        const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `register-template-${unit.key}.csv` });
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+      }
+      function importRegister() {
+        let dialog;
+        const file = el('input', { type: 'file', accept: '.xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv' });
+        const result = el('div');
+        const send = async (commit) => {
+          if (!file.files[0]) { ui.toast('Choose the Excel or CSV file first.', 'error'); return null; }
+          const form = new FormData();
+          form.append('unitKey', unit.key); form.append('commit', commit ? '1' : '0'); form.append('file', file.files[0]);
+          return api.post('/process/register/import', form);
+        };
+        const check = el('button', { class: 'btn btn--primary', onclick: async () => {
+          check.disabled = true; check.textContent = 'Checking…';
+          try { const r = await send(false); if (r) show(r); } catch (e) { ui.toast(e.message, 'error', 9000); }
+          check.disabled = false; check.textContent = '🔎 Check the File';
+        } }, '🔎 Check the File');
+        file.addEventListener('change', () => result.replaceChildren());
+        function show(r) {
+          const civil = r.rows.filter(x => x.ok && x.book === 'civil').length, criminal = r.rows.filter(x => x.ok && x.book === 'criminal').length;
+          const withDate = r.rows.filter(x => x.ok && x.next).length;
+          const go = el('button', { class: 'btn btn--ok', disabled: r.toAdd ? null : true, onclick: async () => {
+            if (!confirm(`Add ${r.toAdd} case${r.toAdd === 1 ? '' : 's'} to the register of ${unit.name}?`)) return;
+            go.disabled = true; go.textContent = 'Importing…';
+            try {
+              const done = await send(true);
+              ui.toast(`${done.added} case${done.added === 1 ? '' : 's'} added to the register${done.dates ? `, ${done.dates} next date${done.dates === 1 ? '' : 's'} put in the Court Diary` : ''}.${done.failed.length ? ` ${done.failed.length} could not be added.` : ''}`, 'success', 9000);
+              dialog.close(); load();
+            } catch (e) { ui.toast(e.message, 'error', 9000); go.disabled = false; go.textContent = `⬆ Import ${r.toAdd} Cases`; }
+          } }, `⬆ Import ${r.toAdd} Case${r.toAdd === 1 ? '' : 's'}`);
+          const ordered = [...r.rows.filter(x => !x.ok), ...r.rows.filter(x => x.ok)];
+          result.replaceChildren(
+            el('div', { class: 'notice' + (r.skipped ? ' notice--warn' : '') }, `${r.toAdd} case${r.toAdd === 1 ? '' : 's'} can be added (${civil} Civil, ${criminal} Criminal${withDate ? `; ${withDate} with a next date for the Court Diary` : ''}).` +
+              (r.skipped ? ` ${r.skipped} row${r.skipped === 1 ? ' has a problem' : 's have problems'} and will be left out: they are listed first. Correct them in the sheet and import them again later if you wish.` : ' No row has a problem.')),
+            ui.table([
+              { label: 'Row', value: x => String(x.line) },
+              { label: 'Suit number', value: x => x.suitNumber },
+              { label: 'Name of case', value: x => x.parties },
+              { label: 'Register', value: x => x.book === 'criminal' ? 'Criminal' : 'Civil' },
+              { label: 'Status', value: x => x.status + (x.next ? `; next ${P.day(x.next.date)} (${x.next.business})` : '') },
+              { label: 'Check', node: x => el('div', null, [
+                ...x.problems.map(p => el('div', { class: 'import-problem' }, '✕ ' + p)),
+                ...x.notes.map(n => el('div', { class: 'muted' }, n)),
+                x.ok && !x.notes.length ? el('span', { class: 'badge badge--final' }, 'OK') : null
+              ]) }
+            ], ordered.slice(0, 500)),
+            ordered.length > 500 ? el('p', { class: 'muted' }, `Showing the first 500 of ${ordered.length} rows.`) : el('span'),
+            el('div', { class: 'card__actions' }, [go])
+          );
+        }
+        ui.modal(`Import Register · ${unit.name}`, el('div', null, [
+          el('div', { class: 'doc-preview__actions' }, [el('button', { class: 'btn btn--ghost', onclick: () => dialog.close() }, '✕  Close')]),
+          el('ol', { class: 'import-steps' }, [
+            el('li', null, ['Download the template and open it in Excel. ', el('button', { class: 'btn btn--small btn--ghost', type: 'button', onclick: downloadTemplate }, '⬇ Download the template')]),
+            el('li', null, 'Copy in the cases from the register book, one case per row: both the civil and the criminal book can go in the same sheet; write Civil or Criminal in the Register column. Write dates day first (12/03/2024 or 12 March 2024). For a case disposed of, give the date of disposal and the remark. Next date and Coming up for are optional: a next date still to come goes into the Court Diary.'),
+            el('li', null, 'Save it (as Excel .xlsx or as CSV) and choose it below. Click Check the File: nothing is saved yet, you see every row and any problem first.')
+          ]),
+          ui.field('The register file', file), el('div', { class: 'card__actions' }, [check]),
+          result
+        ]), { noFooter: true, wide: true, onOpen: (o) => { dialog = o; } });
       }
 
       function addEarlier() {
