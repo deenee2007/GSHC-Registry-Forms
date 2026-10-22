@@ -30,7 +30,10 @@ const DEFAULTS = {
     { key: 'criminal', label: 'Criminal', suffix: 'c', book: 'criminal' },
     { key: 'petition', label: 'Petition', suffix: 'p', book: 'civil' }
   ],
-  fees: [],          // [{ item: 'Writ of summons', amount: 2000 }]
+  // [{ group: '9. Filing of court processes', item: '9(a)(i) Writ of summons', amount: 4000 }]
+  // or a percentage worked out on an amount the filer gives: { item, percent: 2 }
+  fees: [],
+  feeSource: null,   // { key, name, at, by } when the official schedule was loaded
   efccCourts: [],    // unit keys of the courts that hear EFCC matters
   receiptRequired: true, // the receipt file must be uploaded before registration
   paymentNote: '',   // printed on the invoice: where and how to pay
@@ -81,12 +84,21 @@ async function setSettings(input) {
   }
   if (input.fees !== undefined) {
     if (!Array.isArray(input.fees)) throw bad('Invalid fee schedule.');
+    const seen = new Set();
     next.fees = input.fees.map(f => {
-      const item = String(f.item || '').trim().slice(0, 80);
-      const amount = Number(f.amount);
+      const item = String(f.item || '').trim().slice(0, 200);
+      const group = String(f.group || '').trim().slice(0, 120);
       if (!item) throw bad('Every fee needs a name.');
-      if (!(amount >= 0) || amount > 1e9) throw bad(`Enter a valid amount for ${item}.`);
-      return { item, amount: Math.round(amount * 100) / 100 };
+      if (seen.has(item)) throw bad(`The fee "${item}" is listed twice. Each fee needs its own name.`);
+      seen.add(item);
+      if (f.percent !== undefined && f.percent !== '' && f.percent !== null) {
+        const percent = Number(f.percent);
+        if (!(percent > 0) || percent > 100) throw bad(`Enter a percentage between 0 and 100 for ${item}.`);
+        return { group, item, percent: Math.round(percent * 1000) / 1000 };
+      }
+      const amount = Number(f.amount);
+      if (f.amount === '' || f.amount === undefined || !(amount >= 0) || amount > 1e9) throw bad(`Enter a valid amount (or a percentage) for ${item}.`);
+      return { group, item, amount: Math.round(amount * 100) / 100 };
     });
   }
   if (input.efccCourts !== undefined) {
@@ -108,6 +120,29 @@ async function setSettings(input) {
   if (input.paymentNote !== undefined) next.paymentNote = String(input.paymentNote || '').trim().slice(0, 1000);
   await meta().updateOne({ _id: KEY }, { $set: next }, { upsert: true });
   return next;
+}
+
+// The official schedule of court fees (Legal Notice No. 1 of 2023) into the
+// fee list. The list it replaces is kept in appmeta, so nothing is lost.
+async function loadOfficialFees(by) {
+  const official = require('../forms/feeSchedule2023');
+  const cur = await getSettings();
+  await meta().updateOne({ _id: `feesBefore:${official.KEY}` }, { $set: { fees: cur.fees, at: new Date(), by } }, { upsert: true });
+  const feeSource = { key: official.KEY, name: official.SOURCE, at: new Date(), by };
+  await meta().updateOne({ _id: KEY }, { $set: { fees: official.FEES.map(f => ({ ...f })), feeSource } }, { upsert: true });
+  return { fees: official.FEES.length, feeSource };
+}
+
+// On the first start after the schedule was added, load it once by itself.
+// After that the list in Settings is the one used, corrections and all.
+async function loadOfficialFeesOnce(log = console.log) {
+  const official = require('../forms/feeSchedule2023');
+  const flag = `officialFeesLoaded:${official.KEY}`;
+  try { await meta().insertOne({ _id: flag, at: new Date() }); }
+  catch (e) { if (e.code === 11000) return false; throw e; }
+  const r = await loadOfficialFees('system');
+  log(`Court fees: loaded the ${r.fees} fees of ${official.SOURCE}.`);
+  return true;
 }
 
 // The courts that take new cases, in order: active court registries by number.
@@ -175,4 +210,4 @@ function roman(n) {
   return s;
 }
 
-module.exports = { getSettings, setSettings, nextNumber, nextInvoice, proposeCourt, rotationState, courts: courts_, formatHtml, roman, REMARKS, DEFAULTS };
+module.exports = { getSettings, setSettings, loadOfficialFees, loadOfficialFeesOnce, nextNumber, nextInvoice, proposeCourt, rotationState, courts: courts_, formatHtml, roman, REMARKS, DEFAULTS };

@@ -87,7 +87,7 @@
       row('Originating process', c.process),
       row('Counsel', [c.counsel, c.counselAddress].filter(Boolean).join(', ')),
       row('Date of filing', day(c.filedOn)),
-      c.official ? row('Fees', 'Official: no filing fee') : row('Fees', `${c.fees.map(f => `${f.item}${f.qty > 1 ? ' × ' + f.qty : ''} ${naira(f.amount * f.qty)}`).join('; ')} · Total ${naira(c.feeTotal)}`),
+      c.official ? row('Fees', 'Official: no filing fee') : row('Fees', `${c.fees.map(f => `${f.item}${f.percent ? ` (${f.percent}% of ${naira(f.base)})` : f.qty > 1 ? ' × ' + f.qty : ''} ${naira(f.amount * f.qty)}`).join('; ')} · Total ${naira(c.feeTotal)}`),
       c.official ? null : row('Invoice', c.invoice ? `${c.invoice.reference}, issued ${day(c.invoice.issuedAt)} by ${c.invoice.issuedByName}` : 'Not yet issued'),
       invoiceStale(c) ? ui.el('div', { class: 'notice notice--warn' }, 'The fees changed after the invoice was issued. Print the invoice again so it shows the new fees (the reference stays the same).') : null,
       c.official ? null : row('Receipt', ui.el('span', null, [c.receiptNumber || 'No number',
@@ -119,7 +119,7 @@
   // reference to quote when they bring the receipt back.
   function printInvoice(c, settings) {
     const inv = c.invoice;
-    const rows = inv.fees.map((f, i) => `<tr><td>${i + 1}</td><td>${esc(f.item)}</td><td class="num">${f.qty}</td><td class="num">${esc(naira(f.amount))}</td><td class="num">${esc(naira(f.amount * f.qty))}</td></tr>`).join('');
+    const rows = inv.fees.map((f, i) => `<tr><td>${i + 1}</td><td>${esc(f.item)}${f.percent ? `<br><small>${f.percent}% of ${esc(naira(f.base))}</small>` : ''}</td><td class="num">${f.qty}</td><td class="num">${esc(naira(f.amount))}</td><td class="num">${esc(naira(f.amount * f.qty))}</td></tr>`).join('');
     const kv = (k, v) => v ? `<div class="doc-kv"><strong>${esc(k)}:</strong> ${esc(v)}</div>` : '';
     return printPage(`<article class="court-doc invoice-print">
       <header class="doc-masthead"><img class="doc-emblem" src="/assets/highcourt.png" alt="">
@@ -326,30 +326,52 @@
     const lines = el('div', { class: 'fee-lines' });
     const totalEl = el('div', { class: 'fee-total' });
     const lineRows = [];
+    // The fee list, by the sections of the schedule (a fee may be a percentage).
+    const feeLabel = (x) => `${x.item} (${x.percent ? x.percent + '%' : naira(x.amount)})`;
+    const feeOptions = () => {
+      const groups = [];
+      settings.fees.forEach(x => { const g = x.group || ''; let grp = groups.find(y => y.name === g); if (!grp) groups.push(grp = { name: g, list: [] }); grp.list.push(x); });
+      return [...groups.map(g => g.name ? el('optgroup', { label: g.name }, g.list.map(x => el('option', { value: x.item }, feeLabel(x))))
+        : g.list.map(x => el('option', { value: x.item }, feeLabel(x)))).flat(), el('option', { value: '__other' }, 'Other (type it)')];
+    };
     function addLine(f) {
-      const item = el('select', null, [...settings.fees.map(x => el('option', { value: x.item }, `${x.item} (${naira(x.amount)})`)), el('option', { value: '__other' }, 'Other (type it)')]);
+      const item = el('select', null, feeOptions());
       const otherText = input(f && !settings.fees.some(x => x.item === f.item) ? f.item : '', { placeholder: 'Description' });
       const otherAmt = el('input', { type: 'number', min: '0', step: '0.01', placeholder: 'Amount', value: f && !settings.fees.some(x => x.item === f.item) ? f.amount : '' });
-      const qty = el('input', { type: 'number', min: '1', value: String((f && f.qty) || 1), class: 'fee-qty', 'aria-label': 'Quantity' });
+      const qty = el('input', { type: 'number', min: '1', value: String((f && f.qty) || 1), class: 'fee-qty', 'aria-label': 'Quantity', title: 'How many: e.g. exhibits, pages, or each ₦1,000,000 or part thereof' });
+      const base = el('input', { type: 'number', min: '0', step: '0.01', class: 'fee-base', placeholder: 'Amount it is on (₦)', value: f && f.base ? String(f.base) : '', 'aria-label': 'Amount the percentage is worked out on' });
+      const times = el('span', { class: 'muted' }, '×');
       const remove = el('button', { class: 'btn btn--small btn--ghost', type: 'button' }, '✕');
       item.value = f ? (settings.fees.some(x => x.item === f.item) ? f.item : '__other') : (settings.fees[0] ? settings.fees[0].item : '__other');
-      const row = el('div', { class: 'fee-line' }, [item, otherText, otherAmt, el('span', { class: 'muted' }, '×'), qty, remove]);
-      const sync = () => { const o = item.value === '__other'; otherText.hidden = !o; otherAmt.hidden = !o; total(); };
-      [item, otherAmt, qty].forEach(x => x.addEventListener('input', sync));
+      const row = el('div', { class: 'fee-line' }, [item, otherText, otherAmt, base, times, qty, remove]);
+      const listedOf = () => settings.fees.find(x => x.item === item.value);
+      const sync = () => {
+        const o = item.value === '__other', p = !!(listedOf() && listedOf().percent);
+        otherText.hidden = !o; otherAmt.hidden = !o; base.hidden = !p; qty.hidden = p; times.hidden = p;
+        base.placeholder = p ? `Amount the ${listedOf().percent}% is on (₦)` : '';
+        total();
+      };
+      [item, otherAmt, qty, base].forEach(x => x.addEventListener('input', sync));
       item.addEventListener('change', sync);
       remove.addEventListener('click', () => { row.remove(); lineRows.splice(lineRows.indexOf(rec), 1); total(); });
-      const rec = { row, value: () => item.value === '__other' ? { item: otherText.value.trim(), amount: Number(otherAmt.value), qty: Number(qty.value) || 1 } : { item: item.value, qty: Number(qty.value) || 1 } };
+      const rec = { row, value: () => item.value === '__other' ? { item: otherText.value.trim(), amount: Number(otherAmt.value), qty: Number(qty.value) || 1 }
+        : listedOf() && listedOf().percent ? { item: item.value, base: Number(base.value) || 0, qty: 1 } : { item: item.value, qty: Number(qty.value) || 1 } };
       lineRows.push(rec);
       lines.appendChild(row);
       sync();
     }
     function total() {
-      const t = lineRows.reduce((n, r) => { const x = r.value(); const listed = settings.fees.find(f => f.item === x.item); return n + (listed ? listed.amount : (x.amount || 0)) * (x.qty || 1); }, 0);
+      const t = lineRows.reduce((n, r) => {
+        const x = r.value(); const listed = settings.fees.find(f => f.item === x.item);
+        if (listed && listed.percent) return n + Math.round((x.base || 0) * listed.percent) / 100;
+        return n + (listed ? listed.amount : (x.amount || 0)) * (x.qty || 1);
+      }, 0);
       totalEl.textContent = `Total: ${naira(t)}`;
     }
     (v.fees.length ? v.fees : [null]).forEach(addLine);
     const feeBox = el('div', { class: 'form-field form-field--full' }, [
       el('span', { class: 'form-field__label' }, 'Filing fees (from the schedule)'), lines,
+      el('span', { class: 'form-field__help' }, 'For a fee charged per unit (each exhibit, per page, per ₦1,000,000 or part thereof), enter how many after ×. For a percentage fee, enter the amount it is worked out on.'),
       el('div', { class: 'fee-actions' }, [el('button', { class: 'btn btn--small btn--ghost', type: 'button', onclick: () => addLine(null) }, '+ Add fee'), totalEl]),
       settings.fees.length ? null : el('span', { class: 'form-field__help' }, 'No fee schedule yet: an administrator sets it in Settings, Process Registry. Use Other meanwhile.')
     ]);

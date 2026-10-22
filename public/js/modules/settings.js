@@ -418,8 +418,11 @@
         const typeRow = (t) => { const r = removable([el('input', { type: 'text', value: t.label, placeholder: 'Case type, e.g. Motion', 'data-f': 'label' }),
           el('input', { type: 'text', value: t.suffix, placeholder: 'Letter', maxlength: '3', class: 'narrow', 'data-f': 'suffix' }),
           bookPick(t.book)]); r.dataset.key = t.key || ''; return r; };
-        const feeRow = (f) => removable([el('input', { type: 'text', value: f.item, placeholder: 'Fee, e.g. Writ of summons', 'data-f': 'item' }),
-          el('input', { type: 'number', min: '0', step: '0.01', value: f.amount === undefined ? '' : String(f.amount), placeholder: 'Amount (₦)', class: 'narrow', 'data-f': 'amount' })]);
+        const feeRow = (f) => removable([
+          el('input', { type: 'text', value: f.group || '', placeholder: 'Section, e.g. 9. Filing of court processes', class: 'fee-group', 'data-f': 'group' }),
+          el('input', { type: 'text', value: f.item, placeholder: 'Fee, e.g. 9(a)(i) Writ of summons', 'data-f': 'item' }),
+          el('input', { type: 'number', min: '0', step: '0.01', value: f.amount === undefined ? '' : String(f.amount), placeholder: 'Amount (₦)', class: 'narrow', 'data-f': 'amount' }),
+          el('input', { type: 'number', min: '0', max: '100', step: '0.001', value: f.percent === undefined ? '' : String(f.percent), placeholder: 'or %', class: 'narrow', title: 'For a percentage fee, the percentage instead of an amount', 'data-f': 'percent' })]);
         const types = rowsOf(s.caseTypes, typeRow), fees = rowsOf(s.fees, feeRow);
         const efcc = el('div', { class: 'checks' }, s.courts.map(c => {
           const box = el('input', { type: 'checkbox', value: c.key }); box.checked = s.efccCourts.includes(c.key);
@@ -439,8 +442,15 @@
           el('div', { class: 'settings-row' }, [el('span', null, 'Prefix'), prefix, el('span', { class: 'muted' }, `Numbers read ${s.prefix}/1/${new Date().getFullYear()}; each type counts on its own and starts again at 1 each year.`)]),
           el('h3', null, 'Case types and their letter'), el('p', { class: 'muted' }, 'The letter is printed raised after the number (Criminal: GM/45c/2026). Leave it empty for one type only (Civil). Each type goes in the Civil or the Criminal register book of the court.'),
           types, el('button', { class: 'btn btn--small btn--ghost', type: 'button', onclick: () => types.appendChild(typeRow({ label: '', suffix: '', book: 'civil' })) }, '+ Add case type'),
-          el('h3', null, 'Fee schedule'), el('p', { class: 'muted' }, 'Staff pick fees from this list when filing; the total is worked out for them. Official cases have no fee.'),
-          fees, el('button', { class: 'btn btn--small btn--ghost', type: 'button', onclick: () => fees.appendChild(feeRow({ item: '' })) }, '+ Add fee'),
+          el('h3', null, 'Fee schedule'), el('p', { class: 'muted' }, 'Staff pick fees from this list when filing, by section; the total is worked out for them. A fee per unit (each exhibit, per page, per ₦1,000,000 or part thereof) is multiplied by the number staff enter; for a percentage fee, give the % instead of an amount. Official cases have no fee.'),
+          s.feeSource ? el('div', { class: 'notice notice--info' }, `Loaded from the ${s.feeSource.name} on ${new Date(s.feeSource.at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}${s.feeSource.by && s.feeSource.by !== 'system' ? ` by ${s.feeSource.by}` : ''}. Corrections made here are kept.`) : null,
+          fees, el('div', { class: 'card__actions' }, [
+            el('button', { class: 'btn btn--small btn--ghost', type: 'button', onclick: () => fees.appendChild(feeRow({ item: '' })) }, '+ Add fee'),
+            el('button', { class: 'btn btn--small btn--ghost', type: 'button', onclick: async () => {
+              if (!confirm('Replace the whole fee list with the official schedule (Legal Notice No. 1 of 2023)? Any changes made to the list since are replaced too; the list replaced is kept in the database.')) return;
+              try { const r = await api.post('/process/settings/official-fees', {}); ui.toast(`${r.loaded} fees loaded from the official schedule.`, 'success'); renderProcess(); } catch (e) { ui.toast(e.message, 'error', 7000); }
+            } }, '⟲ Load the official schedule again')
+          ]),
           el('h3', null, 'Invoice and receipt'),
           el('label', { class: 'form-field form-field--full' }, [el('span', { class: 'form-field__label' }, 'Payment details printed on the invoice'), paymentNote]),
           el('label', { class: 'check check--plain' }, [receiptRequired, ' The receipt file must be uploaded before a case is registered (untick to make the upload optional; the receipt number is still needed)']),
@@ -455,7 +465,8 @@
             try {
               await api.put('/process/settings', {
                 prefix: prefix.value, caseTypes: read(types, ['label', 'suffix', 'book']).filter(t => t.label.trim()),
-                fees: read(fees, ['item', 'amount']).filter(f => f.item.trim()).map(f => ({ item: f.item, amount: Number(f.amount) })),
+                fees: read(fees, ['group', 'item', 'amount', 'percent']).filter(f => f.item.trim())
+                  .map(f => f.percent !== '' ? { group: f.group, item: f.item, percent: Number(f.percent) } : { group: f.group, item: f.item, amount: f.amount }),
                 efccCourts: [...efcc.querySelectorAll('input:checked')].map(b => b.value),
                 receiptRequired: receiptRequired.checked, partyEmails: partyEmails.checked,
                 businessTypes: read(business, ['name']).map(b => b.name.trim()).filter(Boolean), dailyLimit: Number(dailyLimit.value) || 0, paymentNote: paymentNote.value

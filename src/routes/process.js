@@ -120,13 +120,19 @@ async function cleanCase(body) {
   if (out.efcc) out.official = true; // EFCC matters bear no filing fee
   if (body.fees !== undefined) {
     if (!Array.isArray(body.fees)) throw new HttpError(400, 'Invalid fees.');
-    out.fees = body.fees.slice(0, 50).map(f => {
+    out.fees = body.fees.slice(0, 80).map(f => {
       const qty = Math.max(1, Math.min(1000, parseInt(f.qty, 10) || 1));
       const listed = s.fees.find(x => x.item === f.item);
-      const amount = listed ? listed.amount : Number(f.amount);
       if (!String(f.item || '').trim()) throw new HttpError(400, 'Every fee line needs a description.');
+      // A percentage fee: worked out on the amount given (rent in arrears, value of the estate, ...)
+      if (listed && listed.percent) {
+        const base = Number(f.base);
+        if (!(base > 0)) throw new HttpError(400, `Enter the amount the ${listed.percent}% is worked out on, for ${listed.item}.`);
+        return { item: listed.item, percent: listed.percent, base: Math.round(base * 100) / 100, amount: Math.round(base * listed.percent) / 100, qty: 1 };
+      }
+      const amount = listed ? listed.amount : Number(f.amount);
       if (!(amount >= 0)) throw new HttpError(400, `Enter the amount for ${f.item}.`);
-      return { item: String(f.item).trim().slice(0, 120), amount, qty };
+      return { item: String(f.item).trim().slice(0, 200), amount, qty };
     });
     out.feeTotal = Math.round(out.fees.reduce((n, f) => n + f.amount * f.qty, 0) * 100) / 100;
   }
@@ -146,6 +152,15 @@ router.get('/settings', wrap(async (req, res) => {
   res.json({ ...s, remarks: processSvc.REMARKS, docTypes: DOC_TYPES, rotation: rot,
     courts: courts.map(c => ({ key: c.key, name: c.name, courtNo: c.courtNo, roman: processSvc.roman(c.courtNo) })),
     me: { inProcess: inProcess(req.user), registrar: isRegistrar(req.user), chiefJudge: isCJ(req.user) } });
+}));
+
+// Load the official schedule of court fees again (it replaces the list; the
+// list replaced is kept). After loading, the list is edited as before.
+router.post('/settings/official-fees', wrap(async (req, res) => {
+  if (!isAdmin(req.user)) throw new HttpError(403, 'Only an administrator can change the Process Registry settings.');
+  const r = await processSvc.loadOfficialFees(req.user.fullName);
+  await audit.log(req, 'process_official_fees_loaded', { details: { fees: r.fees, source: r.feeSource.name } });
+  res.json({ ...(await processSvc.getSettings()), loaded: r.fees });
 }));
 
 router.put('/settings', wrap(async (req, res) => {
@@ -281,7 +296,7 @@ router.post('/cases/:id/invoice', wrap(async (req, res) => {
   if (c.official) throw new HttpError(400, 'An official case has no filing fee, so no invoice.');
   if (!(c.feeTotal > 0)) throw new HttpError(400, 'Enter the filing fees first.');
   const reference = (c.invoice && c.invoice.reference) || await processSvc.nextInvoice();
-  c.invoice = { reference, issuedAt: new Date(), issuedByName: req.user.fullName, fees: c.fees.map(f => ({ item: f.item, amount: f.amount, qty: f.qty })), total: c.feeTotal };
+  c.invoice = { reference, issuedAt: new Date(), issuedByName: req.user.fullName, fees: c.fees.map(f => ({ item: f.item, amount: f.amount, qty: f.qty, base: f.base, percent: f.percent })), total: c.feeTotal };
   await c.save();
   await audit.log(req, 'case_invoice_issued', { unitKey: 'process', details: { caseId: String(c._id), reference, total: c.feeTotal } });
   await caseEmail.notify(c, 'invoice');
