@@ -188,11 +188,50 @@
     ]);
 
     const preview = ui().el('div', { class: 'doc-preview', html: App.output.render(doc, doc.unitName, def) });
+    const zoom = fitToScreen(preview);
     overlay = null;
-    ui().modal(`${def.label}`, ui().el('div', null, [actions, statusPanel(doc), preview]), {
+    ui().modal(`${def.label}`, ui().el('div', null, [actions, statusPanel(doc), zoom.bar, preview]), {
       noFooter: true, wide: true,
-      onOpen: (o) => { overlay = o; }
+      onOpen: (o) => { overlay = o; zoom.fit(); }
     });
+  }
+
+  // On a narrow screen (a phone) the A4 page is shrunk to the width of the
+  // screen, like a PDF, and scrolls top to bottom; "Actual size" shows it
+  // full size, to read closely, scrolling sideways too.
+  function fitToScreen(box) {
+    const page = box.querySelector('.court-doc');
+    const holder = document.createElement('div');
+    holder.className = 'doc-fit';
+    if (page) { page.parentNode.insertBefore(holder, page); holder.appendChild(page); }
+    let actual = false;
+    const btn = ui().el('button', { class: 'btn btn--small btn--ghost', type: 'button', onclick: () => { actual = !actual; fit(); } }, '');
+    const bar = ui().el('div', { class: 'doc-zoom', hidden: 'hidden' }, [ui().el('span', { class: 'muted' }, 'Shrunk to fit the screen.'), btn]);
+    function fit() {
+      if (!page) return;
+      page.style.transform = ''; holder.style.width = ''; holder.style.height = ''; holder.style.overflow = ''; box.style.minHeight = '';
+      page.classList.add('court-doc--a4');
+      const style = getComputedStyle(box);
+      const room = box.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+      const full = page.offsetWidth;
+      if (!room || full <= room) { bar.hidden = true; return; } // it fits as it is
+      bar.hidden = false;
+      bar.firstChild.textContent = actual ? 'Actual size: scroll sideways to read across.' : 'Shrunk to fit the screen.';
+      btn.textContent = actual ? '↙ Fit to screen' : '🔍 Actual size';
+      if (actual) { holder.style.overflow = 'visible'; return; }
+      const s = room / full;
+      page.style.transform = `scale(${s})`;
+      holder.style.width = `${room}px`;
+      holder.style.height = `${page.offsetHeight * s}px`;
+      box.style.minHeight = '0';
+    }
+    if (window.ResizeObserver && page) {
+      let last = 0;
+      new ResizeObserver(() => { const w = box.clientWidth; if (w !== last) { last = w; fit(); } }).observe(box);
+      // images (crest, signatures, QR) change the page's height when they load
+      page.querySelectorAll('img').forEach(img => img.addEventListener('load', fit));
+    }
+    return { bar, fit };
   }
 
   function submitLabel(doc) {
