@@ -200,7 +200,10 @@
       // ── What needs attention ──
       if (stats) {
         const row = ui.el('div', { class: 'dash-stats' });
-        if (permissions.isSigner(user)) row.appendChild(card(ui, stats.inbox, 'Awaiting My Signature', stats.inbox ? 'dash-card--warn' : '', () => router.loadModule('inbox')));
+        if (permissions.isSigner(user)) {
+          row.appendChild(card(ui, stats.inbox, 'Awaiting My Signature', stats.inbox ? 'dash-card--warn' : '', () => router.loadModule('inbox')));
+          row.appendChild(card(ui, stats.signedThisMonth || 0, 'Signed by Me this month', 'dash-card--ok', () => router.loadModule('inbox', { tab: 'signed' })));
+        }
         if (isAdmin || permissions.can('finalize', user)) {
           row.appendChild(card(ui, stats.approvedUnprinted, 'Approved, Ready to Print', stats.approvedUnprinted ? 'dash-card--ok' : '', () => router.loadModule('submissions', { tab: 'final' })));
         }

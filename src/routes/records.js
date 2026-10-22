@@ -157,6 +157,31 @@ router.get('/submitted', wrap(async (req, res) => {
   res.json({ records: recs.map(r => serialize(r, false)) });
 }));
 
+// A signer's own history: the forms they signed (newest first, with the
+// day they signed), or the forms they returned with comments.
+router.get('/by-me', wrap(async (req, res) => {
+  const kind = req.query.kind === 'returned' ? 'returned' : 'signed';
+  const q = {};
+  if (req.query.q) {
+    const rx = new RegExp(escapeRegex(String(req.query.q).slice(0, 100)), 'i');
+    q.$or = [{ ref: rx }, { summary: rx }, { caseNos: rx }];
+  }
+  let recs, when = {};
+  if (kind === 'signed') {
+    recs = await Record.find({ ...q, 'slots.signatures.user': req.user._id }).populate(POPULATE);
+    recs.forEach(r => r.slots.forEach(s => s.signatures.forEach(g => { if (same(g.user, req.user._id)) when[r._id] = g.signedAt; })));
+  } else {
+    const { AuditLog } = require('../models');
+    const logs = await AuditLog.find({ user: req.user._id, action: 'record_returned' }).sort({ at: -1 }).limit(500).select('record at details').lean();
+    logs.forEach(l => { if (l.record && !when[l.record]) when[l.record] = { at: l.at, comment: l.details && l.details.comment }; });
+    recs = await Record.find({ ...q, _id: { $in: Object.keys(when) } }).populate(POPULATE);
+  }
+  const at = (r) => new Date(kind === 'signed' ? when[r._id] : when[r._id].at).getTime();
+  recs.sort((a, b) => at(b) - at(a));
+  res.json({ kind, records: recs.slice(0, 300).map(r => ({ ...serialize(r, false), myAt: new Date(at(r)),
+    myComment: kind === 'returned' ? when[r._id].comment : undefined })) });
+}));
+
 // Counts by unit and status, for the units this user can see.
 router.get('/stats', wrap(async (req, res) => {
   const units = await Unit.find({ active: true });
@@ -168,11 +193,13 @@ router.get('/stats', wrap(async (req, res) => {
   const byUnit = {};
   keys.forEach(k => { byUnit[k] = { draft: 0, pending: 0, returned: 0, final: 0, revoked: 0 }; });
   rows.forEach(r => { byUnit[r._id.unitKey][r._id.status] = r.n; });
-  const [inbox, approvedUnprinted] = await Promise.all([
+  const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  const [inbox, approvedUnprinted, signedThisMonth] = await Promise.all([
     Record.countDocuments({ status: 'pending', slots: { $elemMatch: { approvers: req.user._id, 'signatures.user': { $ne: req.user._id } } } }),
-    Record.countDocuments({ status: 'final', submittedBy: req.user._id, printCount: 0 })
+    Record.countDocuments({ status: 'final', submittedBy: req.user._id, printCount: 0 }),
+    req.user.signerRoles.length ? Record.countDocuments({ 'slots.signatures': { $elemMatch: { user: req.user._id, signedAt: { $gte: monthStart } } } }) : 0
   ]);
-  res.json({ byUnit, inbox, approvedUnprinted });
+  res.json({ byUnit, inbox, approvedUnprinted, signedThisMonth });
 }));
 
 // ── One record ──

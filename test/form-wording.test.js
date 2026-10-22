@@ -197,3 +197,14 @@ test('Court Order: each judge\'s signature above the judge\'s name, and no box f
   assert.ok(panel.indexOf('/sig/bello.png') < panel.indexOf('A. Bello') && panel.indexOf('/sig/danjuma.png') > panel.indexOf('A. Bello') && panel.indexOf('/sig/danjuma.png') < panel.indexOf('C. Danjuma'),
     'on a panel, each signature above its own judge, matched by name');
 });
+
+test('Cause List: counsel for each side in its own column; an older list keeps its counsel', () => {
+  const t = text('cause-list', { sittingDate: '2026-10-16', entries: [{ suitNumber: 'GM/1/2026', parties: 'A v. B', counselFirst: 'S.S. Gana Esq.', counselSecond: 'M. Bala Esq.' }] });
+  assert.match(t, /Counsel for Plaintiff \/ Complainant Counsel for Defendant \/ Accused/);
+  assert.match(t, /S\.S\. Gana Esq\. M\. Bala Esq\./);
+  assert.match(text('cause-list', { sittingDate: '2026-10-16', entries: [{ suitNumber: 'GM/2/2026', counsel: 'Old Counsel Esq.' }] }), /Old Counsel Esq\./);
+  const catalogue = require('../src/forms/catalogue');
+  const saved = catalogue.cleanData('cause-list', { sittingDate: '2026-10-16', sittingTime: '9:00', division: 'Gombe', preparedBy: 'X', judgeType: 'single',
+    entries: [{ suitNumber: 'GM/2/2026', counsel: 'Old Counsel Esq.' }] }).data;
+  assert.equal(saved.entries[0].counselFirst, 'Old Counsel Esq.', 'kept on saving again');
+});

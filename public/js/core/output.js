@@ -486,7 +486,7 @@
     // parse entries — stored as JSON string by the repeater field
     let entries = [];
     try { entries = Array.isArray(d.entries) ? d.entries : JSON.parse(d.entries || '[]'); } catch(e) { entries = []; }
-    if (!entries.length) entries = [{ sn:'', suitNumber:'', parties:'', nature:'', stage:'', counsel:'', remarks:'' }];
+    if (!entries.length) entries = [{ sn:'', suitNumber:'', parties:'', nature:'', stage:'', counselFirst:'', counselSecond:'', remarks:'' }];
 
     const rows = entries.map((e, i) => `
       <tr>
@@ -495,7 +495,8 @@
         <td>${(() => { const p = e.parties || ''; const m = p.match(/^(.*?)\s+VS\s+(.*?)$/i); return m ? `${esc(m[1].trim())}<br><span style="display:block;text-align:center;font-weight:700">VS</span>${esc(m[2].trim())}` : esc(p); })()}</td>
         <td>${esc(e.nature || '')}</td>
         <td>${esc(e.stage || '')}</td>
-        <td>${esc(e.counsel || '')}</td>
+        <td>${esc(e.counselFirst || e.counsel || '')}</td>
+        <td>${esc(e.counselSecond || '')}</td>
         <td>${esc(e.remarks || '')}</td>
       </tr>`).join('');
 
@@ -508,12 +509,13 @@
         <thead>
           <tr>
             <th style="width:4%">S/N</th>
-            <th style="width:14%">Suit No.</th>
-            <th style="width:22%">Parties</th>
-            <th style="width:14%">Nature of Case</th>
-            <th style="width:15%">Stage / Purpose</th>
-            <th style="width:18%">Counsel</th>
-            <th style="width:13%">Remarks</th>
+            <th style="width:12%">Suit No.</th>
+            <th style="width:20%">Parties</th>
+            <th style="width:12%">Nature of Case</th>
+            <th style="width:12%">Stage / Purpose</th>
+            <th style="width:15%">Counsel for Plaintiff / Complainant</th>
+            <th style="width:15%">Counsel for Defendant / Accused</th>
+            <th style="width:10%">Remarks</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>

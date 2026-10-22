@@ -218,7 +218,7 @@
     const firstTime = entries.map(e => e.time).filter(Boolean).sort()[0] || '9:00';
     wf.openForm({ unitKey: unit.key, formType: 'cause-list', values: {
       judgeType: 'single', judgeName, sittingDate: day, sittingTime: firstTime.replace(/^0/, ''),
-      entries: go.map((r, i) => ({ sn: String(i + 1), suitNumber: r.suitNumber, parties: r.parties, nature: r.nature, stage: r.stage, counsel: r.counsel, remarks: '' })),
+      entries: go.map((r, i) => ({ sn: String(i + 1), suitNumber: r.suitNumber, parties: r.parties, nature: r.nature, stage: r.stage, counselFirst: r.counsel, counselSecond: '', remarks: '' })),
       preparedBy: user.fullName
     } });
   }
