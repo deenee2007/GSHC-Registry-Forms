@@ -171,7 +171,6 @@ async function seedAll(log = console.log) {
   await updateFormConfigs(log);
   await fillCaseNumbers(log);
   await usernamesToEmail(log);
-  await require('./process').loadOfficialFeesOnce(log);
   const created = await seedAdmin(log);
   if (config.adminReset) await resetAdmin({ log });
   return created;
