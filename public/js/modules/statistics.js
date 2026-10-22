@@ -59,7 +59,7 @@
             card(t.pending, 'Pending now', t.pending ? 'dash-card--warn' : ''), card(t.sittings, 'Sittings in the period'),
             card(t.adjournments, 'Adjournments in the period'), card(t.toCome, 'Dates fixed to come')
           ]),
-          rate === null ? null : el('p', { class: 'muted' }, `Disposed of in the period as a share of cases assigned in it: ${rate}%. (Cases disposed of may have been assigned earlier.)`),
+          rate === null ? el('span') : el('p', { class: 'muted' }, `Disposed of in the period as a share of cases assigned in it: ${rate}%. (Cases disposed of may have been assigned earlier.)`),
           el('h2', { class: 'stats-h' }, 'By court'),
           ui.table([
             { label: 'High Court', value: r => `No. ${r.roman}` },

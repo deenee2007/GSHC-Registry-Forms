@@ -28,6 +28,7 @@ const audit = require('../services/audit');
 const mail = require('../services/mail');
 const settings = require('../services/settings');
 const caseEmail = require('../services/caseEmail');
+const registerImport = require('../services/registerImport');
 const { verifyPin } = require('./me');
 const { HttpError, requireLogin, canAccessUnit, can, isAdmin } = require('../middleware/auth');
 
@@ -528,6 +529,25 @@ router.post('/register/earlier', wrap(async (req, res) => {
   });
   await audit.log(req, 'case_earlier_added', { unitKey, details: { caseId: String(c._id), suitNumber } });
   res.status(201).json({ case: serialize(c, await unitNames()) });
+}));
+
+// A court's existing register book from an Excel or CSV sheet. Without
+// commit=1 the rows are only checked (nothing saved), for the court to see
+// what will be added; with it, the rows that passed are saved.
+router.post('/register/import', upload.single('file'), wrap(async (req, res) => {
+  const unitKey = String(req.body.unitKey || '');
+  const unit = await Unit.findOne({ key: unitKey, type: 'registry' });
+  if (!unit || !inCourt(req.user, unitKey) || !(can(req.user, 'create') || can(req.user, 'edit'))) throw new HttpError(403, 'Only staff of this court add to its register.');
+  if (!req.file) throw new HttpError(400, 'Choose the Excel or CSV file of the register.');
+  let result;
+  try { result = await registerImport.analyse(req.file.buffer, req.file.originalname, unit); }
+  catch (e) { throw Object.assign(new HttpError(e.status || 500, e.message), { expose: e.status === 400 }); }
+  const rows = result.rows.map(({ doc, ...r }) => r);
+  if (req.body.commit !== '1') return res.json({ preview: true, rows, toAdd: result.toAdd, skipped: result.skipped, columns: result.columns });
+  if (!result.toAdd) throw new HttpError(400, 'No row can be added. Correct the rows listed and try again.');
+  const done = await registerImport.commit(result, req.user);
+  await audit.log(req, 'case_register_imported', { unitKey, details: { file: req.file.originalname, added: done.added, dates: done.dates, skipped: result.skipped + done.failed.length } });
+  res.json({ added: done.added, dates: done.dates, skipped: result.skipped, failed: done.failed, rows });
 }));
 
 // ── Summary for the Process Registry ──
