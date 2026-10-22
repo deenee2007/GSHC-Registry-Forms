@@ -160,7 +160,7 @@ const TITLE = ['suitTitle', 'caseTitle'];
 const OFFENCE = ['offence', 'offenceDescription', 'offenceOrClaim'];
 // Court boxes written as the court and its number; these replace the
 // starting value ("Gombe") the form puts in them.
-const COURT_AT = ['issuedAt', 'issuePlace', 'courtPlace', 'appearanceCourt'];
+const COURT_AT = ['issuedAt', 'issuePlace', 'courtPlace', 'appearanceCourt', 'courtToBringBefore', 'courtToProduceBefore'];
 const COURT_NUMBER = ['courtNo', 'courtNumber'];
 const oneLine = (s) => String(s || '').trim().replace(/\s*\n+\s*/g, ', ');
 

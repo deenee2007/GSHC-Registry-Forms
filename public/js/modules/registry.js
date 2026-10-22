@@ -292,7 +292,7 @@
         "label": "Court to Produce Before",
         "type": "text",
         "required": true,
-        "defaultValue": "High Court of Justice, Gombe"
+        "help": "The court and its number, e.g. High Court No. 1. On a court registry's forms it is filled in for you."
       },
       {
         "name": "courtLocation",
@@ -520,7 +520,7 @@
         "label": "Court to Bring Accused Before",
         "type": "text",
         "required": true,
-        "defaultValue": "High Court of Justice, Gombe"
+        "help": "The court and its number, e.g. High Court No. 1. On a court registry's forms it is filled in for you."
       },
       {
         "section": "Issuance"

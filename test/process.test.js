@@ -661,3 +661,14 @@ test('summonses: the court to appear before is the court and its number; times s
   assert.equal(r.values.timePeriod, 'afternoon');
   assert.equal((await u.court3.get(`/api/cases/fill?formType=criminal-summons&caseId=${c.id}`)).body.values.appearanceCourt, 'High Court No. 3');
 });
+
+test('warrant of arrest and order to produce: the court to bring before is the court and its number', async () => {
+  const catalogue = require('../src/forms/catalogue');
+  const field = (form, name) => catalogue.forms[form].schema.find(f => f.name === name);
+  assert.equal(field('warrant-of-arrest', 'courtToBringBefore').defaultValue, undefined);
+  assert.equal(field('order-to-produce-prisoner', 'courtToProduceBefore').defaultValue, undefined);
+  const c = await fileAndRegister({ caseType: 'criminal', official: true, firstParty: 'The State', secondParty: 'Warrant Accused' });
+  await u.cj.post(`/api/process/cases/${c.id}/assign`, { unitKey: 'hc3', pin: '1357' });
+  assert.equal((await u.court3.get(`/api/cases/fill?formType=warrant-of-arrest&caseId=${c.id}`)).body.values.courtToBringBefore, 'High Court No. 3');
+  assert.equal((await u.court3.get(`/api/cases/fill?formType=order-to-produce-prisoner&caseId=${c.id}`)).body.values.courtToProduceBefore, 'High Court No. 3');
+});

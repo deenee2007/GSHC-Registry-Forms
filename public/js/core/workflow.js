@@ -153,7 +153,7 @@
       if (inp) inp.addEventListener('change', check);
     });
   }
-  const UNIT_COURT = ['courtPlace', 'appearanceCourt', 'issuedAt', 'issuePlace'];
+  const UNIT_COURT = ['courtPlace', 'appearanceCourt', 'courtToBringBefore', 'courtToProduceBefore', 'issuedAt', 'issuePlace'];
 
   // Put a case's values into the form: empty boxes, and court boxes still at
   // their starting value. The boxes filled are marked until edited.
