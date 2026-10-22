@@ -121,11 +121,12 @@ function cleanData(formType, input) {
     if (!f.name) continue;
     const v = input[f.name] === undefined ? f.defaultValue : input[f.name];
     if (f.type === 'table') {
-      const cols = (f.columns || []).map(c => c.name);
+      const cols = f.columns || [];
       const rows = Array.isArray(v) ? v.slice(0, 500) : [];
       out[f.name] = rows.map((r, i) => {
         const row = { sn: String(i + 1) };
-        cols.forEach(c => { row[c] = String((r && r[c]) ?? '').slice(0, 2000).trim(); });
+        // a column renamed keeps what an older draft saved under its old name
+        cols.forEach(c => { row[c.name] = String((r && (r[c.name] ?? (c.legacy ? r[c.legacy] : undefined))) ?? '').slice(0, 2000).trim(); });
         return row;
       });
       if (f.required && out[f.name].length === 0) return { error: `Please add at least one entry to ${f.label}.` };

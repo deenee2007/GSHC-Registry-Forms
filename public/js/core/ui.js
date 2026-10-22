@@ -84,13 +84,23 @@
           const cells = cols.map(c => {
             const inp = el('input', { type: 'text', placeholder: c.label, class: 'ft-inp' });
             if (vals && vals[c.name] !== undefined) inp.value = vals[c.name];
+            else if (vals && c.legacy && vals[c.legacy] !== undefined) inp.value = vals[c.legacy]; // saved before the column was renamed
             return el('td', null, [inp]);
           });
           const snCell = el('td', { class: 'ft-sn' }, String(tbody.children.length + 1));
-          const delBtn = el('button', { class: 'btn btn--ghost btn--small ft-del', type: 'button',
+          const delBtn = el('button', { class: 'btn btn--ghost btn--small ft-del', type: 'button', title: 'Remove this row',
             onclick: () => { row.remove(); reNumber(); }
           }, '✕');
-          const row = el('tr', null, [snCell, ...cells, el('td', null, [delBtn])]);
+          // Move a row up or down: the order printed (e.g. of a cause list).
+          const move = (up) => () => {
+            const other = up ? row.previousElementSibling : row.nextElementSibling;
+            if (!other) return;
+            if (up) tbody.insertBefore(row, other); else tbody.insertBefore(other, row);
+            reNumber();
+          };
+          const upBtn = el('button', { class: 'btn btn--ghost btn--small ft-move', type: 'button', title: 'Move up', 'aria-label': 'Move up', onclick: move(true) }, '↑');
+          const downBtn = el('button', { class: 'btn btn--ghost btn--small ft-move', type: 'button', title: 'Move down', 'aria-label': 'Move down', onclick: move(false) }, '↓');
+          const row = el('tr', null, [snCell, ...cells, el('td', { class: 'ft-actions' }, [upBtn, downBtn, delBtn])]);
           tbody.appendChild(row);
         }
 
@@ -121,7 +131,7 @@
 
         const container = el('div', { class: 'form-field form-field--full' }, [
           el('span', { class: 'form-field__label' }, f.label + (f.required ? ' *' : '')),
-          tbl,
+          el('div', { class: 'ft-scroll' }, [tbl]), // a wide table scrolls on its own, not the whole form
           el('div', { class: 'ft-add' }, [addBtn])
         ]);
         wrap.appendChild(container);

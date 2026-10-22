@@ -285,3 +285,22 @@ test('admin can change who signs a form', async () => {
   r = await admin.get('/api/admin/audit?action=record_finalized');
   assert.ok(r.body.entries.length >= 1, 'actions are audited');
 });
+
+test('a signer sees the forms they signed and returned', async () => {
+  const { clerk, judge1 } = users;
+  const r = await clerk.post('/api/records', { unitKey: 'hc1', formType: 'civil-summons', data: { ...summons, suitNumber: 'GM/909/2026' } });
+  const id = r.body.record.id;
+  await clerk.post(`/api/records/${id}/submit`, { approvers: [[judge1.id]] });
+  await judge1.post(`/api/records/${id}/return`, { comment: 'Fix the address' });
+  let mine = await judge1.get('/api/records/by-me?kind=returned');
+  assert.ok(mine.body.records.some(x => x.id === id && x.myComment === 'Fix the address'), 'returned by me, with my comment');
+  await clerk.post(`/api/records/${id}/submit`, { approvers: [[judge1.id]] });
+  const ok = await judge1.post(`/api/records/${id}/approve`, { pin: '2468' });
+  assert.equal(ok.status, 200, JSON.stringify(ok.body));
+  mine = await judge1.get('/api/records/by-me?kind=signed');
+  assert.equal(mine.body.records[0].id, id, 'newest first');
+  assert.ok(mine.body.records[0].myAt);
+  assert.equal((await judge1.get('/api/records/by-me?kind=signed&q=GM/909')).body.records.length, 1, 'searched by suit number');
+  assert.equal((await clerk.get('/api/records/by-me?kind=signed')).body.records.length, 0, 'only what this person signed');
+  assert.ok((await judge1.get('/api/records/stats')).body.signedThisMonth >= 1);
+});

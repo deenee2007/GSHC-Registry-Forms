@@ -1556,7 +1556,8 @@
           { "name": "parties",    "label": "Parties (Plaintiff v. Defendant)" },
           { "name": "nature",     "label": "Nature of Case" },
           { "name": "stage",      "label": "Stage / Purpose" },
-          { "name": "counsel",    "label": "Counsel" },
+          { "name": "counselFirst",  "label": "Counsel for Plaintiff / Complainant", "legacy": "counsel" },
+          { "name": "counselSecond", "label": "Counsel for Defendant / Accused" },
           { "name": "remarks",    "label": "Remarks" }
         ]
       },

@@ -609,6 +609,10 @@ button.dash-card:hover { border-color: var(--green-500); }
 .case-docs { margin-top: 1.2rem; border-top: 1px solid var(--line); padding-top: .8rem; }
 .case-docs__head { display: flex; justify-content: space-between; align-items: center; gap: .5rem; margin-bottom: .5rem; }
 .case-docs__head h3 { margin: 0; font-size: 1rem; }
+/* Rows of a table in a form: move up, move down, remove */
+.ft-scroll { overflow-x: auto; max-width: 100%; }
+.ft-actions { white-space: nowrap; }
+.ft-actions .btn { padding: .2rem .45rem; }
 /* Filling a form from a case */
 .case-chooser { position: relative; margin-bottom: .6rem; }
 .case-chooser input { width: 100%; padding: .55rem .75rem; border: 1px solid var(--line); border-radius: 8px; font: inherit; }
