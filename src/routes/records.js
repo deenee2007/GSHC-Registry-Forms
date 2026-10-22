@@ -263,7 +263,7 @@ router.get('/:id/history', wrap(async (req, res) => {
 }));
 
 // ── Drafts ──
-const UNIT_COURT = ['courtPlace', 'appearanceCourt'];
+const UNIT_COURT = ['courtPlace', 'appearanceCourt', 'courtToBringBefore', 'courtToProduceBefore'];
 router.post('/', wrap(async (req, res) => {
   const unitKey = String(req.body.unitKey || '');
   const formType = String(req.body.formType || '');

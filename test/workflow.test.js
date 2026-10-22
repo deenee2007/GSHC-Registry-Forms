@@ -304,3 +304,16 @@ test('a signer sees the forms they signed and returned', async () => {
   assert.equal((await clerk.get('/api/records/by-me?kind=signed')).body.records.length, 0, 'only what this person signed');
   assert.ok((await judge1.get('/api/records/stats')).body.signedThisMonth >= 1);
 });
+
+test('a judge sees all of the court\'s forms once the administrator ticks View in Settings, Users', async () => {
+  const { judge1 } = users;
+  assert.equal((await judge1.get('/api/records?unitKey=hc1')).status, 403, 'without View: only the forms sent to them');
+  const u = await admin.raw('PATCH', `/api/admin/users/${judge1.id}`, { privileges: ['view'] });
+  assert.equal(u.status, 200, JSON.stringify(u.body));
+  const list = await judge1.get('/api/records?unitKey=hc1');
+  assert.equal(list.status, 200);
+  assert.ok(list.body.records.length >= 1, 'every form of High Court 1');
+  assert.equal((await judge1.get('/api/records?unitKey=hc3')).status, 403, 'not other courts');
+  assert.equal((await judge1.post('/api/records', { unitKey: 'hc1', formType: 'civil-summons', data: summons })).status, 403, 'View alone does not let them make forms');
+  await admin.raw('PATCH', `/api/admin/users/${judge1.id}`, { privileges: [] });
+});
