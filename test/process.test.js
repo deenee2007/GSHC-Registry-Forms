@@ -588,3 +588,51 @@ test('register import from Excel and CSV: checked first, then saved, next dates 
   const xls = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0, 0, 0, 0]);
   assert.match((await send(clerk4, xls, 'old.xls', false)).body.error, /old Excel/);
 });
+
+test('fill a form from a case: its number, parties, addresses, court and judge; the diary date; choose a case', async () => {
+  const r = await u.clerk.post('/api/process/cases', filing({ firstParty: 'Fill Plaintiff', secondParty: 'Fill Defendant', firstPartyAddress: 'No. 4 Bauchi Road, Gombe', secondPartyAddress: 'Pantami, Gombe', official: true }));
+  assert.equal(r.body.case.firstPartyAddress, 'No. 4 Bauchi Road, Gombe', 'addresses kept at filing');
+  const reg = await u.registrar.post(`/api/process/cases/${r.body.case.id}/register`);
+  const id = reg.body.case.id, num = reg.body.case.suitNumber;
+  await u.cj.post(`/api/process/cases/${id}/assign`, { unitKey: 'hc3', pin: '1357' });
+
+  const civil = await u.court3.get(`/api/cases/fill?formType=civil-summons&caseId=${id}`);
+  assert.equal(civil.status, 200, JSON.stringify(civil.body));
+  const v = civil.body.values;
+  assert.equal(v.suitNumber, num);
+  assert.equal(v.plaintiff, 'Fill Plaintiff');
+  assert.equal(v.defendant, 'Fill Defendant');
+  assert.equal(v.plaintiffAddress, 'No. 4 Bauchi Road, Gombe');
+  assert.equal(v.issuePlace, 'High Court No. 3', 'issued at: the court and its number');
+  assert.ok(civil.body.replace.includes('issuePlace'), 'replacing the starting "Gombe"');
+
+  const order = (await u.court3.get(`/api/cases/fill?formType=court-order&caseId=${id}`)).body.values;
+  assert.equal(order.leftParties, 'Fill Plaintiff');
+  assert.equal(order.rightParties, 'Fill Defendant');
+  assert.equal(order.counselName, 'A. B. Yusuf Esq.');
+  assert.equal(order.judgeName, 'Hon. Justice Judge Three', 'the court\'s one judge');
+  assert.equal((await u.court3.get(`/api/cases/fill?formType=writ-attachment-goods&caseId=${id}`)).body.values.courtNumber, '3');
+
+  const c = await fileAndRegister({ caseType: 'criminal', official: true, firstParty: 'The State', secondParty: 'Accused Person', nature: 'Theft', secondPartyAddress: 'Tumfure' });
+  await u.cj.post(`/api/process/cases/${c.id}/assign`, { unitKey: 'hc3', pin: '1357' });
+  const crim = (await u.court3.get(`/api/cases/fill?formType=criminal-summons&caseId=${c.id}`)).body.values;
+  assert.equal(crim.complainant, 'The State');
+  assert.equal(crim.accusedName, 'Accused Person');
+  assert.equal(crim.accusedAddress, 'Tumfure');
+  assert.equal(crim.offence, 'Theft', 'the nature of a criminal case as the offence');
+
+  const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const day = (() => { const d = new Date(); d.setDate(d.getDate() + 7); return iso(d); })();
+  const e = await u.court3.post('/api/diary', { unitKey: 'hc3', caseId: id, date: day, time: '10:00', business: 'Hearing' });
+  const hn = (await u.court3.get(`/api/cases/fill?formType=hearing-notice&diaryId=${e.body.entry.id}`)).body;
+  assert.equal(hn.values.hearingDate, day);
+  assert.equal(hn.values.hearingTime, '10:00');
+  assert.equal(hn.values.suitNumber, num);
+  assert.equal(hn.fromDiary, true);
+
+  const found = await u.court3.get('/api/cases/registered?q=Fill Plain');
+  assert.ok(found.body.cases.some(x => x.id === id && x.court === 'High Court No. 3'));
+  const byNo = await u.court3.get(`/api/cases/fill?formType=civil-summons&caseNo=${encodeURIComponent(num.toLowerCase())}`);
+  assert.equal(byNo.body.values.plaintiff, 'Fill Plaintiff', 'by suit number too (the Case File)');
+  assert.equal((await u.court3.get('/api/cases/fill?formType=nothing&caseId=' + id)).status, 400);
+});

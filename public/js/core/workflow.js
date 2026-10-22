@@ -61,7 +61,8 @@
   // ── Fill or edit a form ──
   // record: a server record (with data), or an offline entry ({ localId, ... }).
   // values: boxes already filled for a new form (the cause list drawn from the diary).
-  async function openForm({ unitKey, formType, record, values }) {
+  // fill: values from a registered case (Fill a Form), put into its empty boxes.
+  async function openForm({ unitKey, formType, record, values, fill }) {
     const def = formDef(formType);
     if (!def) { ui().toast('This form is not available.', 'error'); return null; }
     const f = ui().form(def.schema, record ? record.data : values || null);
@@ -74,6 +75,9 @@
       f.node
     ]);
     if (!record && !values) offerPrefill(def, formType, f.node, body);
+    // A new form in a court registry or the Execution Unit can be filled from a case.
+    const unit = unitKey ? (await App.router.units()).find(u => u.key === unitKey) : null;
+    if (!record && !values && unit && ['registry', 'execution'].includes(unit.type)) offerCasePicker(def, formType, f.node, body, fill);
 
     return ui().modal(def.label, body, {
       confirmText: 'Save Draft',
@@ -141,6 +145,93 @@
       if (inp) inp.addEventListener('change', check);
     });
   }
+  // Put a case's values into the form: empty boxes, and court boxes still at
+  // their starting value. The boxes filled are marked until edited.
+  function applyFill(def, formNode, r) {
+    const labels = [];
+    def.schema.forEach(f => {
+      if (!f.name || r.values[f.name] === undefined || r.values[f.name] === '') return;
+      const inp = formNode.querySelector(`[name="${f.name}"]`);
+      if (!inp) return;
+      const atStart = (r.replace || []).includes(f.name) && (!inp.value.trim() || inp.value === String(f.defaultValue === undefined ? '' : f.defaultValue));
+      if (!isEmpty(formNode, f) && !atStart) return;
+      if (inp.tagName === 'SELECT' && ![...inp.options].some(o => o.value === r.values[f.name])) return;
+      inp.value = r.values[f.name];
+      inp.classList.add('is-prefilled');
+      inp.addEventListener('input', () => inp.classList.remove('is-prefilled'), { once: true });
+      labels.push(f.label);
+    });
+    return labels;
+  }
+  const filledNote = (r, labels) => `${labels.length} box(es) filled from ${r.caseNo}${r.fromDiary ? ' and its diary date' : ''}${r.fromDocuments ? ' and earlier documents' : ''}: ${labels.join(', ')}. They are marked; please check them before saving.`;
+
+  // "Choose a case" at the top of a new form: search registered cases by
+  // suit number or party, and fill the form from the one chosen.
+  function offerCasePicker(def, formType, formNode, body, fill) {
+    const el = ui().el;
+    const note = el('div', { class: 'notice notice--info', hidden: 'hidden' });
+    const search = el('input', { type: 'search', placeholder: '🔍  Choose a case: type part of the suit number or a party', 'aria-label': 'Choose a case' });
+    const list = el('div', { class: 'case-results' });
+    const bar = el('div', { class: 'case-chooser' }, [search, list]);
+    body.insertBefore(note, formNode);
+    body.insertBefore(bar, note);
+    const use = (r) => {
+      const labels = applyFill(def, formNode, r);
+      note.textContent = labels.length ? filledNote(r, labels) : `Nothing to fill from ${r.caseNo}: the boxes it would fill already have something in them.`;
+      note.hidden = false;
+    };
+    let t = null, asked = '';
+    search.addEventListener('input', () => {
+      clearTimeout(t);
+      t = setTimeout(async () => {
+        const q = search.value.trim();
+        if (q.length < 2) { list.replaceChildren(); return; }
+        asked = q;
+        let r;
+        try { r = await api().get(`/cases/registered?q=${encodeURIComponent(q)}`); } catch (e) { return; }
+        if (asked !== q) return;
+        list.replaceChildren(...(r.cases.length ? r.cases.map(c => el('button', { class: 'case-result', type: 'button', onclick: async () => {
+          list.replaceChildren(); search.value = `${c.suitNumber} · ${c.parties}`;
+          try { use(await api().get(`/cases/fill?formType=${encodeURIComponent(formType)}&caseId=${c.id}`)); } catch (e) { ui().toast(e.message, 'error'); }
+        } }, [el('strong', null, c.suitNumber), ` ${c.parties}${c.court ? ' · ' + c.court : ''}`])) : [el('p', { class: 'muted' }, 'No registered case matches.')]));
+      }, 250);
+    });
+    if (fill) { bar.hidden = true; use(fill); }
+  }
+
+  // 📝 Fill a Form from a case (the Case Register, the Case File, the Court
+  // Diary): choose the form, and it opens filled from the case.
+  async function fillFromCase({ caseId, caseNo, diaryId, unitKey }) {
+    const el = ui().el;
+    const user = App.auth.current();
+    const all = window.App.allForms || {};
+    const units = (await App.router.units()).filter(u => ['registry', 'execution'].includes(u.type) && (u.forms || []).length &&
+      (App.permissions.isAdmin(user) ? true : user.unitKeys.includes(u.key)) && App.permissions.can('create', user));
+    if (!units.length) { ui().toast('You cannot make forms in any court registry or the Execution Unit.', 'error'); return; }
+    units.sort((a, b) => (b.key === unitKey) - (a.key === unitKey));
+    let dialog;
+    const pick = el('select', { 'aria-label': 'Unit' }, units.map(u => el('option', { value: u.key }, u.name)));
+    const grid = el('div', { class: 'dash-forms' });
+    const show = () => {
+      const u = units.find(x => x.key === pick.value);
+      grid.replaceChildren(...u.forms.filter(k => all[k]).map(k => el('button', { class: 'dash-form-btn', type: 'button', onclick: async () => {
+        let r;
+        const q = diaryId ? `diaryId=${diaryId}` : caseId ? `caseId=${caseId}` : `caseNo=${encodeURIComponent(caseNo)}`;
+        try { r = await api().get(`/cases/fill?formType=${encodeURIComponent(k)}&${q}`); } catch (e) { ui().toast(e.message, 'error'); return; }
+        dialog.close();
+        openForm({ unitKey: u.key, formType: k, fill: r });
+      } }, all[k].label)));
+    };
+    pick.addEventListener('change', show);
+    show();
+    ui().modal('Fill a Form from this Case', el('div', null, [
+      el('div', { class: 'doc-preview__actions' }, [el('button', { class: 'btn btn--ghost', onclick: () => dialog.close() }, '✕  Close')]),
+      el('p', { class: 'muted' }, 'Choose the form. It opens with the suit number, the parties, the court and what else is known filled in; check and change anything before saving.'),
+      units.length > 1 ? ui().field('Unit', pick) : null,
+      grid
+    ]), { noFooter: true, onOpen: (o) => { dialog = o; } });
+  }
+
   // A box is free to fill when it is blank, or a list still at its starting choice.
   function isEmpty(formNode, field) {
     const inp = formNode.querySelector(`[name="${field.name}"]`);
@@ -470,6 +561,6 @@
 
   App.workflow = {
     onChange, changed, meta, roleLabel, abilities, submitLabel,
-    openForm, openDocument, download, submitDialog, approveDialog, returnDialog, revokeDialog, withdraw, deleteRecord, print
+    openForm, openDocument, fillFromCase, download, submitDialog, approveDialog, returnDialog, revokeDialog, withdraw, deleteRecord, print
   };
 })();

@@ -346,9 +346,9 @@ h1 { font-size: 1.35rem; margin: 0; }
 .co-preamble { margin: 0 0 8px; text-align: justify; }
 .co-judge-name { font-weight: 700; font-size: 10.5pt; line-height: 1.5; padding-top: 2px; }
 .co-it-is-ordered { font-weight: 700; font-size: 11pt; margin-bottom: 6px; padding-top: 2px; }
-.co-seal-space { width: 110px; height: 90px; border: 1px dashed #bbb; margin-top: 8px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 8pt; color: #bbb; font-style: italic; }
+.co-judge { margin-bottom: 14px; }
+.co-judge .doc-sig-img { display: block; max-width: 150px; max-height: 52px; margin: 0 0 2px; }
+.co-sig-space { height: 46px; }
 .co-items { font-size: 11pt; text-align: justify; }
 .co-items ol { padding-left: 20px; margin: 4px 0; }
 .co-items li { margin-bottom: 8px; line-height: 1.6; }
@@ -609,6 +609,13 @@ button.dash-card:hover { border-color: var(--green-500); }
 .case-docs { margin-top: 1.2rem; border-top: 1px solid var(--line); padding-top: .8rem; }
 .case-docs__head { display: flex; justify-content: space-between; align-items: center; gap: .5rem; margin-bottom: .5rem; }
 .case-docs__head h3 { margin: 0; font-size: 1rem; }
+/* Filling a form from a case */
+.case-chooser { position: relative; margin-bottom: .6rem; }
+.case-chooser input { width: 100%; padding: .55rem .75rem; border: 1px solid var(--line); border-radius: 8px; font: inherit; }
+.case-results { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
+.case-result { text-align: left; background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: .45rem .7rem; font: inherit; font-size: .88rem; cursor: pointer; }
+.case-result:hover { background: var(--green-50); }
+.is-prefilled { background: #fffbe6 !important; border-color: #e0b84a !important; }
 /* Register import */
 .import-steps { padding-left: 1.2rem; display: grid; gap: .5rem; margin: 0 0 1rem; }
 .import-problem { color: var(--danger); font-weight: 600; font-size: .85rem; }

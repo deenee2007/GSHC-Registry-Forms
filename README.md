@@ -282,6 +282,24 @@ New cases are filed, numbered and assigned to a court here.
    until its file is received. The Chief Judge who assigns a case is not
    sent the court's notice for it, even when they sit in that court.
 
+**Fill a form from a case.** In the court registries and the Execution
+Unit, **📝 Fill a Form** (Case Register View, Case File, Court Diary) or
+**Choose a case** at the top of a new form fills the form from a
+registered case: the suit number; the parties in the form's own boxes
+(Plaintiff and Defendant, Complainant and Accused, Applicant and
+Respondent); the party addresses given at filing; the court as "High
+Court No. 9" in Issued At (or its number where the form asks for it); the
+court's judge where it has one; counsel; the offence for a criminal case;
+and from a diary entry, its date, time and business. Other boxes come from
+earlier documents of the case. Only empty boxes (and court or party boxes
+still at the form's starting wording) are filled; filled boxes are shaded
+until edited. Nothing is saved until the form is.
+
+**Court Order.** The judge's signature is placed above the judge's name in
+the left column (each judge's above their own on a panel order), with
+space to sign by hand before signing; the box for the seal is gone, as the
+court's seal is placed on the paper.
+
 **Register import.** **⬆ Import Register** in the Case Register brings in
 a court's existing book from Excel (.xlsx) or CSV, using the template's
 columns (S/No, Register, Name of case, Suit number, Date of filing, Date of

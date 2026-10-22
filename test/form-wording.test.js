@@ -181,3 +181,19 @@ test('filled details print without a line; blanks left empty keep theirs', () =>
   assert.match(html, /<span class="line medium">Ali Sani<\/span>/, 'a filled detail has text, so no line');
   assert.match(html, /Service: ₦ <span class="line short"><\/span>/, 'an empty blank is truly empty, so it keeps its line');
 });
+
+test('Court Order: each judge\'s signature above the judge\'s name, and no box for the seal', () => {
+  const html = (data, signatures) => output.render({ formType: 'court-order', status: signatures.length ? 'final' : 'draft', data, signatures }, 'Unit', allForms['court-order']);
+  const sig = (name, url) => ({ role: 'judge', label: 'Judge', name, title: 'Hon. Justice', imageUrl: url, signedAt: '2026-10-20T10:00:00Z' });
+  const single = html({ judgeType: 'single', judgeName: 'Hon. Justice M.A. Haruna', judgeDesignation: 'JUDGE' }, [sig('M.A. Haruna', '/sig/haruna.png')]);
+  assert.doesNotMatch(single, /co-seal/);
+  const left = single.slice(single.indexOf('class="co-judge"'));
+  assert.ok(left.indexOf('/sig/haruna.png') > -1 && left.indexOf('/sig/haruna.png') < left.indexOf('Hon. Justice M.A. Haruna'), 'the signature comes before (above) the name');
+  assert.equal((single.match(/\/sig\/haruna\.png/g) || []).length, 1, 'placed once, not again at the foot');
+  const draft = html({ judgeType: 'single', judgeName: 'Hon. Justice M.A. Haruna' }, []);
+  assert.match(draft, /co-sig-space/, 'room to sign by hand before signing');
+  const panel = html({ judgeType: 'panel', judges: [{ name: 'Hon. Justice A. Bello' }, { name: 'Hon. Justice C. Danjuma' }] },
+    [sig('C. Danjuma', '/sig/danjuma.png'), sig('A. Bello', '/sig/bello.png')]);
+  assert.ok(panel.indexOf('/sig/bello.png') < panel.indexOf('A. Bello') && panel.indexOf('/sig/danjuma.png') > panel.indexOf('A. Bello') && panel.indexOf('/sig/danjuma.png') < panel.indexOf('C. Danjuma'),
+    'on a panel, each signature above its own judge, matched by name');
+});

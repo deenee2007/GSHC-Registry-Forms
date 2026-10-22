@@ -201,6 +201,8 @@ const CaseSchema = new Schema({
   process:       { type: String, trim: true, default: '' },   // originating process
   counsel:       { type: String, trim: true, default: '' },
   counselAddress:{ type: String, trim: true, default: '' },
+  firstPartyAddress:  { type: String, trim: true, default: '' },
+  secondPartyAddress: { type: String, trim: true, default: '' },
   filedOn:       String,                              // YYYY-MM-DD
   efcc:          { type: Boolean, default: false },
   official:      { type: Boolean, default: false },  // no filing fee (criminal cases filed by the State, EFCC matters)

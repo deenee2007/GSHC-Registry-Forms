@@ -68,6 +68,7 @@
               c.parties ? el('div', { class: 'case-parties' }, c.parties) : null,
               el('div', { class: 'muted' }, `${facts}  ·  ${c.units.join(', ')}`)
             ]),
+            el('button', { class: 'btn btn--ghost btn--small', onclick: () => wf.fillFromCase({ caseNo: c.caseNo }) }, '📝 Fill a Form'),
             el('button', { class: 'btn btn--ghost btn--small', onclick: () => printCase(c) }, '🖨 Print list')
           ]),
           ui.table([

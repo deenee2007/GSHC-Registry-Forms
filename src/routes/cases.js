@@ -8,7 +8,7 @@
  * contents; drafts in other units are not listed at all.
  */
 const express = require('express');
-const { Record, Unit, Case, CaseDocument } = require('../models');
+const { Record, Unit, Case, CaseDocument, DiaryEntry, User } = require('../models');
 const { roman } = require('../services/process');
 const catalogue = require('../forms/catalogue');
 const { HttpError, requireLogin, canAccessUnit, can, isAdmin } = require('../middleware/auth');
@@ -144,6 +144,104 @@ router.get('/prefill', wrap(async (req, res) => {
     return { formLabel: d ? d.label : r.formType, date: r.updatedAt };
   });
   res.json({ caseNo, values, sources });
+}));
+
+// ── Fill a form from a registered case ──
+// The case's own facts go into the form's boxes (whatever each form calls
+// them); boxes the case does not hold come from earlier documents of the
+// case; from a diary entry, its date and time and business too. Everything
+// stays editable; nothing is saved until the form is.
+const IN_REGISTER = ['assigned', 'dispatched', 'received', 'disposed'];
+const FIRST_PARTY = ['plaintiff', 'complainant', 'applicant', 'plaintiffName', 'leftParties'];
+const SECOND_PARTY = ['defendant', 'accusedName', 'respondent', 'rightParties'];
+const FIRST_ADDRESS = ['plaintiffAddress', 'plaintiffResidence'];
+const SECOND_ADDRESS = ['accusedAddress', 'defendantAddress'];
+const TITLE = ['suitTitle', 'caseTitle'];
+const OFFENCE = ['offence', 'offenceDescription', 'offenceOrClaim'];
+// Court boxes written as the court and its number; these replace the
+// starting value ("Gombe") the form puts in them.
+const COURT_AT = ['issuedAt', 'issuePlace'];
+const COURT_NUMBER = ['courtNo', 'courtNumber'];
+const oneLine = (s) => String(s || '').trim().replace(/\s*\n+\s*/g, ', ');
+
+async function caseValues(def, formType, c, extra) {
+  const values = {}, replace = [];
+  const unit = c.assignedUnit ? await Unit.findOne({ key: c.assignedUnit }, 'courtNo').lean() : null;
+  const court = unit && unit.courtNo ? `High Court No. ${unit.courtNo}` : '';
+  const criminal = /^\S+\/\d+c\//i.test(c.suitNumber || '') || c.caseType === 'criminal';
+  let judge = '';
+  if (c.assignedUnit && def.schema.some(f => f.name === 'judgeName')) {
+    const judges = await User.find({ active: true, signerRoles: 'judge', unitKeys: c.assignedUnit }, 'title fullName').lean();
+    if (judges.length === 1) judge = [judges[0].title, judges[0].fullName].filter(Boolean).join(' ');
+  }
+  const set = (name, v, rep) => { if (v) { values[name] = v; if (rep) replace.push(name); } };
+  for (const f of def.schema) {
+    if (!f.name || f.type === 'table') continue;
+    const n = f.name;
+    if (catalogue.CASE_FIELDS.includes(n) && !/appeal|lowerCourt/i.test(n)) set(n, c.suitNumber);
+    else if (FIRST_PARTY.includes(n)) set(n, oneLine(c.firstParty), true); // in place of a form's starting wording
+    else if (SECOND_PARTY.includes(n)) set(n, oneLine(c.secondParty), true);
+    else if (FIRST_ADDRESS.includes(n)) set(n, c.firstPartyAddress);
+    else if (SECOND_ADDRESS.includes(n)) set(n, c.secondPartyAddress);
+    else if (TITLE.includes(n)) set(n, [oneLine(c.firstParty), oneLine(c.secondParty)].filter(Boolean).join(' v. '));
+    else if (OFFENCE.includes(n) && criminal) set(n, c.nature);
+    else if (n === 'counselName') set(n, c.counsel);
+    else if (n === 'judgeName') set(n, judge);
+    else if (COURT_AT.includes(n)) set(n, court, true);
+    else if (COURT_NUMBER.includes(n)) set(n, unit && unit.courtNo ? String(unit.courtNo) : '', true);
+    else if (n === 'courtLocation' && /High Court No\./i.test(f.defaultValue || '')) set(n, court ? `${court}, Gombe` : '', true);
+    else if (n === 'courtName' && !f.defaultValue) set(n, court);
+  }
+  // From a diary entry: the date it fixes, its time and what it is for.
+  const dates = catalogue.COURT_DATES[formType];
+  if (extra && extra.date && dates) {
+    set(dates.date, extra.date, true);
+    if (dates.time && extra.time) set(dates.time, extra.time, true);
+    if (def.schema.some(f => f.name === 'stage')) set('stage', extra.business, true);
+  }
+  return { values, replace };
+}
+
+// Registered cases for "Choose a case": by suit number or a party.
+router.get('/registered', wrap(async (req, res) => {
+  const t = String(req.query.q || '').trim().slice(0, 60);
+  if (t.length < 2) return res.json({ cases: [] });
+  const rx = new RegExp(escapeRegex(t), 'i');
+  const list = await Case.find({ status: { $in: IN_REGISTER }, $or: [{ suitNumber: rx }, { firstParty: rx }, { secondParty: rx }] })
+    .select('suitNumber firstParty secondParty nature assignedUnit').sort({ assignedAt: -1 }).limit(12).lean();
+  const units = Object.fromEntries((await Unit.find({ type: 'registry' }, 'key courtNo').lean()).map(u => [u.key, u.courtNo]));
+  res.json({ cases: list.map(c => ({ id: String(c._id), suitNumber: c.suitNumber, parties: [oneLine(c.firstParty), oneLine(c.secondParty)].filter(Boolean).join(' v. '),
+    nature: c.nature || '', court: units[c.assignedUnit] ? `High Court No. ${units[c.assignedUnit]}` : '' })) });
+}));
+
+router.get('/fill', wrap(async (req, res) => {
+  const def = catalogue.get(String(req.query.formType || ''));
+  if (!def) throw new HttpError(400, 'Unknown form.');
+  let c = null, entry = null;
+  if (req.query.diaryId) {
+    if (!/^[0-9a-f]{24}$/i.test(String(req.query.diaryId))) throw new HttpError(404, 'Diary entry not found.');
+    entry = await DiaryEntry.findById(req.query.diaryId).lean();
+    if (!entry || !canAccessUnit(req.user, entry.unitKey)) throw new HttpError(404, 'Diary entry not found.');
+    if (entry.case) c = await Case.findById(entry.case).lean();
+  } else if (req.query.caseId) {
+    if (!/^[0-9a-f]{24}$/i.test(String(req.query.caseId))) throw new HttpError(404, 'Case not found.');
+    c = await Case.findById(req.query.caseId).lean();
+    if (!c) throw new HttpError(404, 'Case not found.');
+  } else if (req.query.caseNo) {
+    c = await Case.findOne({ caseNos: catalogue.normalizeCase(req.query.caseNo), status: { $in: IN_REGISTER } }).lean();
+  }
+  // A typed case (no registered one): its number and parties, from the diary or as asked.
+  if (!c) {
+    const parts = String(entry ? entry.parties : '').split(/\s+v\.?\s+/i);
+    c = { suitNumber: entry ? entry.suitNumber : String(req.query.caseNo || '').trim(), firstParty: parts[0] || '', secondParty: parts[1] || '', nature: entry ? entry.nature : '',
+      counsel: entry ? entry.counsel : '', assignedUnit: entry ? entry.unitKey : null };
+  }
+  const caseNo = catalogue.normalizeCase(c.suitNumber);
+  const found = caseNo.length >= 3 ? await Record.find({ caseNos: caseNo, status: { $ne: 'offline' } })
+    .select('unitKey formType status data createdBy submittedBy slots.approvers createdAt updatedAt').sort({ updatedAt: -1 }).limit(50).lean() : [];
+  const earlier = prefillValues(def, found.filter(r => canOpen(req.user, r)).slice(0, 20));
+  const own = await caseValues(def, String(req.query.formType), c, entry ? { date: entry.date, time: entry.time, business: entry.business } : null);
+  res.json({ caseNo: c.suitNumber, values: { ...earlier.values, ...own.values }, replace: own.replace, fromDocuments: earlier.used.size, fromDiary: !!entry });
 }));
 
 module.exports = router;

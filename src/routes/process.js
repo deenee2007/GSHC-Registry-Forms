@@ -68,7 +68,7 @@ function serialize(c, units, extra = {}) {
   return {
     id: String(o._id), caseType: o.caseType, suitNumber: o.suitNumber || '', earlier: !!o.earlier,
     firstParty: o.firstParty, secondParty: o.secondParty, nature: o.nature, process: o.process,
-    counsel: o.counsel, counselAddress: o.counselAddress, filedOn: o.filedOn, efcc: o.efcc, official: o.official,
+    counsel: o.counsel, counselAddress: o.counselAddress, firstPartyAddress: o.firstPartyAddress || '', secondPartyAddress: o.secondPartyAddress || '', filedOn: o.filedOn, efcc: o.efcc, official: o.official,
     fees: o.fees || [], feeTotal: o.feeTotal || 0, receiptNumber: o.receiptNumber,
     invoice: o.invoice && o.invoice.reference ? { reference: o.invoice.reference, issuedAt: o.invoice.issuedAt, issuedByName: o.invoice.issuedByName, fees: o.invoice.fees || [], total: o.invoice.total || 0 } : null,
     receipt: o.receipt ? { name: o.receipt.name, contentType: o.receipt.contentType, bytes: o.receipt.bytes, uploadedAt: o.receipt.uploadedAt } : null,
@@ -110,7 +110,7 @@ async function cleanCase(body) {
   }
   ['firstParty', 'secondParty'].forEach(k => str(k, 1000));
   ['nature', 'process', 'counsel', 'receiptNumber'].forEach(k => str(k, 300));
-  str('counselAddress', 1000);
+  ['counselAddress', 'firstPartyAddress', 'secondPartyAddress'].forEach(k => str(k, 1000));
   if (body.filedOn !== undefined) {
     if (body.filedOn && !DAY.test(body.filedOn)) throw new HttpError(400, 'Enter the date of filing.');
     out.filedOn = body.filedOn || today();

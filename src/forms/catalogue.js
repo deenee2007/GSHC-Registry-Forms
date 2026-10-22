@@ -138,4 +138,4 @@ function cleanData(formType, input) {
   return { data: out };
 }
 
-module.exports = { ...catalogue, MODULES, get, formsForUnit, describe, cleanData, caseNumbers, normalizeCase, CASE_FIELDS, courtDates };
+module.exports = { ...catalogue, MODULES, get, formsForUnit, describe, cleanData, caseNumbers, normalizeCase, CASE_FIELDS, COURT_DATES, courtDates };
