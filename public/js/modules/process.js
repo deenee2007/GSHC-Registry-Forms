@@ -82,6 +82,7 @@
       row('Suit number', caseNo(ui, c.suitNumber)),
       row('Case type', typeLabel(settings, c.caseType) + (c.efcc ? ' · EFCC matter' : '')),
       row('Parties', parties(c)),
+      row('Addresses', [c.firstPartyAddress && `First party: ${c.firstPartyAddress}`, c.secondPartyAddress && `Second party: ${c.secondPartyAddress}`].filter(Boolean).join('; ')),
       row('Nature of case', c.nature),
       row('Originating process', c.process),
       row('Counsel', [c.counsel, c.counselAddress].filter(Boolean).join(', ')),
@@ -310,6 +311,8 @@
     const nature = input(v.nature, { placeholder: 'e.g. Land, Contract, Matrimonial' });
     const proc = input(v.process, { placeholder: 'e.g. Writ of summons, Originating summons, Petition, Charge' });
     const counsel = input(v.counsel), counselAddress = el('textarea', { rows: 2 }, v.counselAddress || '');
+    const firstAddress = el('textarea', { rows: 2, placeholder: 'Optional: filled into summonses and notices' }, v.firstPartyAddress || '');
+    const secondAddress = el('textarea', { rows: 2, placeholder: 'Optional: filled into summonses and notices' }, v.secondPartyAddress || '');
     const filedOn = el('input', { type: 'date', value: v.filedOn || '' });
     const efcc = el('input', { type: 'checkbox' }); efcc.checked = !!v.efcc;
     const official = el('input', { type: 'checkbox' }); official.checked = !!v.official;
@@ -364,6 +367,7 @@
       f('Case type *', caseType), f('Date of filing', filedOn),
       f('First party * (Plaintiff, Claimant, Complainant, Petitioner)', first, true),
       f('Second party * (Defendant, Respondent, Accused)', second, true),
+      f('First party address', firstAddress), f('Second party address', secondAddress),
       f('Nature of case *', nature), f('Originating process', proc),
       f('Counsel', counsel), f('Counsel address', counselAddress),
       settings.partyEmails === false ? null : el('div', { class: 'form-grid form-field--full' }, [
@@ -378,7 +382,7 @@
       confirmText: 'Save', noBackdropClose: true,
       onConfirm: async () => {
         const payload = { caseType: caseType.value, firstParty: first.value, secondParty: second.value, nature: nature.value, process: proc.value,
-          counsel: counsel.value, counselAddress: counselAddress.value, filedOn: filedOn.value, efcc: efcc.checked, official: official.checked,
+          counsel: counsel.value, counselAddress: counselAddress.value, firstPartyAddress: firstAddress.value, secondPartyAddress: secondAddress.value, filedOn: filedOn.value, efcc: efcc.checked, official: official.checked,
           fees: official.checked ? [] : lineRows.map(r => r.value()).filter(x => x.item), receiptNumber: receiptNumber.value,
           ...(settings.partyEmails === false ? {} : { emails: { firstParty: firstEmail.value, secondParty: secondEmail.value, counsel: counselEmail.value } }) };
         let r = existing ? await api.put(`/process/cases/${existing.id}`, payload) : await api.post('/process/cases', payload);

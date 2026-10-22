@@ -138,6 +138,18 @@
     }).join("")}</div>`;
   }
 
+  // A judge's signature on a court order, for the judge named: by name where
+  // it matches, else the next judge's signature not yet placed.
+  function claimJudgeSignature(name) {
+    if (!_doc || !_doc.signatures) return null;
+    const plain = (s) => String(s || '').toLowerCase().replace(/\(.*?\)/g, ' ').replace(/\b(hon|honourable|justice|the)\b\.?/g, ' ').replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim();
+    const free = _doc.signatures.filter(s => !s._used && (s.role === 'judge' || ROLE_WORDS.judge.test(s.label || '')));
+    const want = plain(name);
+    const sig = (want && free.find(s => { const has = plain(s.name); return has && (has.includes(want) || want.includes(has)); })) || free[0] || null;
+    if (sig) sig._used = true;
+    return sig;
+  }
+
   function leftoverSignatures() {
     if (!_doc || !_doc.signatures) return '';
     const rest = _doc.signatures.filter(s => !s._used);
@@ -645,20 +657,26 @@
     const mthName= sd.monthNum ? (MONTHS[parseInt(sd.monthNum,10)-1] || '') : '';
     const yr4    = sd.year4 || ('20' + (sd.year2 || ''));
 
-    // Judge block
+    // Judge block: each judge's signature above the judge's name (space to
+    // sign by hand until then); the court's seal is placed on the paper.
+    function judgeBlock(name, designation) {
+      const sig = claimJudgeSignature(name);
+      return `<div class="co-judge">` +
+        (sig ? sigImage(sig) : `<div class="co-sig-space"></div>`) +
+        `<div class="co-judge-name">${esc(name)}</div>` +
+        (designation ? `<div style="font-size:9pt">(${esc(designation)})</div>` : '') +
+        (sig ? `<div class="doc-sig-meta">Digitally signed ${esc(formatDateTime(sig.signedAt))}</div>` : '') +
+        `</div>`;
+    }
     const isPanel = d.judgeType === 'panel';
     let judgeLeft = '';
     let judgeFullLine = '';
     if (isPanel) {
       let pj = [];
       try { pj = Array.isArray(d.judges) ? d.judges : JSON.parse(d.judges || '[]'); } catch(e) {}
-      judgeLeft = pj.filter(j=>j.name).map(j =>
-        `<div class="co-judge-name">${esc(j.name)}</div>` +
-        (j.designation ? `<div style="font-size:9pt">(${esc(j.designation)})</div>` : '')
-      ).join('');
+      judgeLeft = pj.filter(j=>j.name).map(j => judgeBlock(j.name, j.designation)).join('');
     } else {
-      judgeLeft = `<div class="co-judge-name">${esc(d.judgeName||'')}</div>` +
-        `<div style="font-size:9pt">(${esc(d.judgeDesignation||'JUDGE')})</div>`;
+      judgeLeft = judgeBlock(d.judgeName || '', d.judgeDesignation || 'JUDGE');
       judgeFullLine = `${esc(d.judgeName||'')} (${esc(d.judgeDesignation||'JUDGE')})`;
     }
 
@@ -748,12 +766,6 @@
             <div class="co-it-is-ordered">IT IS HEREBY ORDERED THAT;</div>
             <div class="co-items">${itemsHtml}</div>
           </td>
-        </tr>
-        <tr>
-          <td class="co-left-col" style="vertical-align:top;">
-            <div class="co-seal-space"></div>
-          </td>
-          <td class="co-right-col"></td>
         </tr>
       </table>` +
       `<div class="co-closing">THE ORDER IS GIVEN UNDER THE HAND AND SEAL OF ${closingJudge}<br>

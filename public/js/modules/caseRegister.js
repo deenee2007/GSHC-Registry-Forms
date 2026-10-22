@@ -131,6 +131,7 @@
         try { full = (await api.get(`/process/cases/${c.id}`)).case; } catch (e) { ui.toast(e.message, 'error'); return; }
         let dialog;
         const close = el('button', { class: 'btn btn--ghost', onclick: () => dialog.close() }, '✕  Close');
+        const formBtn = canWork ? el('button', { class: 'btn btn--ghost', onclick: () => { dialog.close(); ctx.workflow.fillFromCase({ caseId: full.id, unitKey: unit.key }); } }, '📝 Fill a Form') : null;
         const fixBtn = canWork && window.App.diaryUi ? el('button', { class: 'btn btn--primary', onclick: async () => { dialog.close(); await window.App.diaryUi.fix(ctx, unit, { caseId: full.id }); } }, '📅 Fix a Date') : null;
         const dates = el('div', { class: 'case-docs' });
         api.get(`/diary?unitKey=${encodeURIComponent(unit.key)}&caseId=${full.id}`).then(r => {
@@ -141,7 +142,7 @@
             { label: 'Outcome', value: e => e.status === 'done' ? e.outcome.text : 'To come' }
           ], r.entries) : el('p', { class: 'muted' }, 'No date in the Court Diary yet.'));
         }).catch(() => dates.remove());
-        ui.modal(`Case ${full.suitNumber}`, el('div', null, [el('div', { class: 'doc-preview__actions' }, [close, fixBtn]), P.badge(ui, full.status), P.details(ui, full, settings), dates, P.documentsPanel(ui, api, full.id)]),
+        ui.modal(`Case ${full.suitNumber}`, el('div', null, [el('div', { class: 'doc-preview__actions' }, [close, formBtn, fixBtn]), P.badge(ui, full.status), P.details(ui, full, settings), dates, P.documentsPanel(ui, api, full.id)]),
           { noFooter: true, wide: true, onOpen: (o) => { dialog = o; } });
       }
 

@@ -320,6 +320,7 @@
             : el('span', null, e.notes || '') }
         ], list, meta.canWrite ? [
           { label: 'Record Outcome', class: 'btn--ok', show: e => e.status === 'fixed' && e.date <= iso(new Date()), onClick: async e => { if (await outcome(ctx, e, meta.businessTypes, remarks)) load(); } },
+          { label: '📝 Form', onClick: e => ctx.workflow.fillFromCase({ diaryId: e.id, unitKey: unit.key }) },
           { label: 'Change', show: e => e.status === 'fixed', onClick: async e => { if (await edit(ctx, e, meta.businessTypes)) load(); } },
           { label: 'Remove', class: 'btn--danger', onClick: async e => {
             if (!confirm(`Remove ${e.suitNumber} (${e.business}, ${longDay(e.date)}) from the diary?`)) return;
