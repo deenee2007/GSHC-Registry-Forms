@@ -93,8 +93,8 @@ h1 { font-size: 1.35rem; margin: 0; }
 .badge--final { background: var(--green-50); color: var(--green-700); }
 
 /* ---------- Forms / modal ---------- */
-.modal-overlay { position: fixed; inset: 0; background: rgba(7,53,29,.45); display: grid; place-items: center; z-index: 50; padding: 1rem; }
-.modal { background: #fff; border-radius: 14px; width: 100%; max-width: 620px; max-height: 90vh; display: flex;
+.modal-overlay { position: fixed; inset: 0; background: rgba(7,53,29,.45); display: grid; grid-template-columns: minmax(0, 1fr); place-items: center; z-index: 50; padding: 1rem; }
+.modal { background: #fff; border-radius: 14px; width: 100%; min-width: 0; max-width: 620px; max-height: 90vh; display: flex;
   flex-direction: column; box-shadow: 0 24px 60px rgba(0,0,0,.3); }
 .modal--wide { max-width: 920px; max-height: 95vh; }
 .modal__header { padding: 1rem 1.3rem; font-weight: 700; color: var(--green-900); border-bottom: 1px solid var(--line); flex-shrink: 0; }
@@ -151,6 +151,10 @@ h1 { font-size: 1.35rem; margin: 0; }
    ============================================================ */
 .doc-preview { overflow: auto; background: #e9edea; padding: 16px; border-radius: 8px; min-height: 400px; }
 .doc-preview__actions { display: flex; gap: .5rem; justify-content: flex-end; margin-bottom: .6rem; }
+/* On a phone the page is shrunk to the screen's width (see workflow.fitToScreen). */
+.doc-fit { overflow: hidden; margin: 0 auto; }
+.court-doc.court-doc--a4 { width: 210mm; max-width: none; transform-origin: top left; }
+.doc-zoom { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin: .4rem 0; font-size: .85rem; }
 
 .court-doc {
   background: #fff; color: #000; width: 210mm; max-width: 100%; margin: 0 auto;
