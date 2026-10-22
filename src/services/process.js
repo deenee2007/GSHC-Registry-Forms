@@ -110,6 +110,29 @@ async function setSettings(input) {
   return next;
 }
 
+// The official schedule of court fees (Legal Notice No. 1 of 2023) was put
+// into the fee list by itself once, then withdrawn: the fees are set by hand.
+// If the list is still exactly that schedule, the list it replaced comes
+// back; if it was edited since, it is left as it is. Runs once.
+const OFFICIAL_2023 = '5f234527da69ab2bc045769c150fc5349ef7e9a9674cdb195d984c14eb34c167';
+const fingerprint = (fees) => require('crypto').createHash('sha256')
+  .update(JSON.stringify((fees || []).map(f => [f.group || '', f.item, f.amount ?? null, f.percent ?? null]))).digest('hex');
+async function undoOfficialFeesOnce(log = console.log) {
+  try { await meta().insertOne({ _id: 'officialFeesUndone:gombe-2023', at: new Date() }); }
+  catch (e) { if (e.code === 11000) return null; throw e; }
+  if (!(await meta().findOne({ _id: 'officialFeesLoaded:gombe-2023' }))) return null; // never loaded here
+  const doc = await meta().findOne({ _id: KEY });
+  const before = await meta().findOne({ _id: 'feesBefore:gombe-2023' });
+  if (!doc || !before || fingerprint(doc.fees) !== OFFICIAL_2023) {
+    await meta().updateOne({ _id: KEY }, { $unset: { feeSource: '' } });
+    log('Court fees: the fee list was changed after the official schedule was loaded, so it is kept as it is.');
+    return 'kept';
+  }
+  await meta().updateOne({ _id: KEY }, { $set: { fees: before.fees || [] }, $unset: { feeSource: '' } });
+  log(`Court fees: the official schedule was withdrawn; the ${(before.fees || []).length} fee(s) from before it are back.`);
+  return 'restored';
+}
+
 // The courts that take new cases, in order: active court registries by number.
 async function courts_() {
   return (await Unit.find({ type: 'registry', active: true }).lean()).sort((a, b) => (a.courtNo || 0) - (b.courtNo || 0));
@@ -175,4 +198,4 @@ function roman(n) {
   return s;
 }
 
-module.exports = { getSettings, setSettings, nextNumber, nextInvoice, proposeCourt, rotationState, courts: courts_, formatHtml, roman, REMARKS, DEFAULTS };
+module.exports = { getSettings, setSettings, undoOfficialFeesOnce, nextNumber, nextInvoice, proposeCourt, rotationState, courts: courts_, formatHtml, roman, REMARKS, DEFAULTS };

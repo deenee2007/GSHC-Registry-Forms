@@ -672,3 +672,16 @@ test('warrant of arrest and order to produce: the court to bring before is the c
   assert.equal((await u.court3.get(`/api/cases/fill?formType=warrant-of-arrest&caseId=${c.id}`)).body.values.courtToBringBefore, 'High Court No. 3');
   assert.equal((await u.court3.get(`/api/cases/fill?formType=order-to-produce-prisoner&caseId=${c.id}`)).body.values.courtToProduceBefore, 'High Court No. 3');
 });
+
+test('withdrawing the official fee schedule: an edited list is kept; it runs once', async () => {
+  const mongoose = require('mongoose');
+  const meta = mongoose.connection.collection('appmeta');
+  await meta.deleteMany({ _id: { $in: ['officialFeesUndone:gombe-2023', 'officialFeesLoaded:gombe-2023', 'feesBefore:gombe-2023'] } });
+  assert.equal(await processSvc.undoOfficialFeesOnce(() => {}), null, 'nothing to do where it was never loaded');
+  await meta.deleteOne({ _id: 'officialFeesUndone:gombe-2023' });
+  await meta.insertMany([{ _id: 'officialFeesLoaded:gombe-2023' }, { _id: 'feesBefore:gombe-2023', fees: [{ item: 'Old fee', amount: 1 }] }]);
+  const now = (await processSvc.getSettings()).fees;
+  assert.equal(await processSvc.undoOfficialFeesOnce(() => {}), 'kept', 'a list that is not exactly the official one stays');
+  assert.deepEqual((await processSvc.getSettings()).fees, now);
+  assert.equal(await processSvc.undoOfficialFeesOnce(() => {}), null, 'only once');
+});
