@@ -385,6 +385,38 @@ Case File, the daily backup, and Clear Test Data (which also restarts the
 numbering at 1 and the rotation at High Court 1). Receipt files stay in
 Cloudinary, like signatures.
 
+## Directorate of Personnel: the Nominal Roll
+**👥 Nominal Roll** keeps one record per member of staff (signing in or
+not), kept by the PSN, which is unique. It is for those given the
+privilege **Nominal Roll: view** (`personnel_view`) or **Nominal Roll:
+edit** (`personnel_edit`, for Secret Registry staff; also opens confidential
+documents); every opening of a record is audited.
+
+* **The record:** name, sex, rank and cadre, grade level (01 to 17, or Cons.
+  for the Chief Registrar) and step, highest qualification and others, date
+  of birth, of first appointment, of present appointment and of
+  confirmation, LGA, station, contract and its end, phone, email, address,
+  next of kin, status, an optional photo and a link to a sign in account.
+* **Retirement** is worked out: 60 years of age or 35 years of service,
+  whichever comes first (or the end of a contract). **Due to Retire** lists
+  those retiring within a period and those past the date still in service.
+* **Record of service:** promotions, postings, confirmation, changes of
+  status, notes and corrections, each dated with who recorded it.
+* **Documents folder:** scanned letters and certificates; a confidential one
+  opens only for those who edit the roll.
+* **Import** from Excel or CSV in the columns of the existing roll, checked
+  first. Ranks and LGAs are tidied; dates are read day first; an Excel date
+  with its day and month swapped is settled from the sheet's own expected
+  date of retirement, and a record that cannot be settled is marked
+  **check dates** with the reason.
+* **Print and Excel** in the columns of the paper roll; a **Summary** by
+  station, cadre, grade level and LGA.
+* **Settings, Personnel:** stations, ranks (with cadre and other spellings),
+  cadres and kinds of documents. Clear Test Data leaves the roll alone.
+
+Staff matters (leave, promotion exercises, postings, discipline) will start
+from the officer's record.
+
 ## Before going live: clearing test data
 Until it has been used, Home shows administrators a **Before Going Live**
 section with **🗑 Clear Test Data**. Typing `CLEAR TEST DATA` removes every

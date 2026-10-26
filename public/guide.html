@@ -17,6 +17,7 @@
       <a href="#signers">Judges and Signers</a>
       <a href="#execution">Execution / Bailiffs</a>
       <a href="#process">Process Registry</a>
+      <a href="#personnel">Nominal Roll</a>
       <a href="#admins">Administrators</a>
       <a href="#verify">Checking a Document</a>
     </div>
@@ -258,6 +259,41 @@
     <p>Click <b>📈 Court Statistics</b> and choose the period. For each court: the cases assigned and disposed of in the period, the sittings and adjournments recorded in the Court Diary, and the dates fixed to come; and, as they stand today, the cases pending, their average and oldest age, and how many have been pending under 1 year, 1 to 3, 3 to 5 and over 5 years. <b>Pending cases</b> lists a court's pending cases, oldest first, with their adjournments and next date. <b>🖨 Print</b> and <b>⬇ Excel (CSV)</b> give the figures for a meeting or a report. The figures are only as complete as the registers and diaries: cases entered with <b>+ Add Earlier Case</b> count too.</p>
   </section>
 
+  <!-- ─────────────────────── Directorate of Personnel ─────────────────────── -->
+  <section class="g-page" id="personnel">
+    <header class="g-head">
+      <img src="/assets/highcourt.png" alt="" />
+      <div><div class="g-court">Gombe State High Court of Justice · GSHC Registry</div><h1>User Guide: Directorate of Personnel (Nominal Roll)</h1></div>
+      <button type="button" class="g-print" data-print="personnel">🖨 Print this page</button>
+    </header>
+
+    <h2>Who sees it</h2>
+    <p><b>👥 Nominal Roll</b> shows in the menu for those the administrator has given <b>Nominal Roll: view</b> (they see the roll and the records) or <b>Nominal Roll: edit</b> (Secret Registry staff: they also add and change records, add documents and open confidential documents). Every opening of a record is written in the audit log.</p>
+
+    <h2>The roll</h2>
+    <ul>
+      <li>One record per member of staff, whether or not they sign in, kept by the <b>PSN</b>, which is unique to each officer.</li>
+      <li>Search by name, PSN, rank or station, and narrow by station, cadre, grade level, status and LGA. <b>Dates to check</b> lists the records the import was not sure of.</li>
+      <li><b>🖨 Print Roll</b> prints what is shown, in the columns of the paper roll (S/No, Name, Sex, Rank, Highest Qualification, GL, PSN, DOB, DOFA, LGA, Contract, DOPA, the expected date of retirement by age or by service, and Station). <b>⬇ Excel (CSV)</b> downloads the same.</li>
+      <li><b>Due to Retire</b> lists the officers in service who retire within 3, 6, 12, 24 or 36 months, and those past the date still shown in service (change their status). <b>Summary</b> counts staff in service by station, cadre, grade level and LGA.</li>
+    </ul>
+
+    <h2>Retirement</h2>
+    <p>Worked out for every officer: at 60 years of age (from the date of birth) or after 35 years of service (from the date of first appointment), whichever comes first. For an officer on contract, the end of the contract. It changes by itself when a date is corrected.</p>
+
+    <h2>An officer's record</h2>
+    <ul>
+      <li><b>Open</b> shows the details, the retirement date, the <b>Record of service</b> and the <b>Documents</b>.</li>
+      <li>Use <b>⬆ Promotion</b> (new rank, grade level and step; the date becomes the date of present appointment), <b>🏢 Posting</b> (the new station), <b>✔ Confirmation</b>, <b>⚑ Status</b> (on leave, suspended, retired, resigned, deceased, transferred out, dismissed) and <b>📝 Note</b>. Each goes into the record of service with the date and who recorded it.</li>
+      <li><b>✏ Edit</b> is for corrections (a wrong date of birth, a phone number). The change is written into the record of service too.</li>
+      <li><b>📷 Photo</b> adds a passport photo (optional).</li>
+      <li><b>+ Add Document</b> files scanned letters and certificates in the officer's folder. Tick <b>🔒 Confidential</b> for queries and disciplinary papers: those with view only see that the document exists but cannot open it.</li>
+    </ul>
+
+    <h2>Bringing in the roll from Excel</h2>
+    <p>Click <b>⬆ Import Roll</b>. Use the roll as it is kept in Excel, or the template. The columns are found by their headings; NAME and PSN are needed. Click <b>Check the File</b> first: nothing is saved yet. Ranks are tidied to the list in Settings (S.C.O and SCO become Senior Clerical Officer), and LGAs to the 11 local governments. Dates are read day first. Where Excel has swapped the day and month of a date, the sheet's own expected date of retirement is used to put it right. A record is marked <b>check dates</b> when a date could not be settled, only the year was given, or the sheet's retirement date does not agree with the dates; the reason is in its record of service. Check it against the documents, correct it with <b>Edit</b>, or click <b>Dates are right</b>. Rows with no PSN, or a PSN given twice or already on the roll, are left out.</p>
+  </section>
+
   <!-- ─────────────────────── Administrators ─────────────────────── -->
   <section class="g-page" id="admins">
     <header class="g-head">
@@ -272,6 +308,7 @@
       <tr><th>Units</th><td><b>+ Add Unit</b> adds another Court Registry (numbered for you, with the registry forms) or an Other Unit (Probate, Accounts and so on), which starts with no forms.</td></tr>
       <tr><th>Form Access</th><td>Which forms each unit may use.</td></tr>
       <tr><th>Signing Rules</th><td>Who signs each form. A form with no signature line is signed by hand outside the system.</td></tr>
+      <tr><th>Personnel</th><td>The stations staff are posted to (each court, directorate and unit), the ranks with their cadre and the other ways each is written (for tidying an imported roll), the cadres, and the kinds of documents in a staff folder. Give <b>Nominal Roll: view</b> or <b>Nominal Roll: edit</b> under Users, Privileges.</td></tr>
       <tr><th>Process Registry</th><td>The suit number prefix (GM), the case types and their letters, the fee schedule staff pick from, the payment details printed on the invoice, whether the receipt upload is required or optional, and which courts hear EFCC matters. Give the <b>Process Registrar</b> and <b>Hon. Chief Judge</b> signing roles under Users.</td></tr>
       <tr><th>Audit Log</th><td>Every sign in, edit, submission, signature, print, revocation and backup, with the user and time.</td></tr>
     </table>

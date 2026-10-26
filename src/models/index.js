@@ -5,7 +5,9 @@ const mongoose = require('mongoose');
 const { Schema } = mongoose;
 const { SIGNER_ROLES } = require('../forms/signers');
 
-const PRIVILEGES = ['view', 'create', 'edit', 'finalize', 'delete', 'print', 'reports'];
+// personnel_view / personnel_edit: the Nominal Roll of the Directorate of
+// Personnel (staff records), apart from the unit forms.
+const PRIVILEGES = ['view', 'create', 'edit', 'finalize', 'delete', 'print', 'reports', 'personnel_view', 'personnel_edit'];
 
 // Where a signature image lives: Cloudinary (production) or inline in
 // MongoDB (local development without Cloudinary).
@@ -315,6 +317,81 @@ const DiaryEntrySchema = new Schema({
   updatedByName: String
 }, { timestamps: true });
 
+// A member of staff on the Nominal Roll of the Directorate of Personnel,
+// whether or not they sign in. The PSN is unique to each officer. Dates are
+// YYYY-MM-DD. The retirement date is worked out (60 years of age or 35
+// years of service, whichever comes first; a contract officer, the end of
+// the contract). Changes of rank, station and status are kept as the
+// record of service.
+const STAFF_STATUSES = ['in_service', 'on_leave', 'suspended', 'retired', 'resigned', 'deceased', 'transferred_out', 'dismissed'];
+const StaffSchema = new Schema({
+  psn:           { type: String, required: true, trim: true, unique: true },
+  name:          { type: String, required: true, trim: true },
+  title:         { type: String, trim: true, default: '' },
+  sex:           { type: String, enum: ['M', 'F', ''], default: '' },
+  rank:          { type: String, trim: true, default: '' },
+  cadre:         { type: String, trim: true, default: '' },
+  gl:            { type: String, trim: true, default: '' },    // 01 to 17, or Cons. (consolidated)
+  step:          { type: Number, default: null },
+  qualification: { type: String, trim: true, default: '' },    // the highest
+  qualifications: { type: [{ _id: false, name: String, institution: String, year: String }], default: [] },
+  dob:           { type: String, default: '' },
+  dofa:          { type: String, default: '' },                 // date of first appointment
+  dopa:          { type: String, default: '' },                 // date of present appointment
+  confirmedOn:   { type: String, default: '' },
+  lga:           { type: String, trim: true, default: '' },
+  station:       { type: String, trim: true, default: '', index: true },
+  contract:      { type: Boolean, default: false },
+  contractEnds:  { type: String, default: '' },
+  phone:         { type: String, trim: true, default: '' },
+  email:         { type: String, trim: true, lowercase: true, default: '' },
+  address:       { type: String, trim: true, default: '' },
+  nextOfKin:     { type: { _id: false, name: String, relationship: String, phone: String }, default: () => ({ name: '', relationship: '', phone: '' }) },
+  status:        { type: String, enum: STAFF_STATUSES, default: 'in_service', index: true },
+  statusDate:    { type: String, default: '' },
+  photo:         { type: FileRef, default: null },
+  user:          { type: Schema.Types.ObjectId, ref: 'User', default: null },  // their sign in account, if any
+  retiresOn:     { type: String, default: '', index: true },    // worked out on save
+  retiresBy:     { type: String, default: '' },                 // age, service or contract
+  checkDates:    { type: Boolean, default: false },             // the import could not be sure of a date
+  history:       { type: [{ _id: false, kind: String, date: String, text: String, byName: String, at: Date }], default: [] },
+  createdByName: String,
+  updatedByName: String
+}, { timestamps: true });
+StaffSchema.index({ name: 1 });
+StaffSchema.pre('save', function () {
+  const r = retirement(this);
+  this.retiresOn = r.date; this.retiresBy = r.by;
+});
+// The day an officer reaches a number of years from a date (29 February: 28 February).
+function addYears(isoDate, n) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate || '');
+  if (!m) return '';
+  const y = +m[1] + n, mo = +m[2], d = Math.min(+m[3], new Date(Date.UTC(y, mo, 0)).getUTCDate());
+  return `${y}-${m[2]}-${String(d).padStart(2, '0')}`;
+}
+// 60 years of age or 35 years of service, whichever comes first; a contract, its end.
+function retirement(s) {
+  if (s.contract && s.contractEnds) return { date: s.contractEnds, by: 'contract' };
+  const age = addYears(s.dob, 60), service = addYears(s.dofa, 35);
+  if (age && (!service || age <= service)) return { date: age, by: 'age' };
+  if (service) return { date: service, by: 'service' };
+  return { date: '', by: '' };
+}
+
+// A scanned document in an officer's folder. A confidential one (a query,
+// a disciplinary paper) opens only for those who edit the roll.
+const StaffDocumentSchema = new Schema({
+  staff:         { type: Schema.Types.ObjectId, ref: 'Staff', required: true, index: true },
+  title:         { type: String, trim: true, required: true },
+  docType:       { type: String, trim: true, default: '' },
+  date:          String,
+  confidential:  { type: Boolean, default: false },
+  file:          { type: FileRef, required: true },
+  uploadedBy:    { type: Schema.Types.ObjectId, ref: 'User' },
+  uploadedByName: String
+}, { timestamps: true });
+
 // One run of the backup: the data file it wrote, or why it failed.
 const BackupSchema = new Schema({
   at:          { type: Date, default: Date.now, index: true },
@@ -330,7 +407,7 @@ const BackupSchema = new Schema({
 });
 
 module.exports = {
-  PRIVILEGES, STATUSES,
+  PRIVILEGES, STATUSES, STAFF_STATUSES, retirement, addYears,
   User:         mongoose.model('User', UserSchema),
   Unit:         mongoose.model('Unit', UnitSchema),
   FormConfig:   mongoose.model('FormConfig', FormConfigSchema),
@@ -343,6 +420,8 @@ module.exports = {
   Case:         mongoose.model('Case', CaseSchema),
   CaseDocument: mongoose.model('CaseDocument', CaseDocumentSchema),
   CaseProcess:  mongoose.model('CaseProcess', CaseProcessSchema),
+  Staff:        mongoose.model('Staff', StaffSchema),
+  StaffDocument: mongoose.model('StaffDocument', StaffDocumentSchema),
   receiptKey,
   DiaryEntry:   mongoose.model('DiaryEntry', DiaryEntrySchema),
   CASE_STATUSES, DOC_TYPES

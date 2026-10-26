@@ -58,6 +58,12 @@
       _nav.appendChild(navItem('💰  Fees List', () => loadModule('fees'), { 'data-nav': 'fees' }));
     }
 
+    // The Nominal Roll of the Directorate of Personnel: for those given it.
+    if (permissions.isAdmin(user) || (user.privileges || []).some(p => p === 'personnel_view' || p === 'personnel_edit')) {
+      group('Personnel');
+      _nav.appendChild(navItem('👥  Nominal Roll', () => loadModule('personnel'), { 'data-nav': 'personnel' }));
+    }
+
     if (list.length) group('Units');
     list.forEach(u => _nav.appendChild(navItem(u.name, () => loadUnit(u), { 'data-unit': u.key }, u.type === 'process' ? 'process' : null)));
 

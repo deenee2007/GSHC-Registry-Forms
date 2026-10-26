@@ -727,3 +727,20 @@ button.dash-card:hover { border-color: var(--green-500); }
 .reassign-courts { display: flex; flex-wrap: wrap; gap: .2rem .8rem; }
 .reassign-actions { display: flex; justify-content: flex-end; margin: .8rem 0; }
 .row--away td { color: var(--muted, #6b7280); }
+
+/* Nominal Roll (Directorate of Personnel) */
+.report-filter--wide { flex: 2 1 16rem; }
+.report-filter--wide input { width: 100%; }
+.staff-flag { margin-left: .4rem; font-size: .7rem; }
+.staff-head { display: flex; gap: 1rem; align-items: center; margin: .6rem 0; }
+.staff-head h2 { margin: 0 0 .2rem; font-size: 1.15rem; color: var(--ink); text-transform: none; letter-spacing: 0; }
+.staff-photo { width: 88px; height: 106px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); flex: none; }
+.staff-photo--none { display: flex; align-items: center; justify-content: center; font-size: 2.4rem; background: var(--green-50); color: var(--muted); }
+.staff-details { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: .2rem 1rem; }
+.staff-sums { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 1rem; }
+.staff-sum h3 { margin: .4rem 0; }
+.settings-lines { width: 100%; font: inherit; padding: .5rem; border: 1px solid var(--line); border-radius: 8px; }
+.input--wide { flex: 2 1 14rem; }
+.input--short { max-width: 6rem; }
+.roll-print { font-size: 7.5pt; }
+.roll-print td, .roll-print th { padding: 2px 3px; }

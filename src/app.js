@@ -56,6 +56,7 @@ function createApp() {
   api.use('/process', require('./routes/process'));
   api.use('/diary', require('./routes/diary'));
   api.use('/statistics', require('./routes/statistics'));
+  api.use('/personnel', require('./routes/personnel'));
   api.use((req, res, next) => next(new HttpError(404, 'Not found.')));
 
   // Public verification needs no session.
