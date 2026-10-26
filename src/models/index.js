@@ -141,7 +141,7 @@ const AuditLogSchema = new Schema({
 
 const NotificationSchema = new Schema({
   user:    { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
-  kind:    { type: String, enum: ['submitted', 'approved', 'returned', 'revoked', 'signed', 'case'], required: true },
+  kind:    { type: String, enum: ['submitted', 'approved', 'returned', 'revoked', 'signed', 'case', 'leave'], required: true },
   link:    String, // for a case notice: the screen it opens ("assign", "process" or "register:<unit key>")
   record:  { type: Schema.Types.ObjectId, ref: 'Record' },
   message: String,
@@ -392,6 +392,51 @@ const StaffDocumentSchema = new Schema({
   uploadedByName: String
 }, { timestamps: true });
 
+// An application for leave, made from the officer's record (by the officer
+// if their account is linked to it, or by the registry for them). It goes
+// through the steps of the route in Settings (Staff Officer, then Director
+// Personnel, or the Chief Registrar for senior officers), each signed with
+// the PIN. Approval gives the letter and the record of service entry.
+const LeaveStepSchema = new Schema({
+  role:     { type: String, required: true },  // signer role that acts on this step
+  label:    String,                            // e.g. "Staff Officer"
+  action:   String,                            // "Forward" or "Approve"
+  status:   { type: String, enum: ['waiting', 'done', 'declined'], default: 'waiting' },
+  by:       { type: Schema.Types.ObjectId, ref: 'User' },
+  byName:   String,
+  title:    String,
+  image:    { type: ImageRef, default: null },  // the signature, on the final step
+  at:       Date,
+  comment:  String
+}, { _id: false });
+const LeaveSchema = new Schema({
+  staff:         { type: Schema.Types.ObjectId, ref: 'Staff', required: true, index: true },
+  psn:           String,
+  name:          String,
+  rank:          String,
+  gl:            String,
+  station:       String,
+  type:          { type: String, required: true },   // key of the kind of leave in Settings
+  typeName:      String,
+  year:          { type: Number, index: true },      // the leave year it counts against
+  from:          { type: String, required: true },   // YYYY-MM-DD, first day of leave
+  to:            { type: String, required: true },   // last day of leave
+  resume:        String,                             // the day to resume duty
+  days:          { type: Number, required: true },
+  working:       { type: Boolean, default: true },   // days counted are working days
+  reason:        { type: String, default: '' },
+  address:       { type: String, default: '' },      // address while on leave
+  phone:         { type: String, default: '' },
+  relief:        { type: String, default: '' },      // the officer who covers the duties
+  status:        { type: String, enum: ['pending', 'approved', 'declined', 'withdrawn'], default: 'pending', index: true },
+  steps:         { type: [LeaveStepSchema], default: [] },
+  waitingRole:   { type: String, index: true },      // the role of the step now waiting
+  reference:     String,                             // of the approval letter
+  appliedBy:     { type: Schema.Types.ObjectId, ref: 'User' },
+  appliedByName: String,
+  forSelf:       { type: Boolean, default: false }
+}, { timestamps: true });
+
 // One run of the backup: the data file it wrote, or why it failed.
 const BackupSchema = new Schema({
   at:          { type: Date, default: Date.now, index: true },
@@ -422,6 +467,7 @@ module.exports = {
   CaseProcess:  mongoose.model('CaseProcess', CaseProcessSchema),
   Staff:        mongoose.model('Staff', StaffSchema),
   StaffDocument: mongoose.model('StaffDocument', StaffDocumentSchema),
+  Leave:        mongoose.model('Leave', LeaveSchema),
   receiptKey,
   DiaryEntry:   mongoose.model('DiaryEntry', DiaryEntrySchema),
   CASE_STATUSES, DOC_TYPES

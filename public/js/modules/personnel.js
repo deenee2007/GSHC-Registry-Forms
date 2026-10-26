@@ -160,6 +160,7 @@
             canEdit && !s.confirmedOn ? action('✔ Confirmation', () => event(s, 'confirmation', reopen)) : null,
             canEdit ? action('⚑ Status', () => event(s, 'status', reopen)) : null,
             canEdit ? action('📝 Note', () => event(s, 'note', reopen)) : null,
+            canEdit && window.App.leaveUi && ['in_service', 'on_leave'].includes(s.status) ? action('🌴 Apply for Leave', () => window.App.leaveUi.applyDialog(ctx, s, reopen)) : null,
             canEdit ? action('📷 Photo', () => uploadPhoto(s, reopen)) : null,
             S.me.admin ? action('🗑 Remove', async () => {
               if (!confirm(`Remove ${s.name} (PSN ${s.psn}) and all their documents from the roll? Use this only for a record entered by mistake; for an officer who left, change the status instead.`)) return;
@@ -188,6 +189,7 @@
           el('div', { class: 'case-docs' }, [el('h3', null, `Record of service (${s.history.length})`), s.history.length ? ui.table([
             { label: 'Date', value: h => long(h.date) }, { label: 'Entry', value: h => h.text }, { label: 'By', value: h => h.byName }
           ], s.history) : el('p', { class: 'muted' }, 'Nothing recorded yet.')]),
+          window.App.leaveUi ? window.App.leaveUi.forRecord(ctx, s, false) : null,
           docsPanel(s)
         ]);
         ui.modal(`${s.name} · PSN ${s.psn}`, body, { noFooter: true, wide: true, onOpen: (o) => { dialog = o; } });
