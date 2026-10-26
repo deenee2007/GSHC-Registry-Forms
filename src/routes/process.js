@@ -14,11 +14,17 @@
  * their PIN; the signed assignment prints as a small slip with a QR code,
  * and the case appears in that court's Case Register. The court can mark
  * the file received only after the Process Registry dispatches it.
+ *
+ * Reassignment: the court may ask for it, with the reason; the Hon. Chief
+ * Judge moves one case or several, to any court, with their PIN. The case
+ * goes back to "assigned" with a new slip and code; the file goes through
+ * the Process Registry again. The former court's register keeps the case,
+ * marked reassigned. The suit number never changes.
  */
 const express = require('express');
 const multer = require('multer');
 const mongoose = require('mongoose');
-const { Case, CaseDocument, CaseProcess, Unit, User, Notification, DOC_TYPES, receiptKey } = require('../models');
+const { Case, CaseDocument, CaseProcess, DiaryEntry, Unit, User, Notification, DOC_TYPES, receiptKey } = require('../models');
 const processSvc = require('../services/process');
 const fileStore = require('../services/fileStore');
 const store = require('../services/signatureStore');
@@ -46,8 +52,10 @@ const inProcess = (u) => isAdmin(u) || u.unitKeys.includes('process') || u.signe
 const isRegistrar = (u) => isAdmin(u) || u.signerRoles.includes('process_registrar');
 const isCJ = (u) => u.signerRoles.includes('chief_judge');
 const inCourt = (u, key) => !!key && canAccessUnit(u, key) && (can(u, 'view') || u.signerRoles.length > 0);
-const canSee = (u, c) => inProcess(u) || isCJ(u) || inCourt(u, c.assignedUnit);
+// A court the case was reassigned from still sees it, read only.
+const canSee = (u, c) => inProcess(u) || isCJ(u) || inCourt(u, c.assignedUnit) || (c.formerUnits || []).some(f => inCourt(u, f.unitKey));
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
+const IN_COURT = ['assigned', 'dispatched', 'received']; // in a court and not yet disposed of: may be reassigned
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const oid = (id) => { if (!mongoose.isValidObjectId(id)) throw new HttpError(404, 'Case not found.'); return id; };
 
@@ -82,6 +90,9 @@ function serialize(c, units, extra = {}) {
     emailLog: (o.emailLog || []).map(e => ({ stage: e.stage, label: caseEmail.LABELS[e.stage] || e.stage, to: e.to, at: e.at, ok: e.ok })),
     dispatchedAt: o.dispatchedAt, dispatchedByName: o.dispatchedByName,
     receivedAt: o.receivedAt, receivedByName: o.receivedByName, disposal: o.disposal || null,
+    reassignRequest: o.reassignRequest && o.reassignRequest.at ? { reason: o.reassignRequest.reason, note: o.reassignRequest.note || '', byName: o.reassignRequest.byName, at: o.reassignRequest.at } : null,
+    reassignedFrom: court(o.reassignedFrom),
+    formerUnits: (o.formerUnits || []).map(f => ({ court: court(f.unitKey), to: court(f.toUnit), assignedAt: f.assignedAt, leftAt: f.leftAt, reason: f.reason, byName: f.byName })),
     ...extra
   };
 }
@@ -172,7 +183,7 @@ async function cleanCase(body) {
 // ── Settings (read by everyone who works with cases; changed by admins) ──
 router.get('/settings', wrap(async (req, res) => {
   const [s, courts, rot] = await Promise.all([processSvc.getSettings(), processSvc.courts(), processSvc.rotationState()]);
-  res.json({ ...s, remarks: processSvc.REMARKS, docTypes: DOC_TYPES, rotation: rot,
+  res.json({ ...s, remarks: processSvc.REMARKS, reassignReasons: processSvc.REASSIGN_REASONS, docTypes: DOC_TYPES, rotation: rot,
     courts: courts.map(c => ({ key: c.key, name: c.name, courtNo: c.courtNo, roman: processSvc.roman(c.courtNo) })),
     me: { inProcess: inProcess(req.user), registrar: isRegistrar(req.user), chiefJudge: isCJ(req.user) } });
 }));
@@ -187,18 +198,22 @@ router.put('/settings', wrap(async (req, res) => {
 
 // The courts whose register this person keeps: the court registries they are in.
 const myCourts = async (u) => (await Unit.find({ type: 'registry', active: true, key: { $in: u.unitKeys } }, 'key').lean()).map(x => x.key).filter(k => inCourt(u, k));
+// Cases that go through the Process Registry: all but earlier cases, and
+// earlier cases too once reassigned (their file then goes through it).
+const throughProcess = () => ({ $or: [{ earlier: { $ne: true } }, { reassignedFrom: { $type: 'string' } }] });
 // New cases: assigned to one of those courts, the file not yet received.
-const newCasesQuery = (keys) => ({ status: { $in: ['assigned', 'dispatched'] }, assignedUnit: { $in: keys }, earlier: { $ne: true } });
+const newCasesQuery = (keys) => ({ status: { $in: ['assigned', 'dispatched'] }, assignedUnit: { $in: keys }, ...throughProcess() });
 
 // Numbers for the menu badges.
 router.get('/counts', wrap(async (req, res) => {
   const courts = await myCourts(req.user);
-  const [awaiting, toRegister, newCases] = await Promise.all([
+  const [awaiting, requests, toRegister, newCases] = await Promise.all([
     isCJ(req.user) ? Case.countDocuments({ status: 'awaiting_assignment' }) : 0,
+    isCJ(req.user) ? Case.countDocuments({ status: { $in: IN_COURT }, 'reassignRequest.at': { $type: 'date' } }) : 0,
     isRegistrar(req.user) && inProcess(req.user) ? Case.countDocuments({ status: 'submitted' }) : 0,
     courts.length ? Case.countDocuments({ ...newCasesQuery(courts), status: 'dispatched' }) : 0 // files to receive
   ]);
-  res.json({ awaitingAssignment: awaiting, toRegister, newCases });
+  res.json({ awaitingAssignment: awaiting, reassignRequests: requests, toRegister, newCases });
 }));
 
 // New cases for Home: assigned to this person's courts, file not yet received.
@@ -211,17 +226,24 @@ router.get('/new-cases', wrap(async (req, res) => {
 // ── Cases ──
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 router.get('/cases', wrap(async (req, res) => {
-  const q = { earlier: { $ne: true } };
+  // One court's cases (for reassignment) and requests include earlier cases.
+  const unitKey = req.query.unitKey ? String(req.query.unitKey) : '';
+  const requested = req.query.requested === '1';
+  const and = unitKey || requested ? [] : [throughProcess()];
+  const q = {};
   if (req.query.status) q.status = { $in: String(req.query.status).split(',') };
+  if (unitKey) q.assignedUnit = unitKey;
+  if (requested) q['reassignRequest.at'] = { $type: 'date' };
   if (!inProcess(req.user)) {
     if (!isCJ(req.user)) throw new HttpError(403, 'The Process Registry list is for its staff and the Hon. Chief Judge.');
     q.status = { $in: (req.query.status ? String(req.query.status).split(',') : ['awaiting_assignment']).filter(s => ['awaiting_assignment', 'assigned', 'dispatched', 'received', 'disposed'].includes(s)) };
   }
   if (req.query.q) {
     const rx = new RegExp(escapeRegex(String(req.query.q).slice(0, 80)), 'i');
-    q.$or = [{ suitNumber: rx }, { firstParty: rx }, { secondParty: rx }, { nature: rx }, { receiptNumber: rx }, { 'invoice.reference': rx }];
+    and.push({ $or: [{ suitNumber: rx }, { firstParty: rx }, { secondParty: rx }, { nature: rx }, { receiptNumber: rx }, { 'invoice.reference': rx }] });
   }
-  const [list, units] = await Promise.all([Case.find(q).sort({ updatedAt: -1 }).limit(500), unitNames()]);
+  if (and.length) q.$and = and;
+  const [list, units] = await Promise.all([Case.find(q).sort(unitKey ? { assignedAt: 1 } : { updatedAt: -1 }).limit(unitKey ? 3000 : 500), unitNames()]);
   res.json({ cases: list.map(c => serialize(c, units)) });
 }));
 
@@ -474,6 +496,119 @@ router.post('/cases/:id/assign', wrap(async (req, res) => {
   res.json({ case: serialize(c, await unitNames()) });
 }));
 
+// ── Reassignment ──
+// The reason from the list, or the words typed under Other.
+function reasonOf(body) {
+  const pick = String(body.reason || '').trim();
+  const reason = pick === 'Other' ? String(body.other || '').trim() : pick;
+  if (!reason || (pick !== 'Other' && !processSvc.REASSIGN_REASONS.includes(pick))) throw new HttpError(400, 'Choose the reason, or type it under Other.');
+  return reason.slice(0, 200);
+}
+const courtName = (u) => `High Court No. ${processSvc.roman(u && u.courtNo)}`;
+
+// The court (its registry or its judge) asks the Hon. Chief Judge to reassign a case.
+router.post('/cases/:id/request-reassignment', wrap(async (req, res) => {
+  const c = await load(req.params.id, req.user);
+  if (!inCourt(req.user, c.assignedUnit)) throw new HttpError(403, 'Only the court the case is assigned to asks for its reassignment.');
+  if (!IN_COURT.includes(c.status)) throw new HttpError(409, 'Only a case pending in a court can be reassigned.');
+  if (c.reassignRequest && c.reassignRequest.at) throw new HttpError(409, 'A request to reassign this case is already with the Hon. Chief Judge.');
+  const reason = reasonOf(req.body);
+  c.reassignRequest = { reason, note: String(req.body.note || '').trim().slice(0, 500), by: req.user._id, byName: req.user.fullName, at: new Date() };
+  await c.save();
+  const unit = await Unit.findOne({ key: c.assignedUnit });
+  await audit.log(req, 'case_reassignment_requested', { unitKey: c.assignedUnit, details: { caseId: String(c._id), suitNumber: c.suitNumber, reason } });
+  await tell(await User.find({ active: true, signerRoles: 'chief_judge', _id: { $ne: req.user._id } }),
+    `${courtName(unit)} asks that ${c.suitNumber} (${c.firstParty} v. ${c.secondParty}) be reassigned. Reason: ${reason}.`, 'assign:requests', 'Request to reassign a case');
+  res.json({ case: serialize(c, await unitNames()) });
+}));
+
+// The Hon. Chief Judge declines the request; the case stays where it is.
+router.post('/cases/:id/decline-reassignment', wrap(async (req, res) => {
+  const c = await load(req.params.id, req.user);
+  if (!isCJ(req.user)) throw new HttpError(403, 'Only the Hon. Chief Judge acts on a request to reassign.');
+  if (!c.reassignRequest || !c.reassignRequest.at) throw new HttpError(409, 'There is no request to reassign this case.');
+  const comment = String(req.body.comment || '').trim().slice(0, 500);
+  const by = c.reassignRequest.by;
+  c.reassignRequest = null;
+  await c.save();
+  await audit.log(req, 'case_reassignment_declined', { unitKey: c.assignedUnit, details: { caseId: String(c._id), suitNumber: c.suitNumber, comment } });
+  await tell(await User.find({ active: true, $or: [{ _id: by }, { unitKeys: c.assignedUnit }], _id: { $ne: req.user._id } }),
+    `The Hon. Chief Judge did not reassign ${c.suitNumber}; it stays in your court.${comment ? ` Comment: ${comment}` : ''}`, `register:${c.assignedUnit}`, 'Request to reassign declined');
+  res.json({ case: serialize(c, await unitNames()) });
+}));
+
+// The Hon. Chief Judge reassigns one case or several, each to the court
+// they choose, signed with their PIN. Each case gets a new slip and code;
+// the former slip shows as replaced when checked. Dates fixed ahead in the
+// former court's diary are taken out; the new court fixes its own.
+router.post('/reassign', wrap(async (req, res) => {
+  if (!isCJ(req.user)) throw new HttpError(403, 'Only the Hon. Chief Judge reassigns cases.');
+  const seen = new Set();
+  const moves = (Array.isArray(req.body.moves) ? req.body.moves : [])
+    .filter(m => m && mongoose.isValidObjectId(m.id) && !seen.has(String(m.id)) && seen.add(String(m.id))).slice(0, 200);
+  if (!moves.length) throw new HttpError(400, 'Choose the cases to reassign.');
+  const reason = reasonOf(req.body);
+  const courts = Object.fromEntries((await processSvc.courts()).map(u => [u.key, u]));
+  const list = await Case.find({ _id: { $in: moves.map(m => m.id) } });
+  const byId = Object.fromEntries(list.map(c => [String(c._id), c]));
+  for (const m of moves) {
+    const c = byId[String(m.id)];
+    if (!c) throw new HttpError(404, 'Case not found.');
+    if (!IN_COURT.includes(c.status)) throw new HttpError(409, `${c.suitNumber} is not pending in a court, so it cannot be reassigned.`);
+    if (!courts[String(m.unitKey || '')]) throw new HttpError(400, `Choose the court for ${c.suitNumber}.`);
+    if (String(m.unitKey) === c.assignedUnit) throw new HttpError(400, `${c.suitNumber} is already in ${courtName(courts[c.assignedUnit])}. Choose another court.`);
+  }
+  const me = await User.findById(req.user._id);
+  if (!me.signature) throw new HttpError(400, 'Register your signature first (My Signature).');
+  await verifyPin(me, String(req.body.pin || ''));
+  const now = new Date();
+  const done = [];
+  for (const m of moves) {
+    const c = byId[String(m.id)];
+    const from = c.assignedUnit, to = courts[String(m.unitKey)];
+    const requestedBy = c.reassignRequest && c.reassignRequest.by;
+    c.formerUnits.push({ unitKey: from, assignedAt: c.assignedAt, dispatchedAt: c.dispatchedAt, receivedAt: c.receivedAt, leftAt: now,
+      toUnit: to.key, reason, byName: me.fullName, verifyCode: c.verifyCode || undefined, signedByName: c.assignment ? c.assignment.name : undefined });
+    let code = null;
+    for (let i = 0; i < 5 && !code; i++) {
+      const x = verification.newCode();
+      if (!(await Case.exists({ $or: [{ verifyCode: x }, { 'formerUnits.verifyCode': x }] }))) code = x;
+    }
+    if (!code) throw new HttpError(500, 'Could not make a verification code. Please try again.');
+    Object.assign(c, {
+      status: 'assigned', assignedUnit: to.key, assignedAt: now, reassignedFrom: from, reassignRequest: null,
+      assignment: { user: me._id, name: me.fullName, title: me.title, image: me.signature, signedAt: now },
+      verifyCode: code, verifyUrl: `${verification.baseUrl(req)}/verify/${code}`,
+      dispatchedAt: undefined, dispatchedByName: undefined, receivedAt: undefined, receivedByName: undefined
+    });
+    c.contentHash = verification.hashCase(c);
+    await c.save();
+    const dates = await DiaryEntry.deleteMany({ case: c._id, unitKey: from, status: 'fixed', date: { $gte: today() } });
+    await caseEmail.notify(c, 'reassigned', to);
+    await audit.log(req, 'case_reassigned', { unitKey: to.key, details: { caseId: String(c._id), suitNumber: c.suitNumber, from, to: to.key, reason, datesRemoved: dates.deletedCount } });
+    done.push({ c, from, to, requestedBy, datesRemoved: dates.deletedCount });
+  }
+  // One notice per court and one to the Process Registry, however many cases moved.
+  const others = { _id: { $ne: req.user._id } };
+  const nums = (xs) => xs.length === 1 ? xs[0].c.suitNumber : `${xs.length} cases (${xs.map(x => x.c.suitNumber).join(', ')})`;
+  const group = (keyOf) => done.reduce((g, x) => ((g[keyOf(x)] = g[keyOf(x)] || []).push(x), g), {});
+  for (const [key, xs] of Object.entries(group(x => x.from))) {
+    const dated = xs.reduce((n, x) => n + x.datesRemoved, 0);
+    await tell(await User.find({ active: true, $or: [{ unitKeys: key }, { _id: { $in: xs.map(x => x.requestedBy).filter(Boolean) } }], ...others }),
+      `The Hon. Chief Judge reassigned ${nums(xs)} from your court (${reason}): ${xs.map(x => `${x.c.suitNumber} to ${courtName(x.to)}`).join('; ')}. Return ${xs.length === 1 ? 'the file' : 'the files'} to the Process Registry.${dated ? ` ${dated} date(s) fixed ahead were taken out of your diary.` : ''}`,
+      `register:${key}`, xs.length === 1 ? 'Case reassigned from your court' : 'Cases reassigned from your court');
+  }
+  for (const [key, xs] of Object.entries(group(x => x.to.key))) {
+    await tell(await User.find({ active: true, unitKeys: key, ...others }),
+      `${nums(xs)} reassigned to your court by the Hon. Chief Judge. The file will come from the Process Registry.`, `register:${key}`, xs.length === 1 ? 'Case reassigned to your court' : 'Cases reassigned to your court');
+  }
+  await tell(await processPeople(others),
+    `The Hon. Chief Judge reassigned ${nums(done)}. Collect the ${done.length === 1 ? 'file' : 'files'} from the former court, print the new slip${done.length === 1 ? '' : 's'} and dispatch: ${done.map(x => `${x.c.suitNumber} to ${courtName(x.to)}`).join('; ')}.`,
+    'process', done.length === 1 ? 'Case reassigned' : 'Cases reassigned');
+  const units = await unitNames();
+  res.json({ reassigned: done.length, cases: done.map(x => serialize(x.c, units)) });
+}));
+
 // Dispatch: the Process Registry sends the files of assigned cases to their
 // courts (one or several at once). Each court is told its files are on the way.
 router.post('/dispatch', wrap(async (req, res) => {
@@ -503,10 +638,17 @@ router.get('/register', wrap(async (req, res) => {
   const unitKey = String(req.query.unitKey || '');
   if (!inCourt(req.user, unitKey)) throw new HttpError(403, 'You do not have access to this court\'s register.');
   const [list, units] = await Promise.all([
-    Case.find({ assignedUnit: unitKey, status: { $in: ['assigned', 'dispatched', 'received', 'disposed'] } }).sort({ assignedAt: -1 }).limit(2000),
+    Case.find({ $or: [{ assignedUnit: unitKey, status: { $in: ['assigned', 'dispatched', 'received', 'disposed'] } }, { 'formerUnits.unitKey': unitKey }] }).sort({ assignedAt: -1 }).limit(2000),
     unitNames()
   ]);
-  res.json({ cases: list.map(c => serialize(c, units)), remarks: processSvc.REMARKS });
+  // A case reassigned away stays in the register, marked, with no actions.
+  const away = (c) => {
+    if (c.assignedUnit === unitKey) return {};
+    const f = [...c.formerUnits].reverse().find(x => x.unitKey === unitKey);
+    const to = units[f.toUnit];
+    return { reassignedAway: { to: to ? `High Court No. ${processSvc.roman(to.courtNo)}` : f.toUnit, at: f.leftAt, reason: f.reason, assignedAt: f.assignedAt, receivedAt: f.receivedAt } };
+  };
+  res.json({ cases: list.map(c => serialize(c, units, away(c))), remarks: processSvc.REMARKS, reasons: processSvc.REASSIGN_REASONS });
 }));
 
 function assertCourtWork(user, c) {

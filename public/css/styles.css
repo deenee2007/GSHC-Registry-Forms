@@ -719,3 +719,11 @@ button.dash-card:hover { border-color: var(--green-500); }
 /* Anything marked hidden stays hidden, whatever layout its class gives it. */
 [hidden] { display: none !important; }
 .filter-bar select { padding: .45rem .6rem; border: 1px solid var(--line); border-radius: 8px; font: inherit; font-size: .88rem; background: #fff; }
+
+/* Reassignment (Hon. Chief Judge) */
+.reassign-tools { display: grid; gap: .6rem; background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: .8rem 1rem; margin-bottom: .8rem; }
+.reassign-tool { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.reassign-tool select, .data-table td select { padding: .35rem .5rem; border: 1px solid var(--line); border-radius: 8px; font: inherit; font-size: .88rem; background: #fff; max-width: 100%; }
+.reassign-courts { display: flex; flex-wrap: wrap; gap: .2rem .8rem; }
+.reassign-actions { display: flex; justify-content: flex-end; margin: .8rem 0; }
+.row--away td { color: var(--muted, #6b7280); }

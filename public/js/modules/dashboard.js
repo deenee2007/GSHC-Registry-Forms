@@ -302,7 +302,7 @@
             if (n.record) wf.openDocument(n.record);
             else if (n.kind === 'case' && n.link) {
               // A case notice opens its screen: assignment, the Process Registry or a court's register.
-              if (n.link === 'assign') router.loadModule('assign');
+              if (n.link === 'assign' || n.link.startsWith('assign:')) router.loadModule('assign', n.link === 'assign' ? {} : { tab: n.link.slice(7) });
               else if (n.link.startsWith('register:')) { const u = units.find(x => x.key === n.link.slice(9)); if (u) router.loadModule('caseRegister', { unit: u }); }
               else { const u = units.find(x => x.type === 'process'); if (u) router.loadUnit(u); }
             }

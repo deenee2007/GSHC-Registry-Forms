@@ -6,7 +6,9 @@
  * received, date of disposal and remarks. File received when the file
  * arrives; the remark when the case is disposed of; earlier cases added
  * by hand. Which book a case goes in is set per case type (Settings,
- * Process Registry).
+ * Process Registry). A case reassigned to another court stays in the
+ * book, marked in its remarks, with nothing more to do; the court may ask
+ * the Hon. Chief Judge to reassign a case (View, Request Reassignment).
  */
 (function () {
   window.App = window.App || {};
@@ -81,7 +83,7 @@
       }
       // The book's entries in order of assignment, numbered from 1 as on paper.
       function entries() {
-        const time = (c) => new Date(c.assignedAt || c.filedOn || (c.earlier && c.receivedAt) || c.createdAt || 0).getTime();
+        const time = (c) => new Date((c.reassignedAway && c.reassignedAway.assignedAt) || c.assignedAt || c.filedOn || (c.earlier && c.receivedAt) || c.createdAt || 0).getTime();
         return data.cases.filter(c => bookOf(c) === book).sort((a, b) => time(a) - time(b) || String(a.suitNumber).localeCompare(String(b.suitNumber), undefined, { numeric: true }))
           .map((c, i) => ({ ...c, sn: i + 1 }));
       }
@@ -98,6 +100,7 @@
         const btn = (label, cls, fn) => el('button', { class: 'btn btn--small ' + cls, type: 'button', onclick: fn }, label);
         // File received only once the Process Registry has dispatched the file.
         const received = (c) => {
+          if (c.reassignedAway) return P.day(c.reassignedAway.receivedAt);
           if (c.receivedAt) return P.day(c.receivedAt);
           const note = el('span', { class: 'reg-pending' }, c.status === 'dispatched' ? `Dispatched ${P.day(c.dispatchedAt)}` : 'File still at the Process Registry');
           if (!canWork || !['assigned', 'dispatched'].includes(c.status)) return note;
@@ -108,23 +111,29 @@
           if (c.status !== 'dispatched') { b.disabled = true; b.title = 'Waiting for the Process Registry to dispatch the file'; }
           return el('div', { class: 'reg-remark' }, [b, note]);
         };
-        const remarks = (c) => el('div', { class: 'reg-remark' }, [
+        const remarks = (c) => c.reassignedAway ? el('span', null, remarkText(c)) : el('div', { class: 'reg-remark' }, [
           c.disposal ? el('span', null, c.disposal.remark) : null,
+          !c.disposal && c.reassignedFrom ? el('span', { class: 'muted' }, `Reassigned from High Court No. ${c.reassignedFrom.roman}`) : null,
+          !c.disposal && c.reassignRequest ? el('span', { class: 'badge badge--pending' }, 'Reassignment asked for') : null,
           canWork ? btn(c.disposal ? 'Change' : 'Record Remark', 'btn--ghost', () => remark(c)) : null
         ]);
         const COLS = [
           ['S/No', 'c-sn', c => String(c.sn)], ['Name of case', 'c-name', c => P.parties(c)], ['Suit number', 'c-suit', c => el('div', { class: 'reg-remark' }, [P.caseNo(ui, c.suitNumber), btn('View', 'btn--ghost', () => view(c))])],
-          ['Date of filing', 'c-date', c => P.day(c.filedOn)], ['Date of assignment', 'c-date', c => P.day(c.assignedAt)], ['Type of case', 'c-type', c => c.nature || ''],
+          ['Date of filing', 'c-date', c => P.day(c.filedOn)], ['Date of assignment', 'c-date', c => P.day(assignedOn(c))], ['Type of case', 'c-type', c => c.nature || ''],
           ['Date received', 'c-date', received], ['Date of disposal', 'c-date', c => c.disposal ? P.day(c.disposal.date) : ''], ['Remarks', 'c-remark', remarks]
         ];
         list.replaceChildren(el('div', { class: 'table-scroll' }, [el('table', { class: 'data-table register-table' }, [
           el('thead', null, el('tr', null, COLS.map(([label, cls]) => el('th', { class: cls }, label)))),
-          el('tbody', null, rows.map(c => el('tr', null, COLS.map(([label, cls, value]) => {
+          el('tbody', null, rows.map(c => el('tr', c.reassignedAway ? { class: 'row--away' } : null, COLS.map(([label, cls, value]) => {
             const v = value(c);
             return el('td', { class: cls, 'data-label': label }, typeof v === 'string' ? v : [v]);
           }))))
         ])]));
       }
+
+      // A case reassigned away: its first assignment here, and the remark.
+      const assignedOn = (c) => c.reassignedAway ? c.reassignedAway.assignedAt : c.assignedAt;
+      const remarkText = (c) => c.reassignedAway ? `Reassigned to ${c.reassignedAway.to} on ${P.day(c.reassignedAway.at)} (${c.reassignedAway.reason})` : c.disposal ? c.disposal.remark : '';
 
       // The whole case: its filing, assignment, dispatch, receipt and remark.
       async function view(c) {
@@ -132,8 +141,12 @@
         try { full = (await api.get(`/process/cases/${c.id}`)).case; } catch (e) { ui.toast(e.message, 'error'); return; }
         let dialog;
         const close = el('button', { class: 'btn btn--ghost', onclick: () => dialog.close() }, '✕  Close');
-        const formBtn = canWork ? el('button', { class: 'btn btn--ghost', onclick: () => { dialog.close(); ctx.workflow.fillFromCase({ caseId: full.id, unitKey: unit.key }); } }, '📝 Fill a Form') : null;
-        const fixBtn = canWork && window.App.diaryUi ? el('button', { class: 'btn btn--primary', onclick: async () => { dialog.close(); await window.App.diaryUi.fix(ctx, unit, { caseId: full.id }); } }, '📅 Fix a Date') : null;
+        if (c.reassignedAway) full.reassignedAway = c.reassignedAway;
+        const here = !c.reassignedAway;
+        const askBtn = here && ['assigned', 'dispatched', 'received'].includes(full.status) && !full.reassignRequest
+          ? el('button', { class: 'btn btn--ghost', onclick: () => { dialog.close(); askReassign(full); } }, '↪ Request Reassignment') : null;
+        const formBtn = canWork && here ? el('button', { class: 'btn btn--ghost', onclick: () => { dialog.close(); ctx.workflow.fillFromCase({ caseId: full.id, unitKey: unit.key }); } }, '📝 Fill a Form') : null;
+        const fixBtn = canWork && here && window.App.diaryUi ? el('button', { class: 'btn btn--primary', onclick: async () => { dialog.close(); await window.App.diaryUi.fix(ctx, unit, { caseId: full.id }); } }, '📅 Fix a Date') : null;
         const dates = el('div', { class: 'case-docs' });
         api.get(`/diary?unitKey=${encodeURIComponent(unit.key)}&caseId=${full.id}`).then(r => {
           const D = window.App.diaryUi;
@@ -143,8 +156,30 @@
             { label: 'Outcome', value: e => e.status === 'done' ? e.outcome.text : 'To come' }
           ], r.entries) : el('p', { class: 'muted' }, 'No date in the Court Diary yet.'));
         }).catch(() => dates.remove());
-        ui.modal(`Case ${full.suitNumber}`, el('div', null, [el('div', { class: 'doc-preview__actions' }, [close, formBtn, fixBtn]), P.badge(ui, full.status), P.details(ui, full, settings), dates, P.processesPanel(ctx, full, settings, unit), P.documentsPanel(ui, api, full.id)]),
+        ui.modal(`Case ${full.suitNumber}`, el('div', null, [el('div', { class: 'doc-preview__actions' }, [close, formBtn, fixBtn, askBtn]), P.badge(ui, full.status), P.details(ui, full, settings), dates, P.processesPanel(ctx, full, settings, unit), P.documentsPanel(ui, api, full.id)]),
           { noFooter: true, wide: true, onOpen: (o) => { dialog = o; } });
+      }
+
+      // Ask the Hon. Chief Judge to reassign the case, with the reason.
+      function askReassign(c) {
+        const reasons = settings.reassignReasons || [];
+        const pick = el('select', null, [el('option', { value: '' }, 'Choose the reason'), ...reasons.map(r => el('option', { value: r }, r))]);
+        const other = el('input', { type: 'text', maxlength: '200', placeholder: 'Type the reason' });
+        const note = el('textarea', { rows: '3', maxlength: '500', placeholder: 'Optional: anything the Hon. Chief Judge should know' });
+        const otherRow = ui.field('Other reason', other);
+        const sync = () => { otherRow.hidden = pick.value !== 'Other'; };
+        pick.addEventListener('change', sync); sync();
+        ui.modal(`Request Reassignment · ${c.suitNumber}`, el('div', null, [
+          el('p', { class: 'muted' }, 'The request goes to the Hon. Chief Judge, who decides whether to reassign the case and to which court. The case stays here until then.'),
+          ui.field('Reason', pick), otherRow, ui.field('Note', note)
+        ]), {
+          confirmText: 'Send Request',
+          onConfirm: async () => {
+            if (!pick.value || (pick.value === 'Other' && !other.value.trim())) throw new Error('Choose the reason, or type it under Other.');
+            await api.post(`/process/cases/${c.id}/request-reassignment`, { reason: pick.value, other: other.value.trim(), note: note.value.trim() });
+            ui.toast('Request sent to the Hon. Chief Judge.', 'success'); load(); return true;
+          }
+        });
       }
 
       function remark(c) {
@@ -257,7 +292,7 @@
 
       function printRegister() {
         const bookName = BOOKS.find(b => b[0] === book)[1];
-        const rows = shown().map(c => `<tr><td>${c.sn}</td><td>${esc(P.parties(c))}</td><td>${P.caseNoHtml(c.suitNumber)}</td><td>${esc(P.day(c.filedOn))}</td><td>${esc(P.day(c.assignedAt))}</td><td>${esc(c.nature)}</td><td>${esc(P.day(c.receivedAt))}</td><td>${esc(c.disposal ? P.day(c.disposal.date) : '')}</td><td>${esc(c.disposal ? c.disposal.remark : '')}</td></tr>`).join('');
+        const rows = shown().map(c => `<tr><td>${c.sn}</td><td>${esc(P.parties(c))}</td><td>${P.caseNoHtml(c.suitNumber)}</td><td>${esc(P.day(c.filedOn))}</td><td>${esc(P.day(assignedOn(c)))}</td><td>${esc(c.nature)}</td><td>${esc(P.day(c.reassignedAway ? c.reassignedAway.receivedAt : c.receivedAt))}</td><td>${esc(c.disposal ? P.day(c.disposal.date) : '')}</td><td>${esc(remarkText(c))}</td></tr>`).join('');
         const root = document.getElementById('print-root');
         root.innerHTML = `<article class="court-doc report-print register-print">
           <header class="doc-masthead"><img class="doc-emblem" src="/assets/highcourt.png" alt="">

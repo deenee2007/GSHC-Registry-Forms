@@ -281,6 +281,17 @@ New cases are filed, numbered and assigned to a court here.
    Home (**New Cases Assigned**) and as a number beside **📒 Case Register**
    until its file is received. The Chief Judge who assigns a case is not
    sent the court's notice for it, even when they sit in that court.
+6. **Reassignment** (Hon. Chief Judge): a court asks from a case's View
+   (**↪ Request Reassignment**, with the reason); the Chief Judge reassigns
+   or declines under **Requests to Reassign**. The **Reassign** tab moves
+   many cases of a court at once, each to the court chosen, all to one
+   court, or spread across courts in turn, with the reason and the signing
+   PIN. The suit number stays; the case goes back to "assigned" with a new
+   slip and QR code (the old code then reads "Replaced by a reassignment"),
+   and the file goes through the Process Registry again. Dates fixed ahead
+   in the former court's diary are taken out. The former court keeps the
+   case in its register, marked reassigned, read only. The courts, the
+   Process Registry and the parties are told.
 
 **Processes filed later and the fees list.** In a case's View, the court's
 registry records a process filed later (motion on notice, motion ex parte,

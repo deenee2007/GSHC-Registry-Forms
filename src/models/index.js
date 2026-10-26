@@ -235,6 +235,13 @@ const CaseSchema = new Schema({
   verifyUrl:     String,
   contentHash:   String,
 
+  // Reassignment: the court's request (until the Chief Judge acts on it), the
+  // courts the case was in before (their registers keep it, marked
+  // reassigned), and the court the present assignment came from.
+  reassignRequest: { type: { _id: false, reason: String, note: String, by: Schema.Types.ObjectId, byName: String, at: Date }, default: null },
+  formerUnits:   { type: [{ _id: false, unitKey: String, assignedAt: Date, dispatchedAt: Date, receivedAt: Date, leftAt: Date,
+                   toUnit: String, reason: String, byName: String, verifyCode: String, signedByName: String }], default: [] },
+  reassignedFrom: String,
   dispatchedAt:  Date,                                // the Process Registry sent the file to the court
   dispatchedByName: String,
   receivedAt:    Date,
@@ -243,6 +250,8 @@ const CaseSchema = new Schema({
   caseNos:       { type: [String], index: true }      // for the case file
 }, { timestamps: true });
 CaseSchema.index({ suitNumber: 1 }, { unique: true, partialFilterExpression: { suitNumber: { $type: 'string' } } });
+CaseSchema.index({ 'formerUnits.unitKey': 1 });
+CaseSchema.index({ 'formerUnits.verifyCode': 1 });
 // "RC 1001", "rc1001" and "RC-1001" are the same receipt.
 const receiptKey = (n) => String(n || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 CaseSchema.pre('save', function () { this.receiptKey = receiptKey(this.receiptNumber) || undefined; });
