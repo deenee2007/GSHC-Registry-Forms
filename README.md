@@ -282,6 +282,19 @@ New cases are filed, numbered and assigned to a court here.
    until its file is received. The Chief Judge who assigns a case is not
    sent the court's notice for it, even when they sit in that court.
 
+**Processes filed later and the fees list.** In a case's View, the court's
+registry records a process filed later (motion on notice, motion ex parte,
+or other), recorded against the suit number with no number of its own: its
+fees from the fee list, an invoice (the same INV numbering) for the filer to
+pay at revenue, the receipt number and file, and its documents. One receipt
+pays for one filing: a receipt number already on another filing is refused
+(compared without spaces or punctuation), unless a registrar or an
+administrator confirms it, which is audited. The **💰 Fees List** gives
+every payment of a day or period, new filings and later processes, with
+invoice and receipt numbers and totals, to print or download: the Process
+Registry sees its own, each court its own, the Chief Judge and
+administrators all.
+
 **Fill a form from a case.** In the court registries and the Execution
 Unit, **📝 Fill a Form** (Case Register View, Case File, Court Diary) or
 **Choose a case** at the top of a new form fills the form from a

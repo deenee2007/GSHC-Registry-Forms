@@ -209,6 +209,7 @@ const CaseSchema = new Schema({
   fees:          { type: [{ _id: false, item: String, amount: Number, qty: Number }], default: [] },
   feeTotal:      { type: Number, default: 0 },
   receiptNumber: { type: String, trim: true, default: '' },
+  receiptKey:    { type: String, index: true },        // the receipt number written one way, to find it used twice
   receipt:       { type: FileRef, default: null },
   // Email updates on the stage of the case, to the addresses given at filing.
   emails:        { type: { _id: false, firstParty: [String], secondParty: [String], counsel: [String] }, default: () => ({ firstParty: [], secondParty: [], counsel: [] }) },
@@ -242,6 +243,30 @@ const CaseSchema = new Schema({
   caseNos:       { type: [String], index: true }      // for the case file
 }, { timestamps: true });
 CaseSchema.index({ suitNumber: 1 }, { unique: true, partialFilterExpression: { suitNumber: { $type: 'string' } } });
+// "RC 1001", "rc1001" and "RC-1001" are the same receipt.
+const receiptKey = (n) => String(n || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+CaseSchema.pre('save', function () { this.receiptKey = receiptKey(this.receiptNumber) || undefined; });
+
+// A process filed later in a case (a motion, ...), at the court's registry:
+// its fees, the invoice the filer takes to pay at revenue, and the receipt.
+// It is recorded against the suit number; it has no number of its own.
+const CaseProcessSchema = new Schema({
+  case:          { type: Schema.Types.ObjectId, ref: 'Case', required: true, index: true },
+  unitKey:       { type: String, required: true, index: true },   // the court's registry
+  processType:   { type: String, trim: true, required: true },    // Motion on notice, Motion ex parte, ...
+  filedOn:       { type: String, index: true },                   // YYYY-MM-DD
+  fees:          { type: [{ _id: false, item: String, amount: Number, qty: Number }], default: [] },
+  feeTotal:      { type: Number, default: 0 },
+  invoice:       { type: { _id: false, reference: String, issuedAt: Date, issuedByName: String,
+                   fees: [{ _id: false, item: String, amount: Number, qty: Number }], total: Number }, default: null },
+  receiptNumber: { type: String, trim: true, default: '' },
+  receiptKey:    { type: String, index: true },
+  receipt:       { type: FileRef, default: null },
+  createdBy:     { type: Schema.Types.ObjectId, ref: 'User' },
+  createdByName: String,
+  updatedByName: String
+}, { timestamps: true });
+CaseProcessSchema.pre('save', function () { this.receiptKey = receiptKey(this.receiptNumber) || undefined; });
 
 // A scanned document attached to a case (writ, motion, affidavit, exhibit, ...).
 const DOC_TYPES = ['Writ of summons', 'Statement of claim', 'Statement of defence', 'Originating summons', 'Petition', 'Motion',
@@ -253,6 +278,7 @@ const CaseDocumentSchema = new Schema({
   filedOn:       String,                                     // YYYY-MM-DD: when the document was filed in court
   file:          { type: FileRef, required: true },
   unitKey:       String,                                     // where it was uploaded: 'process' or the court
+  process:       { type: Schema.Types.ObjectId, ref: 'CaseProcess' }, // filed with a later process, if so
   uploadedBy:    { type: Schema.Types.ObjectId, ref: 'User' },
   uploadedByName: String
 }, { timestamps: true });
@@ -307,6 +333,8 @@ module.exports = {
   Backup:       mongoose.model('Backup', BackupSchema),
   Case:         mongoose.model('Case', CaseSchema),
   CaseDocument: mongoose.model('CaseDocument', CaseDocumentSchema),
+  CaseProcess:  mongoose.model('CaseProcess', CaseProcessSchema),
+  receiptKey,
   DiaryEntry:   mongoose.model('DiaryEntry', DiaryEntrySchema),
   CASE_STATUSES, DOC_TYPES
 };

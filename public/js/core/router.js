@@ -55,6 +55,7 @@
     }
     if (permissions.isAdmin(user) || (user.signerRoles || []).includes('chief_judge')) {
       _nav.appendChild(navItem('📈  Court Statistics', () => loadModule('statistics'), { 'data-nav': 'statistics' }));
+      _nav.appendChild(navItem('💰  Fees List', () => loadModule('fees'), { 'data-nav': 'fees' }));
     }
 
     if (list.length) group('Units');

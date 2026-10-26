@@ -164,6 +164,15 @@ async function report(log = console.log) {
   }
 }
 
+// Receipt numbers saved before they were checked for use twice: written one
+// way (RC 1001 and rc-1001 alike) so the check finds them.
+async function fillReceiptKeys(log) {
+  const { Case, receiptKey } = require('../models');
+  const list = await Case.find({ receiptNumber: { $nin: ['', null] }, receiptKey: { $exists: false } }, 'receiptNumber').lean();
+  for (const c of list) await Case.updateOne({ _id: c._id }, { $set: { receiptKey: receiptKey(c.receiptNumber) } });
+  if (list.length) log(`Receipts: ${list.length} receipt number(s) indexed for the check against use twice.`);
+}
+
 async function seedAll(log = console.log) {
   await seedUnits();
   await seedFormConfigs();
@@ -171,6 +180,7 @@ async function seedAll(log = console.log) {
   await updateFormConfigs(log);
   await fillCaseNumbers(log);
   await usernamesToEmail(log);
+  await fillReceiptKeys(log);
   await require('./process').undoOfficialFeesOnce(log);
   const created = await seedAdmin(log);
   if (config.adminReset) await resetAdmin({ log });
