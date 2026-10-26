@@ -17,7 +17,7 @@ const storeFactory = require('./backupStore');
 const mail = require('./mail');
 const { Backup, DocumentCopy, User } = require('../models');
 
-const COLLECTIONS = ['units', 'users', 'formconfigs', 'records', 'cases', 'casedocuments', 'diaryentries', 'notifications', 'auditlogs', 'appmeta'];
+const COLLECTIONS = ['units', 'users', 'formconfigs', 'records', 'cases', 'casedocuments', 'caseprocesses', 'diaryentries', 'notifications', 'auditlogs', 'appmeta'];
 const SKIP_META = ['backupLock', 'backupAlert']; // working state, not data
 const DAY = 24 * 60 * 60 * 1000;
 const LOCK_MINUTES = 30;

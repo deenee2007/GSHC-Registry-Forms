@@ -18,7 +18,7 @@
 const express = require('express');
 const multer = require('multer');
 const mongoose = require('mongoose');
-const { Case, CaseDocument, Unit, User, Notification, DOC_TYPES } = require('../models');
+const { Case, CaseDocument, CaseProcess, Unit, User, Notification, DOC_TYPES, receiptKey } = require('../models');
 const processSvc = require('../services/process');
 const fileStore = require('../services/fileStore');
 const store = require('../services/signatureStore');
@@ -99,6 +99,46 @@ async function tell(users, message, link, subject) {
 }
 const processPeople = (filter = {}) => User.find({ active: true, $or: [{ unitKeys: 'process' }, { signerRoles: 'process_registrar' }], ...filter });
 
+// Fee lines from the schedule (its amounts, not the browser's) or typed in
+// (Other), and their total.
+function computeFees(lines, s) {
+  if (!Array.isArray(lines)) throw new HttpError(400, 'Invalid fees.');
+  const fees = lines.slice(0, 50).map(f => {
+    const qty = Math.max(1, Math.min(1000, parseInt(f.qty, 10) || 1));
+    const listed = s.fees.find(x => x.item === f.item);
+    const amount = listed ? listed.amount : Number(f.amount);
+    if (!String(f.item || '').trim()) throw new HttpError(400, 'Every fee line needs a description.');
+    if (!(amount >= 0)) throw new HttpError(400, `Enter the amount for ${f.item}.`);
+    return { item: String(f.item).trim().slice(0, 120), amount, qty };
+  });
+  return { fees, feeTotal: Math.round(fees.reduce((n, f) => n + f.amount * f.qty, 0) * 100) / 100 };
+}
+
+// One receipt pays for one filing. A receipt number already on another
+// filing (a new case, or a process filed later) is refused; a registrar or
+// an administrator may confirm a genuine exception, which is audited.
+const mayConfirmReceipt = (u) => isAdmin(u) || u.signerRoles.some(r => ['process_registrar', 'registrar', 'chief_registrar'].includes(r));
+async function checkReceipt(req, number, own = {}) {
+  const key = receiptKey(number);
+  if (!key) return;
+  const [c, p] = await Promise.all([
+    Case.findOne({ receiptKey: key, ...(own.caseId ? { _id: { $ne: own.caseId } } : {}) }, 'suitNumber firstParty secondParty filedOn').lean(),
+    CaseProcess.findOne({ receiptKey: key, ...(own.processId ? { _id: { $ne: own.processId } } : {}) }, 'case processType filedOn').lean()
+  ]);
+  if (!c && !p) return;
+  const on = (d) => d ? new Date(d + 'T12:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : 'an earlier day';
+  let where;
+  if (c) where = `${c.suitNumber || `the filing ${[c.firstParty, c.secondParty].filter(Boolean).join(' v. ')} (not yet numbered)`}, filed on ${on(c.filedOn)}`;
+  else { const pc = await Case.findById(p.case, 'suitNumber').lean(); where = `${p.processType} in ${pc ? pc.suitNumber : 'another case'}, filed on ${on(p.filedOn)}`; }
+  if (req.body && req.body.confirmDuplicateReceipt && mayConfirmReceipt(req.user)) {
+    await audit.log(req, 'receipt_used_twice_confirmed', { details: { receiptNumber: number, alsoOn: where } });
+    return;
+  }
+  throw Object.assign(new HttpError(409, `Receipt number ${number} is already on ${where}. One receipt pays for one filing.` +
+    (mayConfirmReceipt(req.user) ? ' If it truly covers both, confirm to go ahead.' : ' If it truly covers both, ask the registrar or an administrator to confirm it.')),
+  { extra: { duplicateReceipt: true, canConfirm: mayConfirmReceipt(req.user) } });
+}
+
 // Check and tidy what the filer typed; the fee total is worked out here.
 async function cleanCase(body) {
   const s = await processSvc.getSettings();
@@ -118,18 +158,7 @@ async function cleanCase(body) {
   if (body.efcc !== undefined) out.efcc = !!body.efcc;
   if (body.official !== undefined) out.official = !!body.official;
   if (out.efcc) out.official = true; // EFCC matters bear no filing fee
-  if (body.fees !== undefined) {
-    if (!Array.isArray(body.fees)) throw new HttpError(400, 'Invalid fees.');
-    out.fees = body.fees.slice(0, 50).map(f => {
-      const qty = Math.max(1, Math.min(1000, parseInt(f.qty, 10) || 1));
-      const listed = s.fees.find(x => x.item === f.item);
-      const amount = listed ? listed.amount : Number(f.amount);
-      if (!String(f.item || '').trim()) throw new HttpError(400, 'Every fee line needs a description.');
-      if (!(amount >= 0)) throw new HttpError(400, `Enter the amount for ${f.item}.`);
-      return { item: String(f.item).trim().slice(0, 120), amount, qty };
-    });
-    out.feeTotal = Math.round(out.fees.reduce((n, f) => n + f.amount * f.qty, 0) * 100) / 100;
-  }
+  if (body.fees !== undefined) Object.assign(out, computeFees(body.fees, s));
   if (out.official) { out.fees = []; out.feeTotal = 0; }
   if (body.emails !== undefined) {
     const e = body.emails || {};
@@ -209,6 +238,7 @@ router.post('/cases', wrap(async (req, res) => {
   const fields = await cleanCase({ filedOn: '', fees: [], ...req.body });
   if (!fields.caseType) throw new HttpError(400, 'Choose the case type.');
   if (!fields.firstParty || !fields.secondParty) throw new HttpError(400, 'Enter both parties.');
+  if (!fields.official) await checkReceipt(req, fields.receiptNumber);
   const c = await Case.create({ ...fields, status: 'draft', createdBy: req.user._id, createdByName: req.user.fullName });
   await audit.log(req, 'case_filed', { unitKey: 'process', details: { caseId: String(c._id) } });
   res.status(201).json({ case: serialize(c, await unitNames()) });
@@ -224,7 +254,9 @@ function assertEdit(user, c) {
 router.put('/cases/:id', wrap(async (req, res) => {
   const c = await load(req.params.id, req.user);
   assertEdit(req.user, c);
-  Object.assign(c, await cleanCase(req.body));
+  const changes = await cleanCase(req.body);
+  if (changes.receiptNumber !== undefined && receiptKey(changes.receiptNumber) !== receiptKey(c.receiptNumber)) await checkReceipt(req, changes.receiptNumber, { caseId: c._id });
+  Object.assign(c, changes);
   if (!c.firstParty || !c.secondParty) throw new HttpError(400, 'Enter both parties.');
   await c.save();
   await audit.log(req, 'case_updated', { unitKey: 'process', details: { caseId: String(c._id) } });
@@ -299,7 +331,8 @@ const canDeleteDoc = (u, d) => isAdmin(u) || (String(d.uploadedBy) === String(u.
 const serializeDoc = (d, u) => ({
   id: String(d._id), title: d.title, docType: d.docType, filedOn: d.filedOn || '',
   name: d.file.name, contentType: d.file.contentType, bytes: d.file.bytes,
-  uploadedByName: d.uploadedByName, uploadedAt: d.createdAt, url: `/api/process/documents/${d._id}/file`, canDelete: canDeleteDoc(u, d)
+  uploadedByName: d.uploadedByName, uploadedAt: d.createdAt, url: `/api/process/documents/${d._id}/file`, canDelete: canDeleteDoc(u, d),
+  processId: d.process ? String(d.process) : null
 });
 async function loadDoc(id, user) {
   if (!mongoose.isValidObjectId(id)) throw new HttpError(404, 'Document not found.');
@@ -327,7 +360,9 @@ router.post('/cases/:id/documents', docUpload, wrap(async (req, res) => {
   try { file = await fileStore.save(req.file.buffer, req.file.originalname, 'documents'); }
   catch (e) { throw Object.assign(new HttpError(e.status || 500, e.message), { expose: true }); }
   const unitKey = inCourt(req.user, c.assignedUnit) && !req.user.unitKeys.includes('process') ? c.assignedUnit : 'process';
-  const d = await CaseDocument.create({ case: c._id, title, docType, filedOn, file, unitKey, uploadedBy: req.user._id, uploadedByName: req.user.fullName });
+  // Filed with a later process: it is linked to that process.
+  const processId = mongoose.isValidObjectId(req.body.process || '') && await CaseProcess.exists({ _id: req.body.process, case: c._id }) ? req.body.process : undefined;
+  const d = await CaseDocument.create({ case: c._id, title, docType, filedOn, file, unitKey, process: processId, uploadedBy: req.user._id, uploadedByName: req.user.fullName });
   await audit.log(req, 'case_document_added', { unitKey, details: { caseId: String(c._id), suitNumber: c.suitNumber, documentId: String(d._id), title, bytes: file.bytes } });
   res.status(201).json({ document: serializeDoc(d, req.user) });
 }));
@@ -548,6 +583,153 @@ router.post('/register/import', upload.single('file'), wrap(async (req, res) => 
   const done = await registerImport.commit(result, req.user);
   await audit.log(req, 'case_register_imported', { unitKey, details: { file: req.file.originalname, added: done.added, dates: done.dates, skipped: result.skipped + done.failed.length } });
   res.json({ added: done.added, dates: done.dates, skipped: result.skipped, failed: done.failed, rows });
+}));
+
+// ── Processes filed later in a case (motions, ...), at the court's registry ──
+// The court's staff record the process, its fees and the invoice the filer
+// takes to pay at revenue, then the receipt. No number of its own: it is
+// recorded against the suit number.
+const PROCESS_TYPES = ['Motion on notice', 'Motion ex parte'];
+const serializeProcess = (p, s) => ({
+  id: String(p._id), caseId: String(p.case), unitKey: p.unitKey, processType: p.processType, filedOn: p.filedOn,
+  fees: p.fees || [], feeTotal: p.feeTotal || 0, receiptNumber: p.receiptNumber,
+  invoice: p.invoice && p.invoice.reference ? { reference: p.invoice.reference, issuedAt: p.invoice.issuedAt, issuedByName: p.invoice.issuedByName, fees: p.invoice.fees || [], total: p.invoice.total || 0 } : null,
+  receipt: p.receipt ? { name: p.receipt.name, contentType: p.receipt.contentType, uploadedAt: p.receipt.uploadedAt } : null,
+  paid: !!p.receiptNumber && (!!p.receipt || !s.receiptRequired),
+  createdByName: p.createdByName, createdAt: p.createdAt
+});
+async function loadProcess(id, user) {
+  if (!mongoose.isValidObjectId(id)) throw new HttpError(404, 'Process not found.');
+  const p = await CaseProcess.findById(id);
+  if (!p) throw new HttpError(404, 'Process not found.');
+  const c = await load(p.case, user);
+  return { p, c };
+}
+async function cleanProcess(body, s) {
+  const out = {};
+  if (body.processType !== undefined) {
+    let t = String(body.processType || '').trim();
+    if (t === 'Others') t = String(body.other || '').trim();
+    if (!t) throw new HttpError(400, 'Choose the process, or type it under Others.');
+    out.processType = t.slice(0, 120);
+  }
+  if (body.filedOn !== undefined) {
+    if (body.filedOn && !DAY.test(body.filedOn)) throw new HttpError(400, 'Enter the date of filing.');
+    out.filedOn = body.filedOn || today();
+  }
+  if (body.fees !== undefined) Object.assign(out, computeFees(body.fees, s));
+  if (body.receiptNumber !== undefined) out.receiptNumber = String(body.receiptNumber || '').trim().slice(0, 300);
+  return out;
+}
+
+router.get('/cases/:id/processes', wrap(async (req, res) => {
+  const c = await load(req.params.id, req.user);
+  const s = await processSvc.getSettings();
+  const list = await CaseProcess.find({ case: c._id }).sort({ filedOn: 1, createdAt: 1 });
+  res.json({ processes: list.map(p => serializeProcess(p, s)), processTypes: PROCESS_TYPES,
+    canFile: !!c.assignedUnit && inCourt(req.user, c.assignedUnit) && (can(req.user, 'edit') || can(req.user, 'create')) });
+}));
+
+router.post('/cases/:id/processes', wrap(async (req, res) => {
+  const c = await load(req.params.id, req.user);
+  assertCourtWork(req.user, c);
+  if (!['assigned', 'dispatched', 'received', 'disposed'].includes(c.status)) throw new HttpError(409, 'This case is not in a court register.');
+  const s = await processSvc.getSettings();
+  const fields = await cleanProcess({ filedOn: '', fees: [], ...req.body }, s);
+  if (!fields.processType) throw new HttpError(400, 'Choose the process, or type it under Others.');
+  await checkReceipt(req, fields.receiptNumber);
+  const p = await CaseProcess.create({ ...fields, case: c._id, unitKey: c.assignedUnit, createdBy: req.user._id, createdByName: req.user.fullName, updatedByName: req.user.fullName });
+  await audit.log(req, 'case_process_filed', { unitKey: c.assignedUnit, details: { caseId: String(c._id), suitNumber: c.suitNumber, processId: String(p._id), processType: p.processType, feeTotal: p.feeTotal } });
+  res.status(201).json({ process: serializeProcess(p, s) });
+}));
+
+router.put('/processes/:id', wrap(async (req, res) => {
+  const { p, c } = await loadProcess(req.params.id, req.user);
+  assertCourtWork(req.user, c);
+  const s = await processSvc.getSettings();
+  const changes = await cleanProcess(req.body || {}, s);
+  if (changes.receiptNumber !== undefined && receiptKey(changes.receiptNumber) !== receiptKey(p.receiptNumber)) await checkReceipt(req, changes.receiptNumber, { processId: p._id });
+  Object.assign(p, changes, { updatedByName: req.user.fullName });
+  await p.save();
+  await audit.log(req, 'case_process_updated', { unitKey: p.unitKey, details: { caseId: String(c._id), suitNumber: c.suitNumber, processId: String(p._id) } });
+  res.json({ process: serializeProcess(p, s) });
+}));
+
+router.delete('/processes/:id', wrap(async (req, res) => {
+  const { p, c } = await loadProcess(req.params.id, req.user);
+  assertCourtWork(req.user, c);
+  if (p.receiptNumber) throw new HttpError(409, 'A process with its receipt recorded cannot be deleted.');
+  await CaseProcess.deleteOne({ _id: p._id });
+  await audit.log(req, 'case_process_deleted', { unitKey: p.unitKey, details: { caseId: String(c._id), suitNumber: c.suitNumber, processType: p.processType } });
+  res.json({ deleted: true });
+}));
+
+router.post('/processes/:id/invoice', wrap(async (req, res) => {
+  const { p, c } = await loadProcess(req.params.id, req.user);
+  assertCourtWork(req.user, c);
+  if (!(p.feeTotal > 0)) throw new HttpError(400, 'Enter the fees first.');
+  const reference = (p.invoice && p.invoice.reference) || await processSvc.nextInvoice();
+  p.invoice = { reference, issuedAt: new Date(), issuedByName: req.user.fullName, fees: p.fees.map(f => ({ item: f.item, amount: f.amount, qty: f.qty })), total: p.feeTotal };
+  await p.save();
+  await audit.log(req, 'case_process_invoice_issued', { unitKey: p.unitKey, details: { caseId: String(c._id), suitNumber: c.suitNumber, reference, total: p.feeTotal } });
+  res.json({ process: serializeProcess(p, await processSvc.getSettings()) });
+}));
+
+router.post('/processes/:id/receipt', upload.single('file'), wrap(async (req, res) => {
+  const { p, c } = await loadProcess(req.params.id, req.user);
+  assertCourtWork(req.user, c);
+  if (!req.file) throw new HttpError(400, 'Choose the receipt file.');
+  try { p.receipt = await fileStore.save(req.file.buffer, req.file.originalname); }
+  catch (e) { throw Object.assign(new HttpError(e.status || 500, e.message), { expose: true }); }
+  await p.save();
+  await audit.log(req, 'case_process_receipt_uploaded', { unitKey: p.unitKey, details: { caseId: String(c._id), processId: String(p._id), bytes: req.file.size } });
+  res.json({ process: serializeProcess(p, await processSvc.getSettings()) });
+}));
+
+router.get('/processes/:id/receipt', wrap(async (req, res) => {
+  const { p } = await loadProcess(req.params.id, req.user);
+  if (!p.receipt) throw new HttpError(404, 'No receipt was uploaded.');
+  const f = await fileStore.read(p.receipt);
+  if (!f) throw new HttpError(404, 'The receipt file is missing.');
+  res.set('Content-Type', f.contentType).set('Content-Disposition', `inline; filename="${(p.receipt.name || 'receipt').replace(/"/g, '')}"`).set('Cache-Control', 'private, no-store');
+  res.send(f.buffer);
+}));
+
+// ── The fees list: every payment of a day or period, for reconciling with
+// revenue. New filings (Process Registry) and processes filed later (the
+// courts). The Process Registry sees its own, each court its own; the
+// Chief Judge and administrators see all, or one unit.
+router.get('/fees-list', wrap(async (req, res) => {
+  const from = DAY.test(req.query.from || '') ? req.query.from : today();
+  const to = DAY.test(req.query.to || '') ? req.query.to : from;
+  if (from > to) throw new HttpError(400, 'The start of the period must come before its end.');
+  const all = isAdmin(req.user) || isCJ(req.user);
+  const mine = new Set([...(inProcess(req.user) ? ['process'] : []), ...(await myCourts(req.user))]);
+  if (!all && !mine.size) throw new HttpError(403, 'The fees list is for the Process Registry, the court registries, the Chief Judge and administrators.');
+  let keys = all ? null : [...mine];
+  if (req.query.unitKey) {
+    const k = String(req.query.unitKey);
+    if (!all && !mine.has(k)) throw new HttpError(403, 'You do not have access to this unit\'s fees.');
+    keys = [k];
+  }
+  const units = await unitNames();
+  const nameOf = (k) => k === 'process' ? 'Process Registry' : (units[k] ? units[k].name : k);
+  const rows = [];
+  if (!keys || keys.includes('process')) {
+    const cases = await Case.find({ earlier: { $ne: true }, official: { $ne: true }, feeTotal: { $gt: 0 }, filedOn: { $gte: from, $lte: to } }).lean();
+    cases.forEach(c => rows.push({ date: c.filedOn, unitKey: 'process', unitName: 'Process Registry', caseId: String(c._id), suitNumber: c.suitNumber || '',
+      parties: [c.firstParty, c.secondParty].filter(Boolean).join(' v. '), what: c.process ? `New case: ${c.process}` : 'New case',
+      invoice: c.invoice ? c.invoice.reference : '', receiptNumber: c.receiptNumber || '', fees: c.fees || [], amount: c.feeTotal || 0 }));
+  }
+  const pq = { filedOn: { $gte: from, $lte: to }, ...(keys ? { unitKey: { $in: keys.filter(k => k !== 'process') } } : {}) };
+  const procs = await CaseProcess.find(pq).lean();
+  const casesById = Object.fromEntries((await Case.find({ _id: { $in: procs.map(p => p.case) } }, 'suitNumber firstParty secondParty').lean()).map(c => [String(c._id), c]));
+  procs.forEach(p => { const c = casesById[String(p.case)] || {}; rows.push({ date: p.filedOn, unitKey: p.unitKey, unitName: nameOf(p.unitKey), caseId: String(p.case), suitNumber: c.suitNumber || '',
+    parties: [c.firstParty, c.secondParty].filter(Boolean).join(' v. '), what: p.processType, invoice: p.invoice ? p.invoice.reference : '', receiptNumber: p.receiptNumber || '', fees: p.fees || [], amount: p.feeTotal || 0 }); });
+  rows.sort((a, b) => a.date.localeCompare(b.date) || a.unitName.localeCompare(b.unitName, undefined, { numeric: true }) || String(a.suitNumber).localeCompare(String(b.suitNumber), undefined, { numeric: true }));
+  const total = Math.round(rows.reduce((n, r) => n + r.amount, 0) * 100) / 100;
+  const units_ = all ? [{ key: 'process', name: 'Process Registry' }, ...(await processSvc.courts()).map(u => ({ key: u.key, name: u.name }))] : [...mine].map(k => ({ key: k, name: nameOf(k) }));
+  res.json({ from, to, rows, total, withoutReceipt: rows.filter(r => !r.receiptNumber).length, units: units_ });
 }));
 
 // ── Summary for the Process Registry ──

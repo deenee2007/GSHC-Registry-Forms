@@ -46,8 +46,9 @@ async function makeUser(spec) {
   c.id = r.body.user.id;
   return c;
 }
+let receiptNo = 1000; // each filing its own receipt: one receipt pays for one filing
 const filing = (over) => ({ caseType: 'civil', firstParty: 'Musa Bello', secondParty: 'Ali Sani', nature: 'Land', process: 'Writ of summons',
-  counsel: 'A. B. Yusuf Esq.', filedOn: '2026-10-21', fees: [{ item: 'Writ of summons', qty: 1 }], receiptNumber: 'RC 1001', ...over });
+  counsel: 'A. B. Yusuf Esq.', filedOn: '2026-10-21', fees: [{ item: 'Writ of summons', qty: 1 }], receiptNumber: `RC ${++receiptNo}`, ...over });
 async function uploadReceipt(id, buf = PDF, name = 'receipt.pdf') {
   const form = new FormData();
   form.append('file', new Blob([buf]), name);
@@ -684,4 +685,59 @@ test('withdrawing the official fee schedule: an edited list is kept; it runs onc
   assert.equal(await processSvc.undoOfficialFeesOnce(() => {}), 'kept', 'a list that is not exactly the official one stays');
   assert.deepEqual((await processSvc.getSettings()).fees, now);
   assert.equal(await processSvc.undoOfficialFeesOnce(() => {}), null, 'only once');
+});
+
+test('one receipt pays for one filing: a receipt number already used is refused, unless a registrar confirms', async () => {
+  const a = await u.clerk.post('/api/process/cases', filing({ firstParty: 'Receipt One', receiptNumber: 'GSR 5501' }));
+  assert.equal(a.status, 201);
+  const b = await u.clerk.post('/api/process/cases', filing({ firstParty: 'Receipt Two', receiptNumber: 'gsr-5501' }));
+  assert.equal(b.status, 409, 'the same receipt however it is written');
+  assert.equal(b.body.duplicateReceipt, true);
+  assert.equal(b.body.canConfirm, false, 'a clerk cannot pass it');
+  assert.match(b.body.error, /already on the filing Receipt One v\. Ali Sani/);
+  assert.equal((await u.clerk.post('/api/process/cases', filing({ firstParty: 'Receipt Two', receiptNumber: 'gsr-5501', confirmDuplicateReceipt: true }))).status, 409);
+  const ok = await u.registrar.post('/api/process/cases', filing({ firstParty: 'Receipt Two', receiptNumber: 'gsr-5501', confirmDuplicateReceipt: true }));
+  assert.equal(ok.status, 201, 'the Process Registrar may confirm a genuine exception');
+  assert.equal((await u.clerk.put(`/api/process/cases/${a.body.case.id}`, { receiptNumber: 'GSR 5501' })).status, 200, 'saving a filing with its own receipt is fine');
+  assert.equal((await u.clerk.post('/api/process/cases', filing({ official: true, receiptNumber: 'GSR 5501' }))).status, 201, 'official cases have no receipt to check');
+});
+
+test('processes filed later at the court registry: fees, invoice, receipt (checked), documents; the daily fees list', async () => {
+  const c = await fileAndRegister({ firstParty: 'Later Process', receiptNumber: 'GSR 7001' });
+  await u.cj.post(`/api/process/cases/${c.id}/assign`, { unitKey: 'hc3', pin: '1357' });
+  assert.equal((await u.clerk.post(`/api/process/cases/${c.id}/processes`, { processType: 'Motion on notice' })).status, 403, 'the court files it, not the Process Registry');
+  const r = await u.court3.post(`/api/process/cases/${c.id}/processes`, { processType: 'Motion on notice', filedOn: '2026-10-21', fees: [{ item: 'Motion', qty: 1 }, { item: 'Affidavit', amount: 500, qty: 2 }] });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  const p = r.body.process;
+  assert.equal(p.feeTotal, 1500 + 1000, 'the schedule\'s amount, and Other with its amount');
+  assert.equal(p.paid, false);
+  const inv = await u.court3.post(`/api/process/processes/${p.id}/invoice`);
+  assert.match(inv.body.process.invoice.reference, /^INV\/\d{4}\/\d{4}$/);
+  assert.equal((await u.court3.put(`/api/process/processes/${p.id}`, { receiptNumber: 'GSR 7001' })).status, 409, 'the case\'s own filing receipt cannot pay for the motion too');
+  await u.court3.put(`/api/process/processes/${p.id}`, { receiptNumber: 'GSR 7002' });
+  const form = new FormData(); form.append('file', new Blob([PDF]), 'receipt.pdf');
+  const up = await u.court3.upload(`/api/process/processes/${p.id}/receipt`, form);
+  assert.equal(up.body.process.paid, true);
+  const doc = new FormData(); doc.append('docType', 'Motion'); doc.append('process', p.id); doc.append('file', new Blob([PDF]), 'motion.pdf');
+  const d = await u.court3.upload(`/api/process/cases/${c.id}/documents`, doc);
+  assert.equal(d.body.document.processId, p.id, 'its documents are linked to it');
+  const list = await u.court3.get(`/api/process/cases/${c.id}/processes`);
+  assert.equal(list.body.processes.length, 1);
+  assert.equal(list.body.canFile, true);
+  assert.equal((await u.court3.del(`/api/process/processes/${p.id}`)).status, 409, 'not once its receipt is recorded');
+  const e = await u.court3.post(`/api/process/cases/${c.id}/processes`, { processType: 'Others', other: 'Notice of preliminary objection', fees: [] });
+  assert.equal(e.body.process.processType, 'Notice of preliminary objection');
+  assert.equal((await u.court3.del(`/api/process/processes/${e.body.process.id}`)).status, 200);
+
+  const day = await u.court3.get('/api/process/fees-list?from=2026-10-21');
+  assert.equal(day.status, 200, JSON.stringify(day.body));
+  assert.ok(day.body.rows.every(x => x.unitKey === 'hc3'), 'a court sees its own');
+  assert.ok(day.body.rows.some(x => x.what === 'Motion on notice' && x.receiptNumber === 'GSR 7002' && x.amount === 2500 && x.suitNumber === c.suitNumber));
+  const pr = await u.clerk.get('/api/process/fees-list?from=2026-10-21');
+  assert.ok(pr.body.rows.length && pr.body.rows.every(x => x.unitKey === 'process'), 'the Process Registry sees its new filings');
+  assert.ok(pr.body.rows.some(x => x.receiptNumber === 'GSR 7001'));
+  const cj = await u.cj.get('/api/process/fees-list?from=2026-10-21');
+  assert.ok(cj.body.rows.some(x => x.unitKey === 'process') && cj.body.rows.some(x => x.unitKey === 'hc3'), 'the Chief Judge sees all');
+  assert.equal(cj.body.total, Math.round(cj.body.rows.reduce((n, x) => n + x.amount, 0) * 100) / 100);
+  assert.equal((await u.court3.get('/api/process/fees-list?from=2026-10-21&unitKey=process')).status, 403);
 });

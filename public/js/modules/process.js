@@ -117,22 +117,24 @@
 
   // The invoice the filer takes to pay: the fees chosen, the total and a
   // reference to quote when they bring the receipt back.
-  function printInvoice(c, settings) {
+  // office: who issues it (the Process Registry, or a court registry for a later process).
+  function printInvoice(c, settings, office) {
     const inv = c.invoice;
+    const at = office || 'Process Registry';
     const rows = inv.fees.map((f, i) => `<tr><td>${i + 1}</td><td>${esc(f.item)}</td><td class="num">${f.qty}</td><td class="num">${esc(naira(f.amount))}</td><td class="num">${esc(naira(f.amount * f.qty))}</td></tr>`).join('');
     const kv = (k, v) => v ? `<div class="doc-kv"><strong>${esc(k)}:</strong> ${esc(v)}</div>` : '';
     return printPage(`<article class="court-doc invoice-print">
       <header class="doc-masthead"><img class="doc-emblem" src="/assets/highcourt.png" alt="">
-        <div class="doc-titleblock"><div class="doc-line1">THE JUDICIARY</div><div class="doc-line2">GOMBE STATE HIGH COURT OF JUSTICE</div><div class="doc-line3">PROCESS REGISTRY</div></div>
+        <div class="doc-titleblock"><div class="doc-line1">THE JUDICIARY</div><div class="doc-line2">GOMBE STATE HIGH COURT OF JUSTICE</div><div class="doc-line3">${esc(at.toUpperCase())}</div></div>
         <img class="doc-emblem" src="/assets/coat.png" alt=""></header><div class="doc-rule"></div>
       <h2 class="invoice-title">INVOICE</h2>
       <div class="invoice-meta"><div><strong>Reference:</strong> ${esc(inv.reference)}</div><div><strong>Date:</strong> ${esc(day(inv.issuedAt))}</div></div>
-      ${kv('Name of case', parties(c))}${kv('Case type', typeLabel(settings, c.caseType))}${kv('Nature of case', c.nature)}${kv('Originating process', c.process)}${kv('Counsel', c.counsel)}
+      ${kv('Suit number', c.suitNumber)}${kv('Name of case', parties(c))}${kv('Case type', typeLabel(settings, c.caseType))}${kv('Nature of case', c.nature)}${kv(c.laterProcess ? 'Process' : 'Originating process', c.laterProcess || c.process)}${kv('Counsel', c.counsel)}
       <table class="doc-table invoice-table"><thead><tr><th>S/No</th><th>Item</th><th class="num">Qty</th><th class="num">Amount</th><th class="num">Total</th></tr></thead>
         <tbody>${rows}</tbody><tfoot><tr><th colspan="4">TOTAL</th><th class="num">${esc(naira(inv.total))}</th></tr></tfoot></table>
       <div class="doc-kv"><strong>Amount in words:</strong> ${esc(amountWords(inv.total))}</div>
       ${settings.paymentNote ? `<div class="invoice-pay"><strong>Payment details</strong><div>${esc(settings.paymentNote)}</div></div>` : ''}
-      <p class="invoice-note">After payment, bring the receipt to the Process Registry and quote the reference ${esc(inv.reference)}.</p>
+      <p class="invoice-note">After payment, bring the receipt to the ${esc(at)} and quote the reference ${esc(inv.reference)}.</p>
       <div class="doc-kv">Issued by: ${esc(inv.issuedByName)}</div>
       <footer class="doc-footer"><span>Printed ${esc(day(new Date()))}</span><span>Powered by the Directorate of ICT, Gombe State High Court of Justice</span></footer>
     </article>`, '@page { size: A5; margin: 10mm; }');
@@ -234,14 +236,16 @@
 
   // ── Scanned documents of a case: the list, Open, Delete, and + Add Document ──
   const size = (n) => n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`;
-  function documentsPanel(ui, api, caseId) {
+  // processId: the documents of one process filed later (others of the case are not listed).
+  function documentsPanel(ui, api, caseId, processId, processType) {
     const el = ui.el;
     const box = el('div', { class: 'case-docs' }, el('p', { class: 'muted' }, 'Loading documents…'));
     async function load() {
       let r;
       try { r = await api.get(`/process/cases/${caseId}/documents`); } catch (e) { box.replaceChildren(el('p', { class: 'muted' }, e.offline ? 'Documents need the internet.' : e.message)); return; }
+      if (processId) r.documents = r.documents.filter(d => d.processId === processId);
       box.replaceChildren(
-        el('div', { class: 'case-docs__head' }, [el('h3', null, `Documents (${r.documents.length})`),
+        el('div', { class: 'case-docs__head' }, [el('h3', null, `${processId ? 'Documents of this process' : 'Documents'} (${r.documents.length})`),
           r.canUpload ? el('button', { class: 'btn btn--small btn--primary', type: 'button', onclick: () => add(r.docTypes) }, '+ Add Document') : null]),
         r.documents.length ? ui.table([
           { label: 'Date filed', value: d => day(d.filedOn) },
@@ -261,7 +265,7 @@
     function add(types) {
       const type = el('select', null, [...types, 'Others'].map(t => el('option', { value: t }, t === 'Others' ? 'Others (type it)' : t)));
       const other = el('input', { type: 'text', placeholder: 'Type of document' });
-      const title = el('input', { type: 'text', placeholder: 'e.g. Motion on notice for interlocutory injunction (optional)' });
+      const title = el('input', { type: 'text', placeholder: 'e.g. Motion on notice for interlocutory injunction (optional)', value: processType || '' });
       const filed = el('input', { type: 'date', value: new Date().toISOString().slice(0, 10) });
       const files = el('input', { type: 'file', accept: 'application/pdf,image/png,image/jpeg', multiple: 'multiple' });
       const otherRow = ui.field('Type of document', other);
@@ -280,6 +284,7 @@
           for (let i = 0; i < list.length; i++) {
             const form = new FormData();
             form.append('docType', type.value); form.append('other', other.value); form.append('filedOn', filed.value);
+            if (processId) form.append('process', processId);
             const t = title.value.trim() || (type.value === 'Others' ? other.value.trim() : type.value);
             form.append('title', list.length > 1 ? `${t} (part ${i + 1} of ${list.length})` : t);
             form.append('file', list[i]);
@@ -296,7 +301,143 @@
     return box;
   }
 
-  window.App.processUi = { caseNoHtml, caseNo, badge, details, documentsPanel, viewReceipt, printSlip, printSlips, printPage, amountWords, shortParty, parties, day, naira, STATUS };
+  // ── Processes filed later in a case, at the court's registry ──
+  // The list (in the case's View), + File a Process, and each process:
+  // fees, invoice, receipt, its documents.
+  function processesPanel(ctx, c, settings, unit) {
+    const { ui, api } = ctx;
+    const el = ui.el;
+    const box = el('div', { class: 'case-docs' }, el('p', { class: 'muted' }, 'Loading processes…'));
+    async function load() {
+      let r;
+      try { r = await api.get(`/process/cases/${c.id}/processes`); } catch (e) { box.replaceChildren(el('p', { class: 'muted' }, e.message)); return; }
+      box.replaceChildren(
+        el('div', { class: 'case-docs__head' }, [el('h3', null, `Processes filed (${r.processes.length})`),
+          r.canFile ? el('button', { class: 'btn btn--small btn--primary', type: 'button', onclick: async () => { if (await processForm(null, r.processTypes)) load(); } }, '📎 File a Process') : null]),
+        r.processes.length ? ui.table([
+          { label: 'Date filed', value: p => day(p.filedOn) },
+          { label: 'Process', value: p => p.processType },
+          { label: 'Fees', value: p => p.feeTotal ? naira(p.feeTotal) : 'None' },
+          { label: 'Invoice', value: p => p.invoice ? p.invoice.reference : '' },
+          { label: 'Receipt', node: p => p.paid ? el('span', null, p.receiptNumber) : el('span', { class: 'badge badge--pending' }, p.feeTotal ? 'Awaiting payment' : 'No fee') }
+        ], r.processes, [{ label: 'Open', onClick: p => openProcess(p, r) }])
+          : el('p', { class: 'muted' }, r.canFile ? 'No process filed yet in this case. Use 📎 File a Process for a motion or any other process filed later.' : 'No process filed yet in this case.')
+      );
+    }
+    // New or edit: the process, the date, the fees, the receipt.
+    async function processForm(existing, types) {
+      const v = existing || { fees: [], filedOn: new Date().toISOString().slice(0, 10) };
+      const type = el('select', null, [...types, 'Others'].map(t => el('option', { value: t }, t === 'Others' ? 'Others (type it)' : t)));
+      const other = el('input', { type: 'text', placeholder: 'e.g. Notice of preliminary objection' });
+      if (existing) { if (types.includes(existing.processType)) type.value = existing.processType; else { type.value = 'Others'; other.value = existing.processType; } }
+      const otherRow = ui.field('The process', other);
+      const sync = () => { otherRow.hidden = type.value !== 'Others'; };
+      type.addEventListener('change', sync); sync();
+      const filedOn = el('input', { type: 'date', value: v.filedOn || '' });
+      const fees = feeEditor(ui, settings, v.fees, 'Fees (from the schedule)');
+      const receiptNumber = el('input', { type: 'text', value: v.receiptNumber || '' });
+      const receiptFile = el('input', { type: 'file', accept: 'image/png,image/jpeg,application/pdf' });
+      return ui.modal(existing ? `Edit Process · ${c.suitNumber}` : `File a Process · ${c.suitNumber}`, el('div', { class: 'form-grid' }, [
+        el('p', { class: 'muted form-field--full' }, `${parties(c)}. Recorded against the suit number. Save, then open it and print the invoice for the filer to pay at revenue; enter the receipt when they bring it.`),
+        ui.field('Process *', type), otherRow, ui.field('Date filed', filedOn), fees.node,
+        ui.field('Receipt number', receiptNumber),
+        ui.field(existing && existing.receipt ? `Receipt file (uploaded: ${existing.receipt.name}; choose to replace)` : `Receipt file (photo or PDF${settings.receiptRequired ? '' : ', optional'})`, receiptFile)
+      ]), {
+        confirmText: 'Save', noBackdropClose: true,
+        onConfirm: async () => {
+          const payload = { processType: type.value, other: other.value, filedOn: filedOn.value, fees: fees.values(), receiptNumber: receiptNumber.value };
+          let r = await withReceiptCheck((x) => existing ? api.put(`/process/processes/${existing.id}`, { ...payload, ...x }) : api.post(`/process/cases/${c.id}/processes`, { ...payload, ...x }));
+          if (!r) return undefined;
+          if (receiptFile.files[0]) {
+            const form = new FormData(); form.append('file', receiptFile.files[0]);
+            r = await api.post(`/process/processes/${r.process.id}/receipt`, form);
+          }
+          ui.toast(existing ? 'Process updated.' : 'Process recorded. Open it to print the invoice.', 'success', 5000);
+          return r.process;
+        }
+      });
+    }
+    function openProcess(p, r) {
+      let dialog;
+      const act = (label, cls, fn, show) => show ? el('button', { class: 'btn ' + cls, onclick: async () => { try { await fn(); } catch (e) { ui.toast(e.message, 'error', 8000); } } }, label) : null;
+      const reopen = (x) => { dialog.close(); load(); if (x) openProcess(x, r); };
+      const row = (k, val) => val ? el('div', { class: 'doc-kv' }, [el('strong', null, k + ': '), val]) : null;
+      ui.modal(`${p.processType} · ${c.suitNumber}`, el('div', null, [
+        el('div', { class: 'doc-preview__actions' }, [
+          act('✕  Close', 'btn--ghost', async () => dialog.close(), true),
+          act('Edit', 'btn--ghost', async () => { dialog.close(); const x = await processForm(p, r.processTypes); load(); if (x) openProcess(x, r); }, r.canFile),
+          act('🧾  Print Invoice', 'btn--primary', async () => {
+            let x = p;
+            if (!p.invoice || JSON.stringify(p.invoice.fees.map(f => [f.item, f.amount, f.qty])) !== JSON.stringify(p.fees.map(f => [f.item, f.amount, f.qty]))) x = (await api.post(`/process/processes/${p.id}/invoice`)).process;
+            await printInvoice({ ...c, laterProcess: x.processType, invoice: x.invoice }, settings, unit ? `${unit.name}` : 'Court Registry');
+            if (x !== p) reopen(x);
+          }, r.canFile && p.feeTotal > 0),
+          act('Delete', 'btn--danger', async () => { if (!confirm('Delete this process? It has no receipt yet.')) return; await api.del(`/process/processes/${p.id}`); ui.toast('Process deleted.', 'success'); reopen(); }, r.canFile && !p.receiptNumber)
+        ]),
+        el('div', { class: 'case-details' }, [
+          row('Suit number', caseNo(ui, c.suitNumber)), row('Name of case', parties(c)), row('Process', p.processType), row('Date filed', day(p.filedOn)),
+          row('Fees', p.fees.length ? `${p.fees.map(f => `${f.item}${f.qty > 1 ? ' × ' + f.qty : ''} ${naira(f.amount * f.qty)}`).join('; ')} · Total ${naira(p.feeTotal)}` : 'None'),
+          row('Invoice', p.invoice ? `${p.invoice.reference}, issued ${day(p.invoice.issuedAt)} by ${p.invoice.issuedByName}` : (p.feeTotal ? 'Not yet issued' : '')),
+          row('Receipt', p.receiptNumber ? el('span', null, [p.receiptNumber, p.receipt ? el('button', { class: 'btn btn--small btn--ghost', type: 'button', onclick: () => window.open(`/api/process/processes/${p.id}/receipt`, '_blank', 'noopener') }, '📄 View receipt') : ' · file not uploaded']) : 'Not yet entered'),
+          row('Recorded by', `${p.createdByName}, ${day(p.createdAt)}`)
+        ]),
+        documentsPanel(ui, api, c.id, p.id, p.processType)
+      ]), { noFooter: true, wide: true, onOpen: (o) => { dialog = o; } });
+    }
+    load();
+    return box;
+  }
+
+  window.App.processUi = { caseNoHtml, caseNo, badge, details, documentsPanel, processesPanel, feeEditor, withReceiptCheck, viewReceipt, printSlip, printSlips, printPage, amountWords, shortParty, parties, day, naira, STATUS };
+
+  // Fee lines from the schedule (or Other with a typed amount), their total,
+  // and + Add fee: for a new filing and for a process filed later.
+  function feeEditor(ui, settings, fees, label) {
+    const el = ui.el;
+    const input = (val, attrs) => el('input', { type: 'text', value: val || '', ...(attrs || {}) });
+    const lines = el('div', { class: 'fee-lines' });
+    const totalEl = el('div', { class: 'fee-total' });
+    const lineRows = [];
+    function addLine(f) {
+      const item = el('select', null, [...settings.fees.map(x => el('option', { value: x.item }, `${x.item} (${naira(x.amount)})`)), el('option', { value: '__other' }, 'Other (type it)')]);
+      const otherText = input(f && !settings.fees.some(x => x.item === f.item) ? f.item : '', { placeholder: 'Description' });
+      const otherAmt = el('input', { type: 'number', min: '0', step: '0.01', placeholder: 'Amount', value: f && !settings.fees.some(x => x.item === f.item) ? f.amount : '' });
+      const qty = el('input', { type: 'number', min: '1', value: String((f && f.qty) || 1), class: 'fee-qty', 'aria-label': 'Quantity' });
+      const remove = el('button', { class: 'btn btn--small btn--ghost', type: 'button' }, '✕');
+      item.value = f ? (settings.fees.some(x => x.item === f.item) ? f.item : '__other') : (settings.fees[0] ? settings.fees[0].item : '__other');
+      const row = el('div', { class: 'fee-line' }, [item, otherText, otherAmt, el('span', { class: 'muted' }, '×'), qty, remove]);
+      const sync = () => { const o = item.value === '__other'; otherText.hidden = !o; otherAmt.hidden = !o; total(); };
+      [item, otherAmt, qty].forEach(x => x.addEventListener('input', sync));
+      item.addEventListener('change', sync);
+      remove.addEventListener('click', () => { row.remove(); lineRows.splice(lineRows.indexOf(rec), 1); total(); });
+      const rec = { row, value: () => item.value === '__other' ? { item: otherText.value.trim(), amount: Number(otherAmt.value), qty: Number(qty.value) || 1 } : { item: item.value, qty: Number(qty.value) || 1 } };
+      lineRows.push(rec);
+      lines.appendChild(row);
+      sync();
+    }
+    function total() {
+      const t = lineRows.reduce((n, r) => { const x = r.value(); const listed = settings.fees.find(f => f.item === x.item); return n + (listed ? listed.amount : (x.amount || 0)) * (x.qty || 1); }, 0);
+      totalEl.textContent = `Total: ${naira(t)}`;
+    }
+    ((fees && fees.length) ? fees : [null]).forEach(addLine);
+    const node = el('div', { class: 'form-field form-field--full' }, [
+      el('span', { class: 'form-field__label' }, label), lines,
+      el('div', { class: 'fee-actions' }, [el('button', { class: 'btn btn--small btn--ghost', type: 'button', onclick: () => addLine(null) }, '+ Add fee'), totalEl]),
+      settings.fees.length ? null : el('span', { class: 'form-field__help' }, 'No fee schedule yet: an administrator sets it in Settings, Process Registry. Use Other meanwhile.')
+    ]);
+    return { node, values: () => lineRows.map(r => r.value()).filter(x => x.item) };
+  }
+
+  // Save, and where the receipt number is already on another filing, let a
+  // registrar (or an administrator) confirm a genuine exception.
+  async function withReceiptCheck(send) {
+    try { return await send({}); }
+    catch (e) {
+      if (!(e.body && e.body.duplicateReceipt) || !e.body.canConfirm) throw e;
+      if (!confirm(e.message + '\n\nConfirm that this receipt truly pays for this filing too?')) return null;
+      return send({ confirmDuplicateReceipt: true });
+    }
+  }
 
   // ── The filing form ──
   function filingForm(ctx, settings, existing) {
@@ -322,37 +463,8 @@
     const firstEmail = emailBox(ve.firstParty), secondEmail = emailBox(ve.secondParty), counselEmail = emailBox(ve.counsel);
     const receiptFile = el('input', { type: 'file', accept: 'image/png,image/jpeg,application/pdf' });
 
-    // Fee lines from the schedule, or Other with a typed amount.
-    const lines = el('div', { class: 'fee-lines' });
-    const totalEl = el('div', { class: 'fee-total' });
-    const lineRows = [];
-    function addLine(f) {
-      const item = el('select', null, [...settings.fees.map(x => el('option', { value: x.item }, `${x.item} (${naira(x.amount)})`)), el('option', { value: '__other' }, 'Other (type it)')]);
-      const otherText = input(f && !settings.fees.some(x => x.item === f.item) ? f.item : '', { placeholder: 'Description' });
-      const otherAmt = el('input', { type: 'number', min: '0', step: '0.01', placeholder: 'Amount', value: f && !settings.fees.some(x => x.item === f.item) ? f.amount : '' });
-      const qty = el('input', { type: 'number', min: '1', value: String((f && f.qty) || 1), class: 'fee-qty', 'aria-label': 'Quantity' });
-      const remove = el('button', { class: 'btn btn--small btn--ghost', type: 'button' }, '✕');
-      item.value = f ? (settings.fees.some(x => x.item === f.item) ? f.item : '__other') : (settings.fees[0] ? settings.fees[0].item : '__other');
-      const row = el('div', { class: 'fee-line' }, [item, otherText, otherAmt, el('span', { class: 'muted' }, '×'), qty, remove]);
-      const sync = () => { const o = item.value === '__other'; otherText.hidden = !o; otherAmt.hidden = !o; total(); };
-      [item, otherAmt, qty].forEach(x => x.addEventListener('input', sync));
-      item.addEventListener('change', sync);
-      remove.addEventListener('click', () => { row.remove(); lineRows.splice(lineRows.indexOf(rec), 1); total(); });
-      const rec = { row, value: () => item.value === '__other' ? { item: otherText.value.trim(), amount: Number(otherAmt.value), qty: Number(qty.value) || 1 } : { item: item.value, qty: Number(qty.value) || 1 } };
-      lineRows.push(rec);
-      lines.appendChild(row);
-      sync();
-    }
-    function total() {
-      const t = lineRows.reduce((n, r) => { const x = r.value(); const listed = settings.fees.find(f => f.item === x.item); return n + (listed ? listed.amount : (x.amount || 0)) * (x.qty || 1); }, 0);
-      totalEl.textContent = `Total: ${naira(t)}`;
-    }
-    (v.fees.length ? v.fees : [null]).forEach(addLine);
-    const feeBox = el('div', { class: 'form-field form-field--full' }, [
-      el('span', { class: 'form-field__label' }, 'Filing fees (from the schedule)'), lines,
-      el('div', { class: 'fee-actions' }, [el('button', { class: 'btn btn--small btn--ghost', type: 'button', onclick: () => addLine(null) }, '+ Add fee'), totalEl]),
-      settings.fees.length ? null : el('span', { class: 'form-field__help' }, 'No fee schedule yet: an administrator sets it in Settings, Process Registry. Use Other meanwhile.')
-    ]);
+    const feeEd = feeEditor(ui, settings, v.fees, 'Filing fees (from the schedule)');
+    const feeBox = feeEd.node;
     const paidBox = el('div', { class: 'form-grid form-field--full' }, [
       feeBox,
       el('p', { class: 'form-field__help form-field--full' }, 'Save the filing, then open it and click Print Invoice for the filer to go and pay. Enter the receipt number when they bring the receipt.'),
@@ -383,9 +495,10 @@
       onConfirm: async () => {
         const payload = { caseType: caseType.value, firstParty: first.value, secondParty: second.value, nature: nature.value, process: proc.value,
           counsel: counsel.value, counselAddress: counselAddress.value, firstPartyAddress: firstAddress.value, secondPartyAddress: secondAddress.value, filedOn: filedOn.value, efcc: efcc.checked, official: official.checked,
-          fees: official.checked ? [] : lineRows.map(r => r.value()).filter(x => x.item), receiptNumber: receiptNumber.value,
+          fees: official.checked ? [] : feeEd.values(), receiptNumber: receiptNumber.value,
           ...(settings.partyEmails === false ? {} : { emails: { firstParty: firstEmail.value, secondParty: secondEmail.value, counsel: counselEmail.value } }) };
-        let r = existing ? await api.put(`/process/cases/${existing.id}`, payload) : await api.post('/process/cases', payload);
+        let r = await withReceiptCheck((x) => existing ? api.put(`/process/cases/${existing.id}`, { ...payload, ...x }) : api.post('/process/cases', { ...payload, ...x }));
+        if (!r) return undefined;
         if (!official.checked && receiptFile.files[0]) {
           const form = new FormData();
           form.append('file', receiptFile.files[0]);
@@ -526,7 +639,8 @@
         }
         load();
       }
-      const tabs = [['Filings', renderFilings], ['Summary', () => renderSummary(panel, ctx)]];
+      const tabs = [['Filings', renderFilings], ['Summary', () => renderSummary(panel, ctx)],
+        ['Fees List', () => { panel.replaceChildren(); window.App.feesUi.render(panel, ctx, 'process'); }]];
       tabs.forEach(([name, fn], i) => {
         const btn = el('button', { class: 'tab' + (i === 0 ? ' is-active' : ''), role: 'tab', onclick: () => {
           tabsBar.querySelectorAll('.tab').forEach(t => t.classList.remove('is-active'));

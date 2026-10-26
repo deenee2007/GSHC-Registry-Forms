@@ -56,6 +56,7 @@
           el('button', { class: 'btn btn--ghost', onclick: () => router.loadUnit(unit) }, '← Back to forms'),
           canWork ? el('button', { class: 'btn btn--primary', onclick: addEarlier }, '+ Add Earlier Case') : null,
           canWork ? el('button', { class: 'btn btn--ghost', onclick: importRegister }, '⬆ Import Register') : null,
+          el('button', { class: 'btn btn--ghost', onclick: () => router.loadModule('fees', { unitKey: unit.key }) }, '💰 Fees List'),
           el('button', { class: 'btn btn--ghost', onclick: () => printRegister() }, '🖨 Print Register')
         ]),
         tabsBar,
@@ -142,7 +143,7 @@
             { label: 'Outcome', value: e => e.status === 'done' ? e.outcome.text : 'To come' }
           ], r.entries) : el('p', { class: 'muted' }, 'No date in the Court Diary yet.'));
         }).catch(() => dates.remove());
-        ui.modal(`Case ${full.suitNumber}`, el('div', null, [el('div', { class: 'doc-preview__actions' }, [close, formBtn, fixBtn]), P.badge(ui, full.status), P.details(ui, full, settings), dates, P.documentsPanel(ui, api, full.id)]),
+        ui.modal(`Case ${full.suitNumber}`, el('div', null, [el('div', { class: 'doc-preview__actions' }, [close, formBtn, fixBtn]), P.badge(ui, full.status), P.details(ui, full, settings), dates, P.processesPanel(ctx, full, settings, unit), P.documentsPanel(ui, api, full.id)]),
           { noFooter: true, wide: true, onOpen: (o) => { dialog = o; } });
       }
 
