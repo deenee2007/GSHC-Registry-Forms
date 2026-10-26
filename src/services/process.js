@@ -40,6 +40,9 @@ const DEFAULTS = {
   dailyLimit: 0      // most cases in a court's diary on one day; 0: no limit
 };
 const REMARKS = ['Judgment entered', 'Struck out', 'Withdrawn', 'Dismissed', 'Transferred'];
+// Why the Hon. Chief Judge moves a case to another court.
+const REASSIGN_REASONS = ['Request by a party', 'Case file returned by the Judge', 'Elevation of the Judge', 'Retirement of the Judge',
+  'Death of the Judge', 'Judge away for a long period', 'Judge assigned to a tribunal', 'Other'];
 
 const meta = () => mongoose.connection.collection('appmeta');
 
@@ -198,4 +201,4 @@ function roman(n) {
   return s;
 }
 
-module.exports = { getSettings, setSettings, undoOfficialFeesOnce, nextNumber, nextInvoice, proposeCourt, rotationState, courts: courts_, formatHtml, roman, REMARKS, DEFAULTS };
+module.exports = { getSettings, setSettings, undoOfficialFeesOnce, nextNumber, nextInvoice, proposeCourt, rotationState, courts: courts_, formatHtml, roman, REMARKS, REASSIGN_REASONS, DEFAULTS };

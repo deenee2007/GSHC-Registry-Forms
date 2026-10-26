@@ -51,12 +51,19 @@ const STAGES = {
       `Suit No. ${c.suitNumber}, ${parties(c)}, ${e.changed ? 'has been moved to' : 'is fixed for'} ${e.business} before High Court No. ${roman(unit)} on ${new Date(e.date + 'T12:00:00Z').toLocaleDateString('en-GB', { weekday: 'long' })}, ${ordinal(e.date + 'T12:00:00Z')}${e.time ? ` at ${e.time}` : ''}.`
     ]
   }),
+  reassigned: (c, s, unit) => ({
+    subject: `${c.suitNumber} reassigned to High Court No. ${roman(unit)}`,
+    paragraphs: [
+      `Suit No. ${c.suitNumber}, ${parties(c)}, was reassigned to High Court No. ${roman(unit)} on ${ordinal(c.assignedAt || new Date())}.`,
+      'The Process Registry will send the file to the registry of that court.'
+    ]
+  }),
   received: (c, s, unit) => ({
     subject: `${c.suitNumber}: file received at High Court No. ${roman(unit)}`,
     paragraphs: [`The file of Suit No. ${c.suitNumber}, ${parties(c)}, was received at the registry of High Court No. ${roman(unit)} on ${ordinal(c.receivedAt || new Date())}.`]
   })
 };
-const LABELS = { invoice: 'Invoice issued', registered: 'Registered', assigned: 'Assigned', received: 'File received', hearing: 'Court date' };
+const LABELS = { invoice: 'Invoice issued', registered: 'Registered', assigned: 'Assigned', received: 'File received', hearing: 'Court date', reassigned: 'Reassigned' };
 
 const addresses = (c) => {
   const e = c.emails || {};

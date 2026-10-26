@@ -23,7 +23,23 @@ router.get('/:code', async (req, res, next) => {
     if (!rec) {
       // A case assignment slip from the Process Registry.
       const c = code ? await Case.findOne({ verifyCode: code, assignment: { $ne: null } }) : null;
-      if (!c) return res.status(404).json({ status: 'not_found', code: code || String(req.params.code).slice(0, 40) });
+      if (!c) {
+        // The slip of an assignment since replaced by a reassignment.
+        const old = code ? await Case.findOne({ 'formerUnits.verifyCode': code }) : null;
+        if (!old) return res.status(404).json({ status: 'not_found', code: code || String(req.params.code).slice(0, 40) });
+        const f = old.formerUnits.find(x => x.verifyCode === code);
+        const [was, now] = await Promise.all([Unit.findOne({ key: f.unitKey }), Unit.findOne({ key: old.assignedUnit })]);
+        return res.json({
+          status: 'replaced', code,
+          document: `Case Assignment: High Court No. ${roman(was && was.courtNo)}`,
+          reference: old.suitNumber || null,
+          court: was ? was.name : f.unitKey,
+          issuedAt: f.assignedAt,
+          signedBy: f.signedByName ? [{ capacity: 'Hon. Chief Judge', name: f.signedByName, title: null, signedAt: f.assignedAt }] : [],
+          replacedAt: f.leftAt,
+          nowCourt: `High Court No. ${roman(now && now.courtNo)}`
+        });
+      }
       const court = await Unit.findOne({ key: c.assignedUnit });
       return res.json({
         status: verification.hashCase(c) === c.contentHash ? 'valid' : 'tampered',

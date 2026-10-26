@@ -58,7 +58,7 @@ router.get('/', wrap(async (req, res) => {
   }
   // Registered cases from the Process Registry: filing, assignment, disposal.
   const regs = await Case.find({ caseNos: match, status: { $in: ['awaiting_assignment', 'assigned', 'dispatched', 'received', 'disposed'] } })
-    .select('caseNos status firstParty secondParty registeredAt assignedAt assignedUnit disposal earlier').lean();
+    .select('caseNos status firstParty secondParty registeredAt assignedAt assignedUnit disposal earlier reassignedFrom formerUnits').lean();
   // Scanned documents of those cases; opened by those who can see the case.
   const canSeeCase = require('./process').canSeeCase;
   const scans = await CaseDocument.find({ case: { $in: regs.map(c => c._id) } }).select('case title docType filedOn unitKey uploadedByName createdAt').lean();
@@ -66,6 +66,7 @@ router.get('/', wrap(async (req, res) => {
   for (const c of regs) {
     const label = c.status === 'awaiting_assignment' ? 'Case filed (awaiting assignment)'
       : c.status === 'disposed' ? `Case disposed: ${c.disposal ? c.disposal.remark : ''}`
+      : c.reassignedFrom ? `Case reassigned to High Court No. ${roman(courtNo[c.assignedUnit])}`
       : c.earlier ? 'Case entered in the court register' : `Case assigned to High Court No. ${roman(courtNo[c.assignedUnit])}`;
     const item = {
       id: null, canOpen: false, formType: 'case', formLabel: label,

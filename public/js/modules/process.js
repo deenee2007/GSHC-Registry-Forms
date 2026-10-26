@@ -98,6 +98,10 @@
       row('Registered', c.registeredAt ? `${day(c.registeredAt)} by ${c.registeredByName}` : ''),
       row('Proposed court', c.proposed && c.status === 'awaiting_assignment' ? c.proposed.name : ''),
       row('Assigned to', c.assigned ? `High Court No. ${c.assigned.roman} on ${day(c.assignedAt)}${c.assignment ? ', by ' + [c.assignment.title, c.assignment.name].filter(Boolean).join(' ') : ''}` : ''),
+      row('Reassigned from', c.reassignedFrom ? `High Court No. ${c.reassignedFrom.roman}` : ''),
+      row('Earlier courts', (c.formerUnits || []).map(f => `High Court No. ${f.court ? f.court.roman : '?'} until ${day(f.leftAt)} (${f.reason})`).join('; ')),
+      c.reassignRequest ? ui.el('div', { class: 'notice notice--warn' }, `Reassignment asked for on ${day(c.reassignRequest.at)} by ${c.reassignRequest.byName}: ${c.reassignRequest.reason}${c.reassignRequest.note ? '. ' + c.reassignRequest.note : ''}`) : null,
+      c.reassignedAway ? ui.el('div', { class: 'notice notice--warn' }, `Reassigned to ${c.reassignedAway.to} on ${day(c.reassignedAway.at)} (${c.reassignedAway.reason}). This court keeps it in its register for the record.`) : null,
       row('File dispatched', c.dispatchedAt ? `${day(c.dispatchedAt)} by ${c.dispatchedByName}` : ''),
       row('File received', c.receivedAt ? `${day(c.receivedAt)} by ${c.receivedByName}` : ''),
       row('Remark', c.disposal ? `${c.disposal.remark} (${day(c.disposal.date)})` : ''),
@@ -151,15 +155,16 @@
 
   // The small slip fixed to the file: the court, the suit number and the
   // parties (so a slip that comes off can be traced to its file), the date,
-  // the Chief Judge's signature and the QR code.
+  // the Chief Judge's signature and the QR code. After a reassignment, the
+  // new slip replaces the old one on the file.
   function slipHtml(c) {
     return `<article class="case-slip">
       <div class="slip-court">GOMBE STATE HIGH COURT OF JUSTICE</div>
-      <div class="slip-label">ASSIGNED TO</div>
+      <div class="slip-label">${c.reassignedFrom ? 'REASSIGNED TO' : 'ASSIGNED TO'}</div>
       <div class="slip-assigned">HIGH COURT No. ${esc(c.assigned.roman)}</div>
       <div class="slip-suit">Suit No. ${caseNoHtml(c.suitNumber)}</div>
       <div class="slip-parties">${esc(slipParties(c))}</div>
-      <div class="slip-date">Date of assignment: ${esc(ordinalDate(c.assignedAt))}</div>
+      <div class="slip-date">${c.reassignedFrom ? `Date of reassignment: ${esc(ordinalDate(c.assignedAt))} · from High Court No. ${esc(c.reassignedFrom.roman)}` : `Date of assignment: ${esc(ordinalDate(c.assignedAt))}`}</div>
       <div class="slip-foot">
         <div class="slip-sign"><img src="${esc(c.signatureUrl)}" alt="Signature"><div class="slip-line"></div>
           <div>${esc([c.assignment.title, c.assignment.name].filter(Boolean).join(' '))}</div><div class="slip-cap">Chief Judge</div></div>
@@ -214,7 +219,7 @@
         : 'Tick the cases to print. Each slip prints on its own A6 card with the suit number and parties, to match it to its file.'),
       el('label', { class: 'check check--plain' }, [all, ' All']),
       el('div', { class: 'pick-list' }, list.map((c, i) => el('label', { class: 'check check--plain pick-row' }, [boxes[i],
-        el('span', null, [caseNo(ui, c.suitNumber), ` ${slipParties(c)} · High Court No. ${c.assigned.roman}`])]))),
+        el('span', null, [caseNo(ui, c.suitNumber), ` ${slipParties(c)} · High Court No. ${c.assigned.roman}${c.reassignedFrom ? ` (reassigned from No. ${c.reassignedFrom.roman}; collect the file there)` : ''}`])]))),
       mode === 'dispatch' ? el('label', { class: 'check check--plain' }, [withList, ' Also print a Dispatch List for the receiving clerks to sign (optional)']) : null
     ]);
     const picked = await ui.modal(mode === 'dispatch' ? 'Dispatch Files' : 'Print Slips', body, {
@@ -544,7 +549,7 @@
         const r = await api.post(`/process/cases/${c.id}/register`);
         after(`Registered as ${r.case.suitNumber}. Proposed for ${r.case.proposed.name}; awaiting the Chief Judge.`)(true);
       }, (draftish || c.status === 'submitted') && me.registrar),
-      act('🖨  Print Assignment Slip', 'btn--primary', async () => printSlip(c.id), !!c.assigned && !c.earlier),
+      act('🖨  Print Assignment Slip', 'btn--primary', async () => printSlip(c.id), !!c.assigned && (!c.earlier || !!c.reassignedFrom)),
       act('📦  Dispatch File', 'btn--ok', async () => {
         if (!confirm(`Dispatch the file of ${c.suitNumber} to High Court No. ${c.assigned.roman}? The court can then mark it received.`)) return;
         await api.post('/process/dispatch', { ids: [c.id] });

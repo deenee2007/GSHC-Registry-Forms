@@ -86,15 +86,15 @@
       setBadge('inbox', stats.inbox);
       setBadge('approved', stats.approvedUnprinted);
       setBadge('notifications', notes.unread);
-      // Cases for the Chief Judge to assign, and filings for the Process Registrar to register.
+      // Cases for the Chief Judge to assign (and requests to reassign), and filings for the Process Registrar to register.
       let cases = { awaitingAssignment: 0, toRegister: 0, newCases: 0 };
       if (badges.assign || badges.process || badges.newcases) { try { cases = await api.get('/process/counts'); } catch (e) { /* keep zero */ } }
-      setBadge('assign', cases.awaitingAssignment);
+      setBadge('assign', cases.awaitingAssignment + (cases.reassignRequests || 0));
       setBadge('process', cases.toRegister);
       setBadge('newcases', cases.newCases);
       // Phones: the menu button shows whether anything waits inside the menu.
       const menu = document.getElementById('menu-badge');
-      const waiting = stats.inbox + stats.approvedUnprinted + notes.unread + cases.awaitingAssignment + cases.toRegister + (cases.newCases || 0);
+      const waiting = stats.inbox + stats.approvedUnprinted + notes.unread + cases.awaitingAssignment + (cases.reassignRequests || 0) + cases.toRegister + (cases.newCases || 0);
       if (menu) { menu.textContent = waiting > 99 ? '99+' : String(waiting); menu.hidden = !waiting; }
     } catch (e) { /* offline: keep the last numbers */ }
   }

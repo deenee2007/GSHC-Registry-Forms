@@ -741,3 +741,103 @@ test('processes filed later at the court registry: fees, invoice, receipt (check
   assert.equal(cj.body.total, Math.round(cj.body.rows.reduce((n, x) => n + x.amount, 0) * 100) / 100);
   assert.equal((await u.court3.get('/api/process/fees-list?from=2026-10-21&unitKey=process')).status, 403);
 });
+
+test('reassignment: the court asks, the Chief Judge declines or reassigns (one or many) with the PIN; new slip, old slip replaced', async () => {
+  const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const ahead = new Date(); ahead.setDate(ahead.getDate() + 5);
+  const clerk4 = await makeUser({ fullName: 'Court Four Clerk', email: 'hc4r@example.com', unitKeys: ['hc4'], privileges: ['view', 'create', 'edit', 'finalize', 'print'] });
+  const c = await fileAndRegister({ firstParty: 'Reassign Party', emails: { counsel: 'reassign@example.com' } });
+  await u.cj.post(`/api/process/cases/${c.id}/assign`, { unitKey: 'hc3', pin: '1357' });
+  await u.clerk.post('/api/process/dispatch', { ids: [c.id] });
+  await u.court3.post(`/api/process/cases/${c.id}/received`);
+  const oldCode = (await u.court3.get(`/api/process/cases/${c.id}`)).body.case.verifyCode;
+  const fixed = await u.court3.post('/api/diary', { unitKey: 'hc3', caseId: c.id, date: iso(ahead), business: 'Mention' });
+  assert.equal(fixed.status, 201);
+
+  // The court asks.
+  assert.equal((await clerk4.post(`/api/process/cases/${c.id}/request-reassignment`, { reason: 'Retirement of the Judge' })).status, 403, 'only its own court asks');
+  assert.equal((await u.court3.post(`/api/process/cases/${c.id}/request-reassignment`, { reason: 'Other', other: '' })).status, 400, 'Other needs words');
+  assert.equal((await u.court3.post(`/api/process/cases/${c.id}/request-reassignment`, { reason: 'Something else' })).status, 400, 'a reason from the list');
+  const ask = await u.court3.post(`/api/process/cases/${c.id}/request-reassignment`, { reason: 'Request by a party', note: 'The defendant asks' });
+  assert.equal(ask.status, 200, JSON.stringify(ask.body));
+  assert.equal(ask.body.case.reassignRequest.reason, 'Request by a party');
+  assert.equal((await u.court3.post(`/api/process/cases/${c.id}/request-reassignment`, { reason: 'Request by a party' })).status, 409, 'one request at a time');
+  assert.equal((await u.cj.get('/api/process/counts')).body.reassignRequests, 1);
+  assert.ok((await u.cj.get('/api/notifications')).body.notifications.some(n => /asks that .* be reassigned/.test(n.message) && n.link === 'assign:requests'));
+  const reqs = await u.cj.get('/api/process/cases?requested=1&status=assigned,dispatched,received');
+  assert.deepEqual(reqs.body.cases.map(x => x.id), [c.id]);
+
+  // Declined: it stays.
+  assert.equal((await u.court3.post(`/api/process/cases/${c.id}/decline-reassignment`)).status, 403);
+  const no = await u.cj.post(`/api/process/cases/${c.id}/decline-reassignment`, { comment: 'Hearing is far advanced' });
+  assert.equal(no.status, 200);
+  assert.equal(no.body.case.reassignRequest, null);
+  assert.ok((await u.court3.get('/api/notifications')).body.notifications.some(n => /did not reassign .*Hearing is far advanced/.test(n.message)));
+
+  // Reassigned with the PIN.
+  const move = { moves: [{ id: c.id, unitKey: 'hc4' }], reason: 'Retirement of the Judge', pin: '1357' };
+  assert.equal((await u.registrar.post('/api/process/reassign', move)).status, 403, 'only the Chief Judge');
+  assert.equal((await u.cj.post('/api/process/reassign', { ...move, pin: '0000' })).status, 400, 'wrong PIN');
+  assert.equal((await u.cj.post('/api/process/reassign', { ...move, moves: [{ id: c.id, unitKey: 'hc3' }] })).status, 400, 'not to the same court');
+  assert.equal((await u.cj.post('/api/process/reassign', { ...move, reason: '' })).status, 400, 'a reason');
+  const mailSvc = require('../src/services/mail');
+  const sentBefore = mailSvc.sent.length;
+  const r = await u.cj.post('/api/process/reassign', move);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const now = r.body.cases[0];
+  assert.equal(now.status, 'assigned', 'the file goes through the Process Registry again');
+  assert.equal(now.assigned.key, 'hc4');
+  assert.equal(now.reassignedFrom.key, 'hc3');
+  assert.equal(now.suitNumber, c.suitNumber, 'no new number');
+  assert.equal(now.receivedAt, undefined);
+  assert.notEqual(now.verifyCode, oldCode);
+  assert.equal(now.formerUnits[0].court.key, 'hc3');
+  assert.ok(mailSvc.sent.slice(sentBefore).some(m => m.to === 'reassign@example.com' && /reassigned to High Court No\. IV/.test(m.subject)), 'the parties are told');
+  assert.ok((await u.court3.get('/api/notifications')).body.notifications.some(n => /reassigned .* from your court.*Return the file to the Process Registry/.test(n.message)));
+  assert.ok((await clerk4.get('/api/notifications')).body.notifications.some(n => /reassigned to your court/.test(n.message)));
+  assert.ok((await u.clerk.get('/api/notifications')).body.notifications.some(n => /reassigned .*print the new slip/.test(n.message)));
+  assert.equal((await u.court3.get(`/api/diary?unitKey=hc3&caseId=${c.id}`)).body.entries.length, 0, 'the date fixed ahead in the former court is taken out');
+
+  // Verification: the new slip is valid, the old one replaced.
+  const v = await fetch(`${base}/api/verify/${now.verifyCode}`).then(x => x.json());
+  assert.equal(v.status, 'valid');
+  assert.match(v.document, /High Court No\. IV/);
+  const old = await fetch(`${base}/api/verify/${oldCode}`).then(x => x.json());
+  assert.equal(old.status, 'replaced');
+  assert.match(old.document, /High Court No\. III/);
+  assert.equal(old.nowCourt, 'High Court No. IV');
+
+  // Both registers: the new court has it to receive; the former court keeps it, marked, read only.
+  const reg4 = (await clerk4.get('/api/process/register?unitKey=hc4')).body.cases.find(x => x.id === c.id);
+  assert.ok(reg4 && !reg4.reassignedAway);
+  const reg3 = (await u.court3.get('/api/process/register?unitKey=hc3')).body.cases.find(x => x.id === c.id);
+  assert.equal(reg3.reassignedAway.to, 'High Court No. IV');
+  assert.ok(reg3.reassignedAway.receivedAt);
+  assert.equal((await u.court3.get(`/api/process/cases/${c.id}`)).status, 200, 'the former court can still open it');
+  assert.equal((await u.court3.post(`/api/process/cases/${c.id}/disposal`, { remark: 'Struck out' })).status, 403, 'but not change it');
+  assert.equal((await u.court3.post(`/api/process/cases/${c.id}/processes`, { processType: 'Motion on notice' })).status, 403);
+  assert.ok((await u.clerk.get('/api/process/cases?status=assigned')).body.cases.some(x => x.id === c.id), 'waiting at the Process Registry to dispatch');
+  assert.equal((await u.clerk.post('/api/process/dispatch', { ids: [c.id] })).status, 200);
+  assert.equal((await clerk4.post(`/api/process/cases/${c.id}/received`)).body.case.status, 'received');
+
+  // Several at once, each to its court; an earlier case too.
+  const a = await fileAndRegister({ firstParty: 'Batch One' }), b = await fileAndRegister({ firstParty: 'Batch Two' });
+  await u.cj.post(`/api/process/cases/${a.id}/assign`, { unitKey: 'hc3', pin: '1357' });
+  await u.cj.post(`/api/process/cases/${b.id}/assign`, { unitKey: 'hc3', pin: '1357' });
+  const e = await u.court3.post('/api/process/register/earlier', { unitKey: 'hc3', suitNumber: 'GM/88/2023', nature: 'Land', firstParty: 'Old', secondParty: 'Case', assignedOn: '2023-02-01' });
+  const list3 = await u.cj.get('/api/process/cases?unitKey=hc3&status=assigned,dispatched,received');
+  assert.ok([a.id, b.id, e.body.case.id].every(id => list3.body.cases.some(x => x.id === id)), 'a court\'s pending cases, earlier ones included');
+  const batch = await u.cj.post('/api/process/reassign', { moves: [{ id: a.id, unitKey: 'hc5' }, { id: b.id, unitKey: 'hc6' }, { id: e.body.case.id, unitKey: 'hc5' }], reason: 'Other', other: 'Judge on annual leave', pin: '1357' });
+  assert.equal(batch.status, 200, JSON.stringify(batch.body));
+  assert.equal(batch.body.reassigned, 3);
+  assert.deepEqual(batch.body.cases.map(x => x.assigned.key), ['hc5', 'hc6', 'hc5']);
+  assert.equal(batch.body.cases[2].formerUnits[0].reason, 'Judge on annual leave');
+  assert.ok((await u.clerk.get('/api/process/cases?status=assigned')).body.cases.some(x => x.id === e.body.case.id), 'the reassigned earlier case goes through the Process Registry');
+  const slip = (await u.clerk.get(`/api/process/cases/${e.body.case.id}`)).body.case;
+  assert.ok(slip.qrDataUrl && slip.assignment, 'it now has a slip');
+  const disposedNow = await u.court3.post('/api/process/register/earlier', { unitKey: 'hc3', suitNumber: 'GM/89/2023', nature: 'Land' });
+  await u.court3.post(`/api/process/cases/${disposedNow.body.case.id}/disposal`, { remark: 'Struck out' });
+  assert.equal((await u.cj.post('/api/process/reassign', { moves: [{ id: disposedNow.body.case.id, unitKey: 'hc5' }], reason: 'Death of the Judge', pin: '1357' })).status, 409, 'a disposed case is not reassigned');
+  const cf = await u.court3.get(`/api/cases?q=${encodeURIComponent(a.suitNumber)}&exact=1`);
+  assert.match(cf.body.cases[0].documents[0].formLabel, /Case reassigned to High Court No\. V/);
+});

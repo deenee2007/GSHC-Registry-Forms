@@ -20,6 +20,7 @@
     valid:     ['v-ok',   'Genuine document', 'This document was issued and signed through the GSHC Registry system and has not been altered.'],
     revoked:   ['v-bad',  'Revoked',          'This document was issued by the court but has since been revoked. It must not be relied on.'],
     tampered:  ['v-bad',  'Record altered',   'The stored record no longer matches what was signed. Contact the court registry.'],
+    replaced:  ['v-warn', 'Replaced by a reassignment', 'This assignment was genuine, but the Hon. Chief Judge has since reassigned the case to another court. It must not be relied on.'],
     not_found: ['v-bad',  'Not found',        'No signed document has this code. Check the code, or treat the document as not genuine.'],
     error:     ['v-warn', 'Could not check',  'The check could not be completed. Please try again shortly.']
   };
@@ -48,6 +49,10 @@
       if (r.status === 'revoked') {
         row(dl, 'Revoked on', fmt(r.revokedAt));
         row(dl, 'Reason', r.revokeReason);
+      }
+      if (r.status === 'replaced') {
+        row(dl, 'Reassigned on', fmt(r.replacedAt));
+        row(dl, 'Now before', r.nowCourt);
       }
       out.appendChild(dl);
       out.appendChild(el('p', 'v-note', 'Compare these details with the paper document. They must match exactly.'));
