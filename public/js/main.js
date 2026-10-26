@@ -37,18 +37,39 @@
     App.api.get('/auth/options').then(o => { if (o.forgotPassword) forgot.hidden = false; }).catch(() => {});
 
     root.appendChild(card([
-      ui.el('img', { class: 'login__emblem', src: '/assets/highcourt.png', alt: '' }),
-      ui.el('h1', { class: 'login__title' }, 'Gombe State High Court of Justice'),
-      ui.el('p', { class: 'login__sub' }, 'Registry & Units Forms Automation System'),
+      ui.el('h1', { class: 'login__title' }, 'Sign In'),
+      ui.el('p', { class: 'login__sub' }, 'Use the email address (or username) and password given to you by the administrator.'),
       username, password, msg, btn, forgot,
-      ui.el('a', { class: 'login__link', href: '/guide', target: '_blank', rel: 'noopener' }, 'User guide'),
-      ui.el('p', { class: 'login__foot' }, 'Directorate of ICT')
     ]));
     username.focus();
   }
 
+  // Every screen before sign in: a welcome beside the form (above it on a phone).
   function card(children) {
-    return ui.el('div', { class: 'login' }, [ui.el('div', { class: 'login__card' }, children)]);
+    const el = ui.el;
+    const welcome = el('section', { class: 'welcome' }, [
+      el('div', { class: 'welcome__emblems' }, [
+        el('img', { src: '/assets/highcourt.png', alt: 'Gombe State High Court crest' }),
+        el('img', { src: '/assets/coat.png', alt: 'Coat of arms of Nigeria' })
+      ]),
+      el('p', { class: 'welcome__kicker' }, 'Welcome to the'),
+      el('h1', { class: 'welcome__title' }, 'Gombe State High Court of Justice'),
+      el('p', { class: 'welcome__system' }, 'Registry & Units Forms Automation System'),
+      el('p', { class: 'welcome__text' }, 'The court\'s registries and units at work in one place: from filing and assignment of new cases, to the court forms, signed and checked by QR code, the case registers, the court diary and cause lists.'),
+      el('ul', { class: 'welcome__list' }, [
+        el('li', null, 'Court forms prepared, signed digitally and printed'),
+        el('li', null, 'New cases filed, numbered and assigned to the courts'),
+        el('li', null, 'Case registers, the court diary and cause lists'),
+        el('li', null, 'Every signed document can be checked by its QR code')
+      ]),
+      el('p', { class: 'welcome__ask' }, 'Please sign in to continue.'),
+      el('div', { class: 'welcome__links' }, [
+        el('a', { href: '/verify', target: '_blank', rel: 'noopener' }, '✔ Check a document'),
+        el('a', { href: '/guide', target: '_blank', rel: 'noopener' }, '❓ User guide')
+      ])
+    ]);
+    return el('div', { class: 'login' }, [welcome, el('div', { class: 'login__side' }, [el('div', { class: 'login__card' }, children),
+      el('p', { class: 'login__foot login__foot--side' }, '© Directorate of ICT, Gombe State High Court of Justice')])]);
   }
 
   // Ask for a reset link by email.
