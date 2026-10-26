@@ -499,6 +499,49 @@
             } catch (e) { ui.toast(e.message, 'error', 7000); }
           } }, 'Save')])
         );
+        await renderLeaveSettings();
+      }
+
+      // Leave: the kinds of leave and days, annual leave by grade level, who
+      // approves senior officers, relief officer, public holidays.
+      async function renderLeaveSettings() {
+        const s = await api.get('/leave/settings');
+        const GLS = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12', '13', '14', '15', '16', '17'];
+        const glSel = (v) => { const x = el('select', null, GLS.map(g => el('option', { value: g }, `GL ${g}`))); x.value = v; return x; };
+        const num = (v) => el('input', { type: 'number', min: '1', max: '90', value: String(v), class: 'narrow' });
+        const junior = num(s.annualJunior), senior = num(s.annualSenior), seniorFrom = glSel(s.annualSeniorFromGl), crFrom = glSel(s.seniorFromGl);
+        const relief = el('input', { type: 'checkbox' }); relief.checked = !!s.reliefRequired;
+        const holidays = el('textarea', { rows: '4', class: 'settings-lines', placeholder: 'One date per line, for example 2026-12-25' }, (s.holidays || []).join('\n'));
+        const types = el('div', { class: 'settings-list' });
+        const typeRow = (t) => {
+          const working = el('input', { type: 'checkbox', 'data-k': 'working' }); working.checked = t.working !== false;
+          return el('div', { class: 'settings-row', 'data-key': t.key || '', 'data-sex': t.sex || '' }, [
+            el('input', { type: 'text', value: t.name || '', placeholder: 'Kind of leave', 'data-k': 'name' }),
+            t.days === 'gl' ? el('span', { class: 'muted', 'data-k': 'gl' }, 'Days by grade level (below)')
+              : el('input', { type: 'number', min: '0', max: '400', value: String(t.days || 0), class: 'narrow', 'data-k': 'days', title: 'Days a year; 0 for no fixed number' }),
+            el('label', { class: 'check check--plain' }, [working, ' working days']),
+            t.days === 'gl' ? el('span') : el('button', { class: 'btn btn--small btn--ghost', type: 'button', onclick: (e) => e.target.closest('.settings-row').remove() }, '✕')]);
+        };
+        s.types.forEach(t => types.appendChild(typeRow(t)));
+        panel.append(
+          el('h3', null, 'Leave'),
+          el('p', { class: 'muted' }, 'These are first figures, to be confirmed by the Directorate of Personnel. Days are a year; 0 means no fixed number (as approved). Working days leave out Saturdays, Sundays and the public holidays below.'),
+          types, el('button', { class: 'btn btn--small btn--ghost', type: 'button', onclick: () => types.appendChild(typeRow({ name: '', days: 0, working: true })) }, '+ Add kind of leave'),
+          el('div', { class: 'settings-row' }, [el('span', null, 'Annual leave:'), junior, el('span', null, 'days below'), seniorFrom, el('span', null, ';'), senior, el('span', null, 'days from that grade level up.')]),
+          el('div', { class: 'settings-row' }, [el('span', null, 'Route: through the Staff Officer to the Director Personnel; from'), crFrom, el('span', null, 'up, the Director recommends and the Chief Registrar approves. The Chief Registrar\'s own leave goes to the Hon. Chief Judge.')]),
+          el('label', { class: 'check check--plain' }, [relief, ' The relief officer must be named on the application']),
+          el('h3', null, 'Public holidays'), holidays,
+          el('div', { class: 'card__actions' }, [el('button', { class: 'btn btn--primary', onclick: async () => {
+            try {
+              await api.put('/leave/settings', {
+                types: [...types.children].map(r => ({ key: r.dataset.key, name: r.querySelector('[data-k=name]').value, days: r.querySelector('[data-k=gl]') ? 'gl' : r.querySelector('[data-k=days]').value, working: r.querySelector('[data-k=working]').checked, sex: r.dataset.sex })).filter(t => t.name.trim()),
+                annualJunior: junior.value, annualSenior: senior.value, annualSeniorFromGl: seniorFrom.value, seniorFromGl: crFrom.value,
+                reliefRequired: relief.checked, holidays: holidays.value.split('\n').map(x => x.trim()).filter(Boolean)
+              });
+              ui.toast('Leave settings saved.', 'success');
+            } catch (e) { ui.toast(e.message, 'error', 7000); }
+          } }, 'Save Leave Settings')])
+        );
       }
 
       const tabDefs = [

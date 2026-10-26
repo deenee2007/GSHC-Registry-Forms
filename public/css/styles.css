@@ -744,3 +744,12 @@ button.dash-card:hover { border-color: var(--green-500); }
 .input--short { max-width: 6rem; }
 .roll-print { font-size: 7.5pt; }
 .roll-print td, .roll-print th { padding: 2px 3px; }
+
+/* Leave */
+.leave-act { border-top: 1px solid var(--line); margin-top: 1rem; padding-top: .6rem; }
+.leave-letter p { font-size: 11.5pt; line-height: 1.6; }
+.leave-meta { display: flex; justify-content: space-between; margin: 10px 0 16px; font-size: 11pt; }
+.leave-subject { text-align: center; text-decoration: underline; font-size: 12pt; margin: 18px 0 10px; }
+.leave-sign { width: 70mm; margin: 26px 0 10px; text-align: center; font-size: 11pt; }
+.leave-sign img { max-height: 22mm; max-width: 60mm; }
+.leave-cc { font-size: 10pt; margin-top: 18px; }

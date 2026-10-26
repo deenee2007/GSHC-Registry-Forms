@@ -58,10 +58,20 @@
       _nav.appendChild(navItem('💰  Fees List', () => loadModule('fees'), { 'data-nav': 'fees' }));
     }
 
-    // The Nominal Roll of the Directorate of Personnel: for those given it.
-    if (permissions.isAdmin(user) || (user.privileges || []).some(p => p === 'personnel_view' || p === 'personnel_edit')) {
-      group('Personnel');
-      _nav.appendChild(navItem('👥  Nominal Roll', () => loadModule('personnel'), { 'data-nav': 'personnel' }));
+    // The Directorate of Personnel: the Nominal Roll for those given it;
+    // Leave for those who act on applications, the Directorate, and any
+    // officer whose account is linked to their record.
+    const roll = permissions.isAdmin(user) || (user.privileges || []).some(p => p === 'personnel_view' || p === 'personnel_edit');
+    const leaveRoles = (user.signerRoles || []).some(r => ['staff_officer', 'director_personnel', 'chief_registrar', 'chief_judge'].includes(r));
+    const personnelGroup = ui.el('div');
+    _nav.appendChild(personnelGroup);
+    const leaveItem = () => navItem('🌴  Leave', () => loadModule('leave'), { 'data-nav': 'leave' }, 'leave');
+    if (roll || leaveRoles) {
+      personnelGroup.append(ui.el('div', { class: 'nav-group' }, 'Personnel'));
+      if (roll) personnelGroup.appendChild(navItem('👥  Nominal Roll', () => loadModule('personnel'), { 'data-nav': 'personnel' }));
+      personnelGroup.appendChild(leaveItem());
+    } else {
+      deps().api.get('/leave/settings').then(r => { if (r.me.hasRecord) { personnelGroup.append(ui.el('div', { class: 'nav-group' }, 'Personnel'), leaveItem()); } }).catch(() => {});
     }
 
     if (list.length) group('Units');
@@ -98,9 +108,13 @@
       setBadge('assign', cases.awaitingAssignment + (cases.reassignRequests || 0));
       setBadge('process', cases.toRegister);
       setBadge('newcases', cases.newCases);
+      // Leave applications waiting for this person's step.
+      let leave = 0;
+      if (badges.leave) { try { leave = (await api.get('/leave/counts')).waiting; } catch (e) { /* keep zero */ } }
+      setBadge('leave', leave);
       // Phones: the menu button shows whether anything waits inside the menu.
       const menu = document.getElementById('menu-badge');
-      const waiting = stats.inbox + stats.approvedUnprinted + notes.unread + cases.awaitingAssignment + (cases.reassignRequests || 0) + cases.toRegister + (cases.newCases || 0);
+      const waiting = stats.inbox + stats.approvedUnprinted + notes.unread + cases.awaitingAssignment + (cases.reassignRequests || 0) + cases.toRegister + (cases.newCases || 0) + leave;
       if (menu) { menu.textContent = waiting > 99 ? '99+' : String(waiting); menu.hidden = !waiting; }
     } catch (e) { /* offline: keep the last numbers */ }
   }

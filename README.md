@@ -414,8 +414,26 @@ documents); every opening of a record is audited.
 * **Settings, Personnel:** stations, ranks (with cadre and other spellings),
   cadres and kinds of documents. Clear Test Data leaves the roll alone.
 
-Staff matters (leave, promotion exercises, postings, discipline) will start
-from the officer's record.
+**🌴 Leave.** An application starts from the officer's record: by the
+officer when their account is linked to it (**My Leave**), or by the
+Secret Registry for them. The last day and the day to resume are worked out
+(working days leave out weekends and the public holidays in Settings) and
+the days are checked against what is left for the year. It goes through the
+**Staff Officer** to the **Director Personnel** (new signing roles), or for
+senior officers (GL 15 and up by default) the Director recommends and the
+**Chief Registrar** approves; the Chief Registrar's own leave goes to the
+Hon. Chief Judge. Each step is signed with the PIN, or declines with a
+reason. Approval gives the reference (GSHC/PER/LV/2026/0001), the approval
+letter with the approver's signature, and an entry in the record of
+service. **Leave Roster** shows who is away in a period. The kinds of leave
+and days (defaults: annual 21 days below GL 07 and 30 from GL 07, in working
+days; casual 7; maternity 112 calendar days; paternity 14; sick, study,
+examination and compassionate as approved), the senior grade level, the
+relief officer rule and the holidays are set in Settings, Personnel, to be
+confirmed by the Directorate.
+
+Other staff matters (promotion exercises, postings, discipline) will start
+from the officer's record too.
 
 ## Before going live: clearing test data
 Until it has been used, Home shows administrators a **Before Going Live**

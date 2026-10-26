@@ -18,7 +18,9 @@ const SIGNER_ROLES = {
   deputy_sheriff:        'Deputy Sheriff',
   commissioner_for_oaths: 'Commissioner for Oaths',
   chief_judge:           'Hon. Chief Judge',      // assigns new cases to courts (Process Registry)
-  process_registrar:     'Process Registrar'      // registers new cases and gives the suit number
+  process_registrar:     'Process Registrar',     // registers new cases and gives the suit number
+  staff_officer:         'Staff Officer',         // staff matters pass through them (leave applications)
+  director_personnel:    'Director Personnel'     // approves leave (the Chief Registrar for senior officers)
 };
 
 const judge = [{ role: 'judge', label: 'Judge' }];
