@@ -173,11 +173,12 @@
         const role = el('select', null, [el('option', { value: 'user' }, 'Unit User'), el('option', { value: 'admin' }, 'Administrator')]);
         role.value = v.role;
         const unitBox = checkboxes(units.map(u => [u.key, u.name]), v.unitKeys);
-        const privBox = checkboxes(meta.privileges.map(p => [p, p]), v.privileges);
+        const PRIV = { personnel_view: 'Nominal Roll: view', personnel_edit: 'Nominal Roll: edit' };
+        const privBox = checkboxes(meta.privileges.map(p => [p, PRIV[p] || p]), v.privileges);
         const signBox = checkboxes(Object.entries(meta.signerRoles), v.signerRoles);
 
         const unitRow = ui.field('Units', unitBox.node, 'Leave all unticked for a signer who serves every unit (for example the Chief Registrar).');
-        const privRow = ui.field('Privileges', privBox.node, '"finalize" lets the user submit forms for signature or finalise them. "reports" shows the Reports page for their own unit.');
+        const privRow = ui.field('Privileges', privBox.node, '"finalize" lets the user submit forms for signature or finalise them. "reports" shows the Reports page for their own unit. "Nominal Roll: view" shows the staff records of the Directorate of Personnel; "Nominal Roll: edit" (Secret Registry staff) also changes them and opens confidential documents.');
         const signRow = ui.field('Signs as', signBox.node, 'The signing roles this person holds. Each judge should be ticked to their own court.');
         const sync = () => { const user = role.value === 'user'; unitRow.hidden = !user; privRow.hidden = !user; };
         role.addEventListener('change', sync);
@@ -467,9 +468,42 @@
         );
       }
 
+      // The Directorate of Personnel: stations, ranks (with their cadre and
+      // the other ways they are written, for the import), cadres, documents.
+      async function renderPersonnel() {
+        const s = await api.get('/personnel/settings');
+        ui.clear(panel);
+        const lines = (items) => el('textarea', { rows: String(Math.min(14, Math.max(4, items.length + 1))), class: 'settings-lines' }, items.join('\n'));
+        const stations = lines(s.stations), cadres = lines(s.cadres), docTypes = lines(s.docTypes);
+        const ranks = el('div', { class: 'settings-list' });
+        const rankRow = (r) => el('div', { class: 'settings-row' }, [
+          el('input', { type: 'text', value: r.name || '', placeholder: 'Rank', 'data-k': 'name' }),
+          el('input', { type: 'text', value: r.cadre || '', placeholder: 'Cadre', 'data-k': 'cadre', list: 'cadre-list' }),
+          el('input', { type: 'text', value: (r.aliases || []).join(', '), placeholder: 'Also written as (commas between)', 'data-k': 'aliases', class: 'input--wide' }),
+          el('button', { class: 'btn btn--small btn--ghost', type: 'button', onclick: (e) => e.target.closest('.settings-row').remove() }, '✕')]);
+        s.ranks.forEach(r => ranks.appendChild(rankRow(r)));
+        const split = (t) => t.value.split('\n').map(x => x.trim()).filter(Boolean);
+        panel.append(
+          el('h3', null, 'Stations'), el('p', { class: 'muted' }, 'Every place staff are posted to: each High Court, Magistrate Court, Area Court, directorate and unit. One per line.'), stations,
+          el('h3', null, 'Ranks'), el('p', { class: 'muted' }, 'Each rank in its cadre. "Also written as" lists the other spellings found on rolls (S.C.O, SCO), so an imported roll is tidied to the one name.'),
+          ranks, el('button', { class: 'btn btn--small btn--ghost', type: 'button', onclick: () => ranks.appendChild(rankRow({})) }, '+ Add rank'),
+          el('datalist', { id: 'cadre-list' }, s.cadres.map(c => el('option', { value: c }))),
+          el('h3', null, 'Cadres'), el('p', { class: 'muted' }, 'One per line.'), cadres,
+          el('h3', null, 'Kinds of documents in a staff folder'), el('p', { class: 'muted' }, 'One per line. Keep Others last, for documents typed in.'), docTypes,
+          el('div', { class: 'card__actions' }, [el('button', { class: 'btn btn--primary', onclick: async () => {
+            try {
+              await api.put('/personnel/settings', { stations: split(stations), cadres: split(cadres), docTypes: split(docTypes),
+                ranks: [...ranks.children].map(r => Object.fromEntries([...r.querySelectorAll('input')].map(i => [i.dataset.k, i.value]))).filter(r => r.name.trim()) });
+              ui.toast('Personnel settings saved.', 'success');
+              renderPersonnel();
+            } catch (e) { ui.toast(e.message, 'error', 7000); }
+          } }, 'Save')])
+        );
+      }
+
       const tabDefs = [
         ['Users', renderUsers], ['Units', renderUnits], ['Form Access', renderFormAccess],
-        ['Signing Rules', renderSigning], ['Process Registry', renderProcess], ['Audit Log', renderAudit]
+        ['Signing Rules', renderSigning], ['Process Registry', renderProcess], ['Personnel', renderPersonnel], ['Audit Log', renderAudit]
       ];
       tabDefs.forEach(([name, fn], i) => {
         const btn = el('button', { class: 'tab' + (i === 0 ? ' is-active' : ''), role: 'tab', onclick: () => {
