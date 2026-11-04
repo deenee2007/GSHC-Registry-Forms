@@ -75,14 +75,21 @@ h1 { font-size: 1.35rem; margin: 0; }
 
 /* ---------- Shell ---------- */
 .shell { display: grid; grid-template-columns: 250px 1fr; grid-template-rows: 1fr auto; min-height: 100vh; }
-.app-footer { grid-column: 1 / -1; background: var(--green-900); color: #4e8060;
+.app-footer { grid-column: 1 / -1; background: var(--green-900); color: #fff;
   text-align: center; padding: .45rem 1rem; font-size: .72rem;
   border-top: 1px solid rgba(255,255,255,.07); letter-spacing: .03em; }
 .sidebar { background: var(--green-900); color: #dcefe2; display: flex; flex-direction: column; }
 .sidebar__brand { display: flex; align-items: center; gap: .5rem; padding: 1.1rem 1.2rem; font-weight: 700;
   color: #fff; border-bottom: 1px solid rgba(255,255,255,.1); }
 .sidebar__crest { color: var(--gold); font-size: 1.3rem; }
-.sidebar__nav { flex: 1; padding: .6rem; overflow-y: auto; }
+.sidebar__nav { flex: none; padding: .6rem; }
+/* Wide screens: the menu stays in view and scrolls on its own; Sign Out
+   comes straight after the last item. */
+@media (min-width: 721px) {
+  .shell { background: linear-gradient(to right, var(--green-900) 250px, transparent 250px); }
+  .sidebar { position: sticky; top: 0; height: 100vh; align-self: start; overflow-y: auto; overscroll-behavior: contain;
+    scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.3) transparent; }
+}
 .nav-item { display: block; width: 100%; text-align: left; background: transparent; border: none; color: #cfe7d8;
   padding: .6rem .8rem; border-radius: 8px; cursor: pointer; font-size: .88rem; margin-bottom: 2px; }
 .nav-item:hover { background: rgba(255,255,255,.08); color: #fff; }
