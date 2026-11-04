@@ -196,6 +196,21 @@ router.put('/settings', wrap(async (req, res) => {
   res.json(s);
 }));
 
+// This year's suit numbers by letter, and setting the last number used
+// (cases numbered by hand before the system): an administrator, once a year
+// as needed; the next year starts again at 1 by itself.
+router.get('/numbering', wrap(async (req, res) => {
+  if (!isAdmin(req.user) && !isRegistrar(req.user)) throw new HttpError(403, 'For the administrator and the Process Registrar.');
+  res.json({ letters: await processSvc.numbering() });
+}));
+router.put('/numbering', wrap(async (req, res) => {
+  if (!isAdmin(req.user)) throw new HttpError(403, 'Only an administrator sets where the numbers continue from.');
+  let r;
+  try { r = await processSvc.setLastNumber(req.body.suffix, req.body.last); } catch (e) { throw new HttpError(e.status || 500, e.message); }
+  await audit.log(req, 'suit_numbering_set', { unitKey: 'process', details: r });
+  res.json({ ...r, letters: await processSvc.numbering() });
+}));
+
 // The courts whose register this person keeps: the court registries they are in.
 const myCourts = async (u) => (await Unit.find({ type: 'registry', active: true, key: { $in: u.unitKeys } }, 'key').lean()).map(x => x.key).filter(k => inCourt(u, k));
 // Cases that go through the Process Registry: all but earlier cases, and

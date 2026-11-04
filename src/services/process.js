@@ -149,21 +149,26 @@ function formatHtml(suitNumber, esc = (s) => s) {
   return m ? `${esc(m[1])}<sup>${esc(m[2].toLowerCase())}</sup>${esc(m[3])}` : esc(String(suitNumber || ''));
 }
 
+// One count for each letter, shared by the types that use it. It starts
+// from the highest count the types with that letter reached on their own
+// (as numbers were counted before), so no number is given twice.
+async function letterCount(s, suffix, year) {
+  const id = `caseSeq:letter:${suffix || '-'}:${year}`;
+  if (!(await meta().findOne({ _id: id }))) {
+    const same = s.caseTypes.filter(t => t.suffix === suffix).map(t => `caseSeq:${t.key}:${year}`);
+    const old = await meta().find({ _id: { $in: same } }).toArray();
+    await meta().updateOne({ _id: id }, { $max: { seq: Math.max(0, ...old.map(x => x.seq || 0)) } }, { upsert: true });
+  }
+  return id;
+}
+
 // The next suit number for a case type this year.
 async function nextNumber(caseType, now = new Date()) {
   const s = await getSettings();
   const type = s.caseTypes.find(t => t.key === caseType);
   if (!type) throw bad('Unknown case type.');
   const year = now.getFullYear();
-  // One count for each letter, shared by the types that use it. It starts
-  // from the highest count the types with that letter reached on their own
-  // (as numbers were counted before), so no number is given twice.
-  const id = `caseSeq:letter:${type.suffix || '-'}:${year}`;
-  if (!(await meta().findOne({ _id: id }))) {
-    const same = s.caseTypes.filter(t => t.suffix === type.suffix).map(t => `caseSeq:${t.key}:${year}`);
-    const old = await meta().find({ _id: { $in: same } }).toArray();
-    await meta().updateOne({ _id: id }, { $max: { seq: Math.max(0, ...old.map(x => x.seq || 0)) } }, { upsert: true });
-  }
+  const id = await letterCount(s, type.suffix, year);
   const Case = mongoose.model('Case');
   for (let i = 0; i < 100; i++) {
     const r = await meta().findOneAndUpdate({ _id: id }, { $inc: { seq: 1 } }, { upsert: true, returnDocument: 'after' });
@@ -173,6 +178,45 @@ async function nextNumber(caseType, now = new Date()) {
     if (!(await Case.exists({ suitNumber }))) return { seq, year, suitNumber };
   }
   throw bad('Could not find a free suit number. Please try again.');
+}
+
+// The highest number of a letter this year registered through the system
+// (not entered by hand as an earlier case).
+async function highestGiven(s, suffix, year) {
+  const esc = (x) => x.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+  const rx = new RegExp(`^${esc(s.prefix)}/(\\d+)${esc(suffix)}/${year}$`, 'i');
+  const list = await mongoose.model('Case').find({ suitNumber: rx, earlier: { $ne: true } }, 'suitNumber').lean();
+  return Math.max(0, ...list.map(c => Number(rx.exec(c.suitNumber)[1])));
+}
+
+// This year's numbers, one line per letter: the last number given, and the
+// lowest it may be set to.
+async function numbering(now = new Date()) {
+  const s = await getSettings();
+  const year = now.getFullYear();
+  const letters = [...new Set(s.caseTypes.map(t => t.suffix))];
+  return Promise.all(letters.map(async (suffix) => {
+    const doc = await meta().findOne({ _id: await letterCount(s, suffix, year) });
+    return { suffix, types: s.caseTypes.filter(t => t.suffix === suffix).map(t => t.label), year, last: doc.seq || 0,
+      lowest: await highestGiven(s, suffix, year), example: `${s.prefix}/${(doc.seq || 0) + 1}${suffix}/${year}` };
+  }));
+}
+
+// Set the last number used this year for a letter (for cases numbered by
+// hand before the system), so the next case takes the number after it.
+async function setLastNumber(suffix, last, now = new Date()) {
+  const s = await getSettings();
+  suffix = String(suffix || '').toLowerCase();
+  if (!s.caseTypes.some(t => t.suffix === suffix)) throw bad('No case type uses that letter.');
+  const n = Number(last);
+  if (!(Number.isInteger(n) && n >= 0 && n <= 999999)) throw bad('The last number used must be a whole number.');
+  const year = now.getFullYear();
+  const lowest = await highestGiven(s, suffix, year);
+  if (n < lowest) throw bad(`The system has already given ${s.prefix}/${lowest}${suffix}/${year}; the last number used cannot be lower than ${lowest}.`);
+  const id = await letterCount(s, suffix, year);
+  const before = (await meta().findOne({ _id: id })).seq || 0;
+  await meta().updateOne({ _id: id }, { $set: { seq: n } });
+  return { suffix, year, before, last: n, next: `${s.prefix}/${n + 1}${suffix}/${year}` };
 }
 
 // The next invoice reference: INV/2026/0001, from 1 again each year.
@@ -218,4 +262,4 @@ function roman(n) {
   return s;
 }
 
-module.exports = { getSettings, setSettings, undoOfficialFeesOnce, nextNumber, nextInvoice, proposeCourt, rotationState, courts: courts_, formatHtml, roman, REMARKS, REASSIGN_REASONS, DEFAULTS };
+module.exports = { getSettings, setSettings, undoOfficialFeesOnce, nextNumber, numbering, setLastNumber, nextInvoice, proposeCourt, rotationState, courts: courts_, formatHtml, roman, REMARKS, REASSIGN_REASONS, DEFAULTS };
