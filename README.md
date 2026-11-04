@@ -251,9 +251,15 @@ New cases are filed, numbered and assigned to a court here.
    official. Then **Send to Process Registrar**. The Process Registrar may
    file a case themselves and register it at once, with no sending.
 2. **Registration** (Process Registrar): checks the filing and the receipt,
-   then **Register and Give Number**, or **Return with Comments**. Each case
-   type counts on its own and starts again at 1 each year: GM/1/2026 (civil),
-   GM/1<sup>c</sup>/2026 (criminal), GM/1<sup>p</sup>/2026 (petition). The
+   then **Register and Give Number**, or **Return with Comments**. Each
+   letter counts on its own and starts again at 1 each year: GM/1/2026 (civil),
+   GM/1<sup>c</sup>/2026 (criminal), GM/1<sup>p</sup>/2026 (petition). Case
+   types may share a letter (Criminal and EFCC matters both c) and then share
+   one count; a number already used by a case entered by hand is passed over.
+   Where cases were numbered by hand earlier in the year, an administrator
+   sets the last number used for each letter once (Settings, Process
+   Registry, **Suit numbers this year**); it cannot go below a number the
+   system has given, it is audited, and the next year starts at 1. The
    next court in turn is proposed: after the court proposed last, back to
    High Court 1 after the last; EFCC matters go round the EFCC courts only.
 3. **Assignment** (Hon. Chief Judge): **⚖ Awaiting Assignment** lists the

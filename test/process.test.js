@@ -864,3 +864,22 @@ test('case types may share a letter (Criminal and EFCC both "c"): one count, no 
   assert.equal(d.suitNumber, `GM/${n(c) + 2}c/${year}`);
   await admin.put('/api/process/settings', { caseTypes: before.map(t => ({ key: t.key, label: t.label, suffix: t.suffix, book: t.book })) });
 });
+
+test('suit numbers this year: the administrator sets the last number used by hand; never below a number the system gave', async () => {
+  const year = new Date().getFullYear();
+  assert.equal((await u.clerk.get('/api/process/numbering')).status, 403);
+  const before = (await u.registrar.get('/api/process/numbering')).body.letters;
+  const civil = before.find(x => x.suffix === '');
+  assert.deepEqual(civil.types, ['Civil']);
+  assert.equal((await u.registrar.put('/api/process/numbering', { suffix: '', last: 500 })).status, 403, 'administrators only');
+  assert.equal((await admin.put('/api/process/numbering', { suffix: '', last: civil.lowest - 1 })).status, 400, 'not below a number already given');
+  assert.equal((await admin.put('/api/process/numbering', { suffix: 'z', last: 5 })).status, 400, 'no such letter');
+  const set = await admin.put('/api/process/numbering', { suffix: '', last: 500 });
+  assert.equal(set.status, 200, JSON.stringify(set.body));
+  assert.equal(set.body.next, `GM/501/${year}`);
+  const c = await fileAndRegister({ caseType: 'civil' });
+  assert.equal(c.suitNumber, `GM/501/${year}`);
+  assert.equal((await admin.put('/api/process/numbering', { suffix: '', last: 400 })).status, 400, 'below 501, now given');
+  const crim = (await admin.get('/api/process/numbering')).body.letters.find(x => x.suffix === 'c');
+  assert.ok(crim.last < 500, 'each letter counts on its own');
+});

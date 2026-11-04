@@ -410,6 +410,27 @@
 
       // ── PROCESS REGISTRY: number prefix, case types, fee schedule, EFCC courts ──
       async function renderProcess() {
+        // The last number used this year for each letter, set once where cases were numbered by hand.
+        const numbering = el('div', { class: 'settings-list' }, el('p', { class: 'muted' }, 'Loading…'));
+        async function loadNumbering() {
+          let r;
+          try { r = await api.get('/process/numbering'); } catch (e) { numbering.replaceChildren(el('p', { class: 'muted' }, e.message)); return; }
+          numbering.replaceChildren(...r.letters.map(x => {
+            const last = el('input', { type: 'number', min: String(x.lowest), value: String(x.last), class: 'narrow', 'aria-label': `Last number used, ${x.types.join(', ')}` });
+            return el('div', { class: 'settings-row' }, [
+              el('strong', null, `${x.types.join(' and ')} (${x.suffix ? `letter ${x.suffix}` : 'no letter'})`),
+              el('span', null, 'Last number used:'), last,
+              el('span', { class: 'muted' }, `next: ${x.example}`),
+              el('button', { class: 'btn btn--small btn--primary', type: 'button', onclick: async () => {
+                if (Number(last.value) === x.last) { ui.toast('No change.', 'info'); return; }
+                if (!confirm(`The next ${x.types.join(' or ')} case will be number ${Number(last.value) + 1} for ${x.year}. Continue?`)) return;
+                try { const r2 = await api.put('/process/numbering', { suffix: x.suffix, last: last.value }); ui.toast(`Saved. The next number is ${r2.next}.`, 'success', 6000); loadNumbering(); }
+                catch (e) { ui.toast(e.message, 'error', 7000); }
+              } }, 'Set')
+            ]);
+          }));
+        }
+        loadNumbering();
         ui.clear(panel);
         const s = await api.get('/process/settings');
         const prefix = el('input', { type: 'text', value: s.prefix, maxlength: '6', class: 'narrow', 'aria-label': 'Number prefix' });
@@ -437,9 +458,12 @@
         panel.append(
           el('p', { class: 'muted' }, 'How new cases are numbered, the filing fees staff choose from, the invoice and receipt, and which courts hear EFCC matters.'),
           el('h3', null, 'Suit numbers'),
-          el('div', { class: 'settings-row' }, [el('span', null, 'Prefix'), prefix, el('span', { class: 'muted' }, `Numbers read ${s.prefix}/1/${new Date().getFullYear()}; each type counts on its own and starts again at 1 each year.`)]),
+          el('div', { class: 'settings-row' }, [el('span', null, 'Prefix'), prefix, el('span', { class: 'muted' }, `Numbers read ${s.prefix}/1/${new Date().getFullYear()}; each letter counts on its own and starts again at 1 each year.`)]),
           el('h3', null, 'Case types and their letter'), el('p', { class: 'muted' }, 'The letter is printed raised after the number (Criminal: GM/45c/2026). Leave it empty for Civil. Types may share a letter (Criminal and EFCC matters both c): they then share one count, so a number is never given twice. Each type goes in the Civil or the Criminal register book of the court.'),
           types, el('button', { class: 'btn btn--small btn--ghost', type: 'button', onclick: () => types.appendChild(typeRow({ label: '', suffix: '', book: 'civil' })) }, '+ Add case type'),
+          el('h3', null, `Suit numbers this year (${new Date().getFullYear()})`),
+          el('p', { class: 'muted' }, 'Where cases were already numbered by hand this year, enter the last number used for each letter: the next case takes the number after it. Set it once, when the system starts; the next year starts again at 1 by itself. It cannot be set below a number the system has already given.'),
+          numbering,
           el('h3', null, 'Fee schedule'), el('p', { class: 'muted' }, 'Staff pick fees from this list when filing; the total is worked out for them. Official cases have no fee.'),
           fees, el('button', { class: 'btn btn--small btn--ghost', type: 'button', onclick: () => fees.appendChild(feeRow({ item: '' })) }, '+ Add fee'),
           el('h3', null, 'Invoice and receipt'),
