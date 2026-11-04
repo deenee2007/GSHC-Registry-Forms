@@ -438,7 +438,7 @@
           el('p', { class: 'muted' }, 'How new cases are numbered, the filing fees staff choose from, the invoice and receipt, and which courts hear EFCC matters.'),
           el('h3', null, 'Suit numbers'),
           el('div', { class: 'settings-row' }, [el('span', null, 'Prefix'), prefix, el('span', { class: 'muted' }, `Numbers read ${s.prefix}/1/${new Date().getFullYear()}; each type counts on its own and starts again at 1 each year.`)]),
-          el('h3', null, 'Case types and their letter'), el('p', { class: 'muted' }, 'The letter is printed raised after the number (Criminal: GM/45c/2026). Leave it empty for one type only (Civil). Each type goes in the Civil or the Criminal register book of the court.'),
+          el('h3', null, 'Case types and their letter'), el('p', { class: 'muted' }, 'The letter is printed raised after the number (Criminal: GM/45c/2026). Leave it empty for Civil. Types may share a letter (Criminal and EFCC matters both c): they then share one count, so a number is never given twice. Each type goes in the Civil or the Criminal register book of the court.'),
           types, el('button', { class: 'btn btn--small btn--ghost', type: 'button', onclick: () => types.appendChild(typeRow({ label: '', suffix: '', book: 'civil' })) }, '+ Add case type'),
           el('h3', null, 'Fee schedule'), el('p', { class: 'muted' }, 'Staff pick fees from this list when filing; the total is worked out for them. Official cases have no fee.'),
           fees, el('button', { class: 'btn btn--small btn--ghost', type: 'button', onclick: () => fees.appendChild(feeRow({ item: '' })) }, '+ Add fee'),

@@ -76,9 +76,11 @@ async function setSettings(input) {
       const suffix = String(t.suffix || '').trim().toLowerCase();
       if (!label) throw bad('Every case type needs a name.');
       if (!/^[a-z]{0,3}$/.test(suffix)) throw bad(`The letter for ${label} must be up to 3 letters (or none).`);
-      if (seen.has(suffix)) throw bad(`Two case types use the same letter "${suffix || 'none'}". Each needs its own, so their numbers never clash.`);
-      seen.add(suffix);
+      // Types may share a letter (Criminal and EFCC both "c"): they then share
+      // one count, so their numbers never clash.
       const key = String(t.key || label).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 30);
+      if (seen.has(key)) throw bad(`${label} is listed twice.`);
+      seen.add(key);
       return { key, label, suffix, book: bookOf({ key, suffix, book: t.book }) };
     });
   }
@@ -153,9 +155,24 @@ async function nextNumber(caseType, now = new Date()) {
   const type = s.caseTypes.find(t => t.key === caseType);
   if (!type) throw bad('Unknown case type.');
   const year = now.getFullYear();
-  const r = await meta().findOneAndUpdate({ _id: `caseSeq:${caseType}:${year}` }, { $inc: { seq: 1 } }, { upsert: true, returnDocument: 'after' });
-  const seq = (r && r.value ? r.value : r).seq;
-  return { seq, year, suitNumber: `${s.prefix}/${seq}${type.suffix}/${year}` };
+  // One count for each letter, shared by the types that use it. It starts
+  // from the highest count the types with that letter reached on their own
+  // (as numbers were counted before), so no number is given twice.
+  const id = `caseSeq:letter:${type.suffix || '-'}:${year}`;
+  if (!(await meta().findOne({ _id: id }))) {
+    const same = s.caseTypes.filter(t => t.suffix === type.suffix).map(t => `caseSeq:${t.key}:${year}`);
+    const old = await meta().find({ _id: { $in: same } }).toArray();
+    await meta().updateOne({ _id: id }, { $max: { seq: Math.max(0, ...old.map(x => x.seq || 0)) } }, { upsert: true });
+  }
+  const Case = mongoose.model('Case');
+  for (let i = 0; i < 100; i++) {
+    const r = await meta().findOneAndUpdate({ _id: id }, { $inc: { seq: 1 } }, { upsert: true, returnDocument: 'after' });
+    const seq = (r && r.value ? r.value : r).seq;
+    const suitNumber = `${s.prefix}/${seq}${type.suffix}/${year}`;
+    // A number already used (a case entered earlier by hand) is passed over.
+    if (!(await Case.exists({ suitNumber }))) return { seq, year, suitNumber };
+  }
+  throw bad('Could not find a free suit number. Please try again.');
 }
 
 // The next invoice reference: INV/2026/0001, from 1 again each year.

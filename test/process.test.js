@@ -92,7 +92,7 @@ test('the Process Registry unit exists and settings have the three case types', 
   assert.equal(s.body.courts.length, 9);
   assert.equal(s.body.courts[8].roman, 'IX');
   assert.equal((await u.clerk.put('/api/process/settings', { prefix: 'XX' })).status, 403, 'administrators only');
-  assert.equal((await admin.put('/api/process/settings', { caseTypes: [{ label: 'A', suffix: 'c' }, { label: 'B', suffix: 'c' }] })).status, 400, 'letters must differ');
+  assert.equal((await admin.put('/api/process/settings', { caseTypes: [{ label: 'A', suffix: 'c' }, { label: 'A', suffix: 'd' }] })).status, 400, 'a type listed twice');
 });
 
 test('fees come from the schedule; a filing needs its receipt before it goes to the Process Registrar', async () => {
@@ -840,4 +840,27 @@ test('reassignment: the court asks, the Chief Judge declines or reassigns (one o
   assert.equal((await u.cj.post('/api/process/reassign', { moves: [{ id: disposedNow.body.case.id, unitKey: 'hc5' }], reason: 'Death of the Judge', pin: '1357' })).status, 409, 'a disposed case is not reassigned');
   const cf = await u.court3.get(`/api/cases?q=${encodeURIComponent(a.suitNumber)}&exact=1`);
   assert.match(cf.body.cases[0].documents[0].formLabel, /Case reassigned to High Court No\. V/);
+});
+
+test('case types may share a letter (Criminal and EFCC both "c"): one count, no number given twice', async () => {
+  const before = (await admin.get('/api/process/settings')).body.caseTypes;
+  const types = [...before.map(t => ({ key: t.key, label: t.label, suffix: t.suffix, book: t.book })), { label: 'EFCC matter', suffix: 'c', book: 'criminal' }];
+  const put = await admin.put('/api/process/settings', { caseTypes: types });
+  assert.equal(put.status, 200, JSON.stringify(put.body));
+  assert.equal((await admin.put('/api/process/settings', { caseTypes: [...types, { label: 'EFCC matter', suffix: 'e' }] })).status, 400, 'a type listed twice');
+  const efcc = put.body.caseTypes.find(t => t.label === 'EFCC matter');
+  const a = await fileAndRegister({ caseType: 'criminal', official: true, fees: [] });
+  const b = await fileAndRegister({ caseType: efcc.key, official: true, fees: [] });
+  const c = await fileAndRegister({ caseType: 'criminal', official: true, fees: [] });
+  const n = (x) => Number(/\/(\d+)c\//.exec(x.suitNumber)[1]);
+  assert.match(b.suitNumber, /^GM\/\d+c\/\d{4}$/);
+  assert.equal(n(b), n(a) + 1, 'the EFCC matter takes the next criminal number');
+  assert.equal(n(c), n(b) + 1);
+  // A number already used by a case entered by hand is passed over.
+  const year = new Date().getFullYear();
+  const taken = `GM/${n(c) + 1}c/${year}`;
+  assert.equal((await u.court3.post('/api/process/register/earlier', { unitKey: 'hc3', caseType: 'criminal', suitNumber: taken })).status, 201);
+  const d = await fileAndRegister({ caseType: efcc.key, official: true, fees: [] });
+  assert.equal(d.suitNumber, `GM/${n(c) + 2}c/${year}`);
+  await admin.put('/api/process/settings', { caseTypes: before.map(t => ({ key: t.key, label: t.label, suffix: t.suffix, book: t.book })) });
 });
