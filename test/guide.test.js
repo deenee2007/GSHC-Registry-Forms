@@ -50,3 +50,16 @@ test('every button and menu name the guide quotes exists in the app', () => {
     assert.ok(appCode.includes(n), `"${n}" is in the app`);
   }
 });
+
+test('the training sheets: one per role, served without signing in, quoting only names that exist in the app', async () => {
+  const r = await fetch(base + '/training');
+  assert.equal(r.status, 200);
+  const html = await r.text();
+  for (const id of ['t-clerk', 't-registrar', 't-cj', 't-court', 't-judge', 't-execution', 't-admin']) assert.match(html, new RegExp(`<section class="g-page" id="${id}"`));
+  const formsDir = path.join(__dirname, '..', 'src', 'forms');
+  const more = [...['js/modules/diary.js', 'js/modules/statistics.js', 'js/modules/fees.js', 'js/modules/execution.js', 'js/modules/registry.js', '../src/services/seed.js'].map(f => path.join(PUB, f)),
+    ...fs.readdirSync(formsDir, { recursive: true }).filter(f => f.endsWith('.js')).map(f => path.join(formsDir, f))]
+    .map(f => fs.readFileSync(f, 'utf8')).join('\n'); // unit names from the seed, box labels from the forms
+  const quoted = [...html.matchAll(/<b>([^<]+)<\/b>/g)].map(m => m[1].replace(/&amp;/g, '&')).filter(n => !/^(Your work:|Official)$/.test(n));
+  for (const n of new Set(quoted)) assert.ok((appCode + more).includes(n), `"${n}" from the training sheets is in the app`);
+});
