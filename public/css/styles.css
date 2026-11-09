@@ -800,3 +800,8 @@ button.dash-card:hover { border-color: var(--green-500); }
   .cd-step__note { grid-column: 2 / -1; }
   .cd-fields { grid-template-columns: 1fr; }
 }
+.cd-status { font-size: .78rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; padding: .2rem .65rem; border-radius: 999px; }
+.cd-status--active { background: var(--green-600, #0e7340); color: #fff; }
+.cd-status--closed { background: #5b6b62; color: #fff; }
+.cd-status--waiting { background: #f3d58a; color: #5c4400; }
+.cd-status--moved { background: #d9e2dc; color: #33443a; }

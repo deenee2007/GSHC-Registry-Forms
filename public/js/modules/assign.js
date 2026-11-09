@@ -4,8 +4,8 @@
  * keeps it or chooses another court, and assigns with their signing PIN.
  * The Process Registry then prints the slip for the file.
  *
- * Also reassignment: the courts' requests (reassign or decline), and
- * Reassign, to move one case or many cases of a court, each to the court
+ * Also reassignment, by the Chief Judge alone: Reassign on a case, or the
+ * Reassign tab to move one case or many cases of a court, each to the court
  * chosen (or spread across courts in turn), with the reason and the PIN.
  */
 (function () {
@@ -22,22 +22,16 @@
       const courtLabel = (k) => `High Court No. ${k.roman} (${k.name})`;
       container.appendChild(el('div', { class: 'page-head' }, [
         el('h1', null, '⚖ Awaiting Assignment'),
-        el('p', { class: 'muted' }, 'New cases registered at the Process Registry. Each shows the court next in turn; keep it or choose another, then assign with your signing PIN. Requests and Reassign move cases already in a court.')
+        el('p', { class: 'muted' }, 'New cases registered at the Process Registry. Each shows the court next in turn; keep it or choose another, then assign with your signing PIN. Reassign, or Reassign on a case under Assigned, moves cases already in a court.')
       ]));
       const tabsBar = el('div', { class: 'tabs', role: 'tablist' });
       const panel = el('div', { class: 'tab-panel' });
       container.append(tabsBar, panel);
-      const TABS = [['awaiting_assignment', 'Awaiting Assignment'], ['requests', 'Requests to Reassign'], ['reassign', 'Reassign'], ['assigned,dispatched,received,disposed', 'Assigned']];
+      const TABS = [['awaiting_assignment', 'Awaiting Assignment'], ['reassign', 'Reassign'], ['assigned,dispatched,received,disposed', 'Assigned']];
       let current = TABS.some(t => t[0] === ctx.tab) ? ctx.tab : 'awaiting_assignment';
-      const changed = () => { router.refreshBadges(); countRequests(); load(); };
-      // The number of requests on their tab.
-      const countRequests = () => api.get('/process/counts').then(n => {
-        const t = tabsBar.querySelector('[data-tab=requests]');
-        if (t) t.textContent = `Requests to Reassign${n.reassignRequests ? ` (${n.reassignRequests})` : ''}`;
-      }).catch(() => {});
+      const changed = () => { router.refreshBadges(); load(); };
 
       async function load() {
-        if (current === 'requests') return requests();
         if (current === 'reassign') return reassignTab();
         let r;
         try { r = await api.get(`/process/cases?status=${current}`); } catch (e) { panel.replaceChildren(ui.empty(e.offline ? 'Assigning needs the internet.' : e.message)); return; }
@@ -50,7 +44,8 @@
           current === 'awaiting_assignment'
             ? { label: 'Proposed court', value: c => c.proposed ? c.proposed.name : '' }
             : { label: 'Assigned to', value: c => c.assigned ? `High Court No. ${c.assigned.roman}, ${P.day(c.assignedAt)}${c.reassignedFrom ? ` (reassigned from No. ${c.reassignedFrom.roman})` : ''}` : '' }
-        ], r.cases, current === 'awaiting_assignment' ? [{ label: 'Review & Assign', class: 'btn--ok', onClick: c => review(c.id) }] : []));
+        ], r.cases, current === 'awaiting_assignment' ? [{ label: 'Review & Assign', class: 'btn--ok', onClick: c => review(c.id) }]
+          : [{ label: 'Reassign', show: c => ['assigned', 'dispatched', 'received'].includes(c.status), onClick: c => reassignOne(c) }]));
       }
 
       async function review(id) {
@@ -101,27 +96,10 @@
         return r;
       }
 
-      // ── The courts' requests ──
-      async function requests() {
-        let r;
-        try { r = await api.get('/process/cases?requested=1&status=assigned,dispatched,received'); } catch (e) { panel.replaceChildren(ui.empty(e.offline ? 'This needs the internet.' : e.message)); return; }
-        if (!r.cases.length) { panel.replaceChildren(ui.empty('No court has asked for a case to be reassigned.')); return; }
-        panel.replaceChildren(ui.table([
-          { label: 'Suit No.', node: c => P.caseNo(ui, c.suitNumber) },
-          { label: 'Parties', value: c => P.parties(c) },
-          { label: 'Now in', value: c => c.assigned ? `High Court No. ${c.assigned.roman}` : '' },
-          { label: 'Reason', value: c => c.reassignRequest.reason + (c.reassignRequest.note ? `. ${c.reassignRequest.note}` : '') },
-          { label: 'Asked by', value: c => `${c.reassignRequest.byName}, ${P.day(c.reassignRequest.at)}` }
-        ], r.cases, [
-          { label: 'Reassign', class: 'btn--ok', onClick: c => reassignOne(c) },
-          { label: 'Decline', class: 'btn--danger', onClick: c => decline(c) }
-        ]));
-      }
-
       async function reassignOne(c) {
         const others = settings.courts.filter(k => !c.assigned || k.key !== c.assigned.key);
         const court = el('select', { 'aria-label': 'Court' }, [el('option', { value: '' }, 'Choose the court'), ...others.map(k => el('option', { value: k.key }, courtLabel(k)))]);
-        const picker = reasonPicker(c.reassignRequest && c.reassignRequest.reason);
+        const picker = reasonPicker();
         const pin = pinInput();
         ui.modal(`Reassign ${c.suitNumber}`, el('div', null, [
           P.details(ui, c, settings),
@@ -133,22 +111,6 @@
           onConfirm: async () => {
             if (!court.value) throw new Error('Choose the court.');
             return send([{ id: c.id, unitKey: court.value }], picker, pin);
-          }
-        });
-      }
-
-      async function decline(c) {
-        const comment = el('textarea', { rows: '3', maxlength: '500', placeholder: 'Optional: why the case stays where it is' });
-        ui.modal(`Decline the request for ${c.suitNumber}`, el('div', null, [
-          el('p', null, `${c.reassignRequest.byName} asked that this case be reassigned: ${c.reassignRequest.reason}. The case will stay in High Court No. ${c.assigned.roman}, and the court will be told.`),
-          ui.field('Comment to the court', comment)
-        ]), {
-          confirmText: 'Decline', confirmClass: 'btn--danger',
-          onConfirm: async () => {
-            await api.post(`/process/cases/${c.id}/decline-reassignment`, { comment: comment.value.trim() });
-            ui.toast('Request declined. The court has been told.', 'success');
-            changed();
-            return true;
           }
         });
       }
@@ -253,7 +215,6 @@
         } }, name);
         tabsBar.appendChild(btn);
       });
-      countRequests();
       load();
     }
   };

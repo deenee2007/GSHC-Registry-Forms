@@ -7,8 +7,8 @@
  * arrives; the remark when the case is disposed of; earlier cases added
  * by hand. Which book a case goes in is set per case type (Settings,
  * Process Registry). A case reassigned to another court stays in the
- * book, marked in its remarks, with nothing more to do; the court may ask
- * the Hon. Chief Judge to reassign a case (View, Request Reassignment).
+ * book, marked in its remarks, with nothing more to do. Only the Hon.
+ * Chief Judge reassigns a case.
  */
 (function () {
   window.App = window.App || {};
@@ -114,7 +114,6 @@
         const remarks = (c) => c.reassignedAway ? el('span', null, remarkText(c)) : el('div', { class: 'reg-remark' }, [
           c.disposal ? el('span', null, c.disposal.remark) : null,
           !c.disposal && c.reassignedFrom ? el('span', { class: 'muted' }, `Reassigned from High Court No. ${c.reassignedFrom.roman}`) : null,
-          !c.disposal && c.reassignRequest ? el('span', { class: 'badge badge--pending' }, 'Reassignment asked for') : null,
           canWork ? btn(c.disposal ? 'Change' : 'Record Remark', 'btn--ghost', () => remark(c)) : null
         ]);
         const COLS = [
@@ -143,8 +142,6 @@
         const close = el('button', { class: 'btn btn--ghost', onclick: () => dialog.close() }, '✕  Close');
         if (c.reassignedAway) full.reassignedAway = c.reassignedAway;
         const here = !c.reassignedAway;
-        const askBtn = here && ['assigned', 'dispatched', 'received'].includes(full.status) && !full.reassignRequest
-          ? el('button', { class: 'btn btn--ghost', onclick: () => { dialog.close(); askReassign(full); } }, '↪ Request Reassignment') : null;
         const formBtn = canWork && here ? el('button', { class: 'btn btn--ghost', onclick: () => { dialog.close(); ctx.workflow.fillFromCase({ caseId: full.id, unitKey: unit.key }); } }, '📝 Fill a Form') : null;
         const fixBtn = canWork && here && window.App.diaryUi ? el('button', { class: 'btn btn--primary', onclick: async () => { dialog.close(); await window.App.diaryUi.fix(ctx, unit, { caseId: full.id }); } }, '📅 Fix a Date') : null;
         const dates = el('div', { class: 'case-docs' });
@@ -156,7 +153,7 @@
             { label: 'Outcome', value: e => e.status === 'done' ? e.outcome.text : 'To come' }
           ], r.entries) : el('p', { class: 'muted' }, 'No date in the Court Diary yet.'));
         }).catch(() => dates.remove());
-        ui.modal(`Case ${full.suitNumber}`, el('div', null, [el('div', { class: 'doc-preview__actions' }, [close, formBtn, fixBtn, askBtn]), P.details(ui, full, settings), dates, partiesPanel(full, () => { dialog.close(); view(c); load(); }), P.processesPanel(ctx, full, settings, unit), P.documentsPanel(ui, api, full.id)]),
+        ui.modal(`Case ${full.suitNumber}`, el('div', null, [el('div', { class: 'doc-preview__actions' }, [close, formBtn, fixBtn]), P.details(ui, full, settings), dates, partiesPanel(full, () => { dialog.close(); view(c); load(); }), P.processesPanel(ctx, full, settings, unit), P.documentsPanel(ui, api, full.id)]),
           { noFooter: true, wide: true, onOpen: (o) => { dialog = o; } });
       }
 
@@ -256,28 +253,6 @@
             const r = await api.post(`/process/cases/${c.id}/parties/${kind}`, body);
             ui.toast(`Recorded: ${r.change}.`, 'success', 6000);
             changed(); return true;
-          }
-        });
-      }
-
-      // Ask the Hon. Chief Judge to reassign the case, with the reason.
-      function askReassign(c) {
-        const reasons = settings.reassignReasons || [];
-        const pick = el('select', null, [el('option', { value: '' }, 'Choose the reason'), ...reasons.map(r => el('option', { value: r }, r))]);
-        const other = el('input', { type: 'text', maxlength: '200', placeholder: 'Type the reason' });
-        const note = el('textarea', { rows: '3', maxlength: '500', placeholder: 'Optional: anything the Hon. Chief Judge should know' });
-        const otherRow = ui.field('Other reason', other);
-        const sync = () => { otherRow.hidden = pick.value !== 'Other'; };
-        pick.addEventListener('change', sync); sync();
-        ui.modal(`Request Reassignment · ${c.suitNumber}`, el('div', null, [
-          el('p', { class: 'muted' }, 'The request goes to the Hon. Chief Judge, who decides whether to reassign the case and to which court. The case stays here until then.'),
-          ui.field('Reason', pick), otherRow, ui.field('Note', note)
-        ]), {
-          confirmText: 'Send Request',
-          onConfirm: async () => {
-            if (!pick.value || (pick.value === 'Other' && !other.value.trim())) throw new Error('Choose the reason, or type it under Other.');
-            await api.post(`/process/cases/${c.id}/request-reassignment`, { reason: pick.value, other: other.value.trim(), note: note.value.trim() });
-            ui.toast('Request sent to the Hon. Chief Judge.', 'success'); load(); return true;
           }
         });
       }

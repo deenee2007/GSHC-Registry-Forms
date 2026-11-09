@@ -742,7 +742,7 @@ test('processes filed later at the court registry: fees, invoice, receipt (check
   assert.equal((await u.court3.get('/api/process/fees-list?from=2026-10-21&unitKey=process')).status, 403);
 });
 
-test('reassignment: the court asks, the Chief Judge declines or reassigns (one or many) with the PIN; new slip, old slip replaced', async () => {
+test('reassignment: only the Chief Judge reassigns (one or many) with the PIN; new slip, old slip replaced', async () => {
   const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const ahead = new Date(); ahead.setDate(ahead.getDate() + 5);
   const clerk4 = await makeUser({ fullName: 'Court Four Clerk', email: 'hc4r@example.com', unitKeys: ['hc4'], privileges: ['view', 'create', 'edit', 'finalize', 'print'] });
@@ -754,25 +754,9 @@ test('reassignment: the court asks, the Chief Judge declines or reassigns (one o
   const fixed = await u.court3.post('/api/diary', { unitKey: 'hc3', caseId: c.id, date: iso(ahead), business: 'Mention' });
   assert.equal(fixed.status, 201);
 
-  // The court asks.
-  assert.equal((await clerk4.post(`/api/process/cases/${c.id}/request-reassignment`, { reason: 'Retirement of the Judge' })).status, 403, 'only its own court asks');
-  assert.equal((await u.court3.post(`/api/process/cases/${c.id}/request-reassignment`, { reason: 'Other', other: '' })).status, 400, 'Other needs words');
-  assert.equal((await u.court3.post(`/api/process/cases/${c.id}/request-reassignment`, { reason: 'Something else' })).status, 400, 'a reason from the list');
-  const ask = await u.court3.post(`/api/process/cases/${c.id}/request-reassignment`, { reason: 'Request by a party', note: 'The defendant asks' });
-  assert.equal(ask.status, 200, JSON.stringify(ask.body));
-  assert.equal(ask.body.case.reassignRequest.reason, 'Request by a party');
-  assert.equal((await u.court3.post(`/api/process/cases/${c.id}/request-reassignment`, { reason: 'Request by a party' })).status, 409, 'one request at a time');
-  assert.equal((await u.cj.get('/api/process/counts')).body.reassignRequests, 1);
-  assert.ok((await u.cj.get('/api/notifications')).body.notifications.some(n => /asks that .* be reassigned/.test(n.message) && n.link === 'assign:requests'));
-  const reqs = await u.cj.get('/api/process/cases?requested=1&status=assigned,dispatched,received');
-  assert.deepEqual(reqs.body.cases.map(x => x.id), [c.id]);
-
-  // Declined: it stays.
-  assert.equal((await u.court3.post(`/api/process/cases/${c.id}/decline-reassignment`)).status, 403);
-  const no = await u.cj.post(`/api/process/cases/${c.id}/decline-reassignment`, { comment: 'Hearing is far advanced' });
-  assert.equal(no.status, 200);
-  assert.equal(no.body.case.reassignRequest, null);
-  assert.ok((await u.court3.get('/api/notifications')).body.notifications.some(n => /did not reassign .*Hearing is far advanced/.test(n.message)));
+  // Only the Hon. Chief Judge starts a reassignment: the court cannot ask through the system.
+  assert.equal((await u.court3.post(`/api/process/cases/${c.id}/request-reassignment`, { reason: 'Request by a party' })).status, 404, 'no request by the court');
+  assert.equal((await u.court3.post('/api/process/reassign', { moves: [{ id: c.id, unitKey: 'hc4' }], reason: 'Request by a party', pin: '1357' })).status, 403);
 
   // Reassigned with the PIN.
   const move = { moves: [{ id: c.id, unitKey: 'hc4' }], reason: 'Retirement of the Judge', pin: '1357' };
