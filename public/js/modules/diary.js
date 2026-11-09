@@ -318,7 +318,9 @@
           { label: 'Notes / outcome', node: e => e.status === 'done'
             ? el('span', null, [el('span', { class: 'badge badge--final' }, 'Sat'), ' ', e.outcome.text, e.outcome.nextDate ? ` Adjourned to ${longDay(e.outcome.nextDate)}.` : ''])
             : el('span', null, e.notes || '') }
-        ], list, meta.canWrite ? [
+        ], list, [
+          { label: 'View case', show: e => !!e.caseId, onClick: e => viewCase(e) },
+          ...(meta.canWrite ? [
           { label: 'Record Outcome', class: 'btn--ok', show: e => e.status === 'fixed' && e.date <= iso(new Date()), onClick: async e => { if (await outcome(ctx, e, meta.businessTypes, remarks)) load(); } },
           { label: '📝 Form', onClick: e => ctx.workflow.fillFromCase({ diaryId: e.id, unitKey: unit.key }) },
           { label: 'Change', show: e => e.status === 'fixed', onClick: async e => { if (await edit(ctx, e, meta.businessTypes)) load(); } },
@@ -326,7 +328,27 @@
             if (!confirm(`Remove ${e.suitNumber} (${e.business}, ${longDay(e.date)}) from the diary?`)) return;
             try { await api.del(`/diary/${e.id}`); ui.toast('Removed from the diary.', 'success'); load(); } catch (err) { ui.toast(err.message, 'error'); }
           } }
-        ] : null);
+          ] : [])
+        ]);
+      }
+
+      // The case of an entry, as in the Case Register: its details, its dates in this court and its documents.
+      async function viewCase(e) {
+        let c, s, dates;
+        try { [c, s, dates] = await Promise.all([api.get(`/process/cases/${e.caseId}`).then(r => r.case), api.get('/process/settings'), api.get(`/diary?unitKey=${encodeURIComponent(unit.key)}&caseId=${e.caseId}`)]); }
+        catch (err) { ui.toast(err.message, 'error'); return; }
+        let dialog;
+        ui.modal(`Case ${c.suitNumber}`, el('div', null, [
+          el('div', { class: 'doc-preview__actions' }, [el('button', { class: 'btn btn--ghost', onclick: () => dialog.close() }, '✕  Close'),
+            meta.canWrite ? el('button', { class: 'btn btn--ghost', onclick: () => { dialog.close(); ctx.workflow.fillFromCase({ caseId: c.id, unitKey: unit.key }); } }, '📝 Fill a Form') : null]),
+          P.details(ui, c, s),
+          el('div', { class: 'case-docs' }, [el('h3', null, `Court dates (${dates.entries.length})`), ui.table([
+            { label: 'Date', value: x => longDay(x.date) + (x.time ? `, ${x.time}` : '') },
+            { label: 'Coming up for', value: x => x.business },
+            { label: 'Outcome', value: x => x.status === 'done' ? x.outcome.text : 'To come' }
+          ], dates.entries)]),
+          P.documentsPanel(ui, api, c.id)
+        ]), { noFooter: true, wide: true, onOpen: (o) => { dialog = o; } });
       }
 
       function month(entries) {

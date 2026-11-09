@@ -75,6 +75,15 @@
 
   function viewReceipt(id) { window.open(`/api/process/cases/${id}/receipt`, '_blank', 'noopener'); }
 
+  // The status of the case as a whole: [word, more, colour].
+  function caseStatus(c) {
+    if (c.reassignedAway) return ['Reassigned', `to ${c.reassignedAway.to} on ${day(c.reassignedAway.at)}`, 'moved'];
+    if (['draft', 'returned', 'submitted'].includes(c.status)) return ['Filing in progress', c.status === 'returned' ? 'returned for correction' : 'not yet registered', 'waiting'];
+    if (c.status === 'awaiting_assignment') return ['Awaiting assignment', 'registered, for the Hon. Chief Judge to assign', 'waiting'];
+    if (c.status === 'disposed') return ['Disposed of', c.disposal ? `${c.disposal.remark}, ${day(c.disposal.date)}` : '', 'closed'];
+    return ['Active', c.assigned ? `pending before High Court No. ${c.assigned.roman}` : 'pending', 'active'];
+  }
+
   // The facts of a case, for the review screens: a header with the title,
   // the stages it has passed, then the details grouped in boxes.
   function details(ui, c, settings) {
@@ -96,12 +105,14 @@
       ['File received', c.receivedAt, c.receivedByName],
       ['Disposed of', c.disposal && c.disposal.date, c.disposal && c.disposal.remark]
     ];
-    const next = stages.findIndex(st => !st[1]);
+    // Next: the first stage after the last one done; a stage passed without a date is "Not recorded".
+    const lastDone = stages.reduce((n, st, i) => (st[1] ? i : n), -1);
+    const next = c.status === 'disposed' ? -1 : stages.findIndex((st, i) => i > lastDone && !st[1]);
     const progress = c.status === 'draft' || c.status === 'returned' || c.status === 'submitted' ? null : el('ol', { class: 'cd-steps' }, stages.map(([name, date, note], i) =>
-      el('li', { class: 'cd-step' + (date ? ' is-done' : i === next ? ' is-next' : '') }, [
-        el('span', { class: 'cd-dot' }, date ? '✓' : String(i + 1)),
+      el('li', { class: 'cd-step' + (date || i < lastDone ? ' is-done' : i === next ? ' is-next' : '') }, [
+        el('span', { class: 'cd-dot' }, date || i < lastDone ? '✓' : String(i + 1)),
         el('span', { class: 'cd-step__name' }, name),
-        el('span', { class: 'cd-step__date' }, date ? day(date) : i === next ? 'Next' : ''),
+        el('span', { class: 'cd-step__date' }, date ? day(date) : i === next ? 'Next' : i < lastDone ? 'Not recorded' : ''),
         note ? el('span', { class: 'cd-step__note' }, note) : null
       ])));
 
@@ -114,20 +125,23 @@
     const receipt = el('span', null, [c.receiptNumber || 'No number',
       c.receipt ? (settings.me && (settings.me.inProcess || settings.me.chiefJudge) ? el('button', { class: 'btn btn--small btn--ghost', type: 'button', onclick: () => viewReceipt(c.id) }, '📄 View receipt') : ' · uploaded') : ' · not uploaded']);
 
+    const cs = caseStatus(c);
     return el('div', { class: 'case-details' }, [
       el('header', { class: 'cd-head' }, [
-        el('div', { class: 'cd-head__top' }, [el('span', { class: 'cd-suit' }, [caseNo(ui, c.suitNumber)]), badge(ui, c.status),
+        el('div', { class: 'cd-head__top' }, [el('span', { class: 'cd-suit' }, [caseNo(ui, c.suitNumber)]),
+          el('span', { class: `cd-status cd-status--${cs[2]}` }, cs[0]),
           el('span', { class: 'cd-type' }, typeLabel(settings, c.caseType) + (c.efcc ? ' · EFCC matter' : '') + (c.official ? ' · Official' : ''))]),
-        el('div', { class: 'cd-title' }, [lines(c.firstParty).filter(x => !/\(struck out\)$/.test(x)).join(', '), el('span', { class: 'cd-v' }, ' v. '), lines(c.secondParty).filter(x => !/\(struck out\)$/.test(x)).join(', ')]),
+        (() => { const a = lines(c.firstParty).filter(x => !/\(struck out\)$/.test(x)).join(', '), b = lines(c.secondParty).filter(x => !/\(struck out\)$/.test(x)).join(', ');
+          return a || b ? el('div', { class: 'cd-title' }, [a, el('span', { class: 'cd-v' }, ' v. '), b]) : el('div', { class: 'cd-sub' }, 'Parties not recorded'); })(),
         c.nature ? el('div', { class: 'cd-sub' }, c.nature) : null
       ]),
       c.status === 'returned' && c.returnComment ? notice(`Returned by ${c.returnedByName}: ${c.returnComment}`) : null,
       invoiceStale(c) ? notice('The fees changed after the invoice was issued. Print the invoice again so it shows the new fees (the reference stays the same).') : null,
-      c.reassignRequest ? notice(`Reassignment asked for on ${day(c.reassignRequest.at)} by ${c.reassignRequest.byName}: ${c.reassignRequest.reason}${c.reassignRequest.note ? '. ' + c.reassignRequest.note : ''}`) : null,
       c.reassignedAway ? notice(`Reassigned to ${c.reassignedAway.to} on ${day(c.reassignedAway.at)} (${c.reassignedAway.reason}). This court keeps it in its register for the record.`) : null,
       progress,
       el('div', { class: 'cd-grid' }, [
         box('Case', [
+          f('Case status', `${cs[0]}${cs[1] ? `: ${cs[1]}` : ''}`, true), f('Stage of the file', badge(ui, c.status)),
           f('Originating process', c.process), f('Date of filing', day(c.filedOn)),
           f('Court', c.assigned ? `High Court No. ${c.assigned.roman}` : ''),
           f('Assigned', c.assigned ? `${day(c.assignedAt)}${c.assignment ? by([c.assignment.title, c.assignment.name].filter(Boolean).join(' ')) : ''}` : ''),
@@ -440,7 +454,7 @@
     return box;
   }
 
-  window.App.processUi = { caseNoHtml, caseNo, badge, details, documentsPanel, processesPanel, feeEditor, withReceiptCheck, viewReceipt, printSlip, printSlips, printPage, amountWords, shortParty, parties, day, naira, STATUS };
+  window.App.processUi = { caseNoHtml, caseNo, badge, details, caseStatus, documentsPanel, processesPanel, feeEditor, withReceiptCheck, viewReceipt, printSlip, printSlips, printPage, amountWords, shortParty, parties, day, naira, STATUS };
 
   // Fee lines from the schedule (or Other with a typed amount), their total,
   // and + Add fee: for a new filing and for a process filed later.
