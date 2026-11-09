@@ -156,7 +156,7 @@
             { label: 'Outcome', value: e => e.status === 'done' ? e.outcome.text : 'To come' }
           ], r.entries) : el('p', { class: 'muted' }, 'No date in the Court Diary yet.'));
         }).catch(() => dates.remove());
-        ui.modal(`Case ${full.suitNumber}`, el('div', null, [el('div', { class: 'doc-preview__actions' }, [close, formBtn, fixBtn, askBtn]), P.badge(ui, full.status), P.details(ui, full, settings), dates, partiesPanel(full, () => { dialog.close(); view(c); load(); }), P.processesPanel(ctx, full, settings, unit), P.documentsPanel(ui, api, full.id)]),
+        ui.modal(`Case ${full.suitNumber}`, el('div', null, [el('div', { class: 'doc-preview__actions' }, [close, formBtn, fixBtn, askBtn]), P.details(ui, full, settings), dates, partiesPanel(full, () => { dialog.close(); view(c); load(); }), P.processesPanel(ctx, full, settings, unit), P.documentsPanel(ui, api, full.id)]),
           { noFooter: true, wide: true, onOpen: (o) => { dialog = o; } });
       }
 
