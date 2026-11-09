@@ -916,16 +916,17 @@ test('parties and counsel: the court\'s registry joins a party, strikes one out 
   assert.ok(s2.body.case.emails.secondParty.includes('def2@example.com'), 'the registry chose to keep the updates');
   assert.equal((await u.court3.post(url('strike'), { side: 'second', name: 'Third Defendant' })).status, 400, 'the last party on a side stays');
 
-  const k1 = await u.court3.post(url('counsel'), { side: 'first', name: 'New Counsel SAN', email: 'new@example.com', date: '2026-11-04' });
+  assert.equal((await u.court3.post(url('counsel'), { side: 'second', party: 'Second Defendant', name: 'X' })).status, 400, 'a party no longer in the case');
+  const k1 = await u.court3.post(url('counsel'), { side: 'first', party: 'Joinder Plaintiff', name: 'New Counsel SAN', email: 'new@example.com', date: '2026-11-04' });
   assert.equal(k1.status, 200, JSON.stringify(k1.body));
-  assert.equal(k1.body.case.counsel, 'New Counsel SAN');
-  assert.deepEqual(k1.body.case.emails.counsel, ['new@example.com'], 'the former counsel stops');
-  const k2 = await u.court3.post(url('counsel'), { side: 'second', name: 'Defence Counsel Esq.', email: 'defence@example.com', stopEmails: false });
-  assert.equal(k2.body.case.counselSecond, 'Defence Counsel Esq.');
-  assert.equal((await u.court3.post(url('counsel'), { side: 'second', name: 'defence counsel esq.' })).status, 400, 'already counsel');
+  assert.deepEqual(k1.body.case.partyCounsel.map(x => `${x.party}:${x.name}`), ['Joinder Plaintiff:New Counsel SAN']);
+  assert.deepEqual(k1.body.case.emails.counsel, [], 'the former counsel stops: no other party uses them');
+  const k2 = await u.court3.post(url('counsel'), { side: 'second', party: 'Third Defendant', name: 'Defence Counsel Esq.', email: 'defence@example.com', stopEmails: false });
+  assert.equal(k2.status, 200, JSON.stringify(k2.body));
+  assert.equal((await u.court3.post(url('counsel'), { side: 'second', party: 'Third Defendant', name: 'defence counsel esq.' })).status, 400, 'already counsel');
   const log = k2.body.case.partyLog;
   assert.deepEqual(log.map(l => l.kind), ['join', 'join', 'strike', 'strike', 'counsel', 'counsel']);
-  assert.equal(log[4].previous, 'Old Counsel Esq.');
+  assert.equal(log[4].previous, 'Old Counsel Esq.'); assert.equal(log[4].party, 'Joinder Plaintiff');
   assert.deepEqual(log[4].stoppedEmails, ['old@example.com']);
 
   const entry = (await u.court3.get(`/api/diary?unitKey=hc3&caseId=${c.id}`)).body.entries[0];
@@ -939,4 +940,19 @@ test('parties and counsel: the court\'s registry joins a party, strikes one out 
     assert.equal(sentTo.includes(x), !['old@example.com', 'def1@example.com'].includes(x), `the date email ${sentTo.includes(x) ? 'went' : 'did not go'} to ${x}`);
   }
   assert.equal((await admin.get(`/api/process/cases/${c.id}`)).body.case.filedOn, '2026-10-21', 'the filing itself unchanged');
+});
+
+test('counsel for each party: two parties on one side with different counsel; the former counsel keeps updates while still acting for another', async () => {
+  const c = await fileAndRegister({ firstParty: 'Lead Claimant\nSecond Claimant', secondParty: 'Sole Defendant', counsel: 'Shared Counsel', emails: { counsel: 'shared@example.com' } });
+  await u.cj.post(`/api/process/cases/${c.id}/assign`, { unitKey: 'hc3', pin: '1357' });
+  const r = await u.court3.post(`/api/process/cases/${c.id}/parties/counsel`, { side: 'first', party: 'Second Claimant', name: 'Own Counsel', email: 'own@example.com' });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.deepEqual(r.body.case.emails.counsel, ['shared@example.com'], 'still counsel for the Lead Claimant: updates continue');
+  assert.deepEqual(r.body.case.partyLog[0].stoppedEmails, []);
+  const parties = require('../src/services/parties');
+  const doc = await Case.findById(c.id);
+  assert.equal(parties.sideCounsel(doc, 'first'), 'Shared Counsel (for Lead Claimant); Own Counsel (for Second Claimant)');
+  assert.equal(parties.counselOf(doc, 'first', 'Lead Claimant').name, 'Shared Counsel');
+  const addresses = require('../src/services/caseEmail').addresses(doc);
+  assert.ok(addresses.includes('own@example.com') && addresses.includes('shared@example.com'));
 });

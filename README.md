@@ -303,12 +303,16 @@ New cases are filed, numbered and assigned to a court here.
 changes the court orders: **+ Join a Party** (first, second or third party,
 with address and email), **Strike Out a Party** (the name stays in the title
 marked "(struck out)" or leaves it, as the registry chooses) and
-**Substitute Counsel** (counsel is now kept for each side). Each change is
+**Substitute Counsel** (chosen party by party from the parties in the case;
+each party may have its own counsel, and a party not changed keeps its
+side's counsel from the filing; the cause list shows each counsel with the
+parties they act for when a side has more than one). Each change is
 kept, dated by the order, with who recorded it, and audited; the filing is
 not changed. Diary dates still to come and the cause list (counsel for each
 side) follow. Email updates go to a party joined or new counsel at once; for
 a party struck out or a counsel replaced they stop, unless the registry
-unticks the box (only addresses known to be that party's are ticked).
+unticks the box (only addresses known to be that party's are ticked; a
+counsel who still acts for another party keeps receiving them).
 
 **Processes filed later and the fees list.** In a case's View, the court's
 registry records a process filed later (motion on notice, motion ex parte,

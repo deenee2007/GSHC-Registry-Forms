@@ -212,10 +212,12 @@ const CaseSchema = new Schema({
   counselSecondAddress: { type: String, trim: true, default: '' },
   counselThird:  { type: String, trim: true, default: '' },
   counselThirdAddress: { type: String, trim: true, default: '' },
+  // Counsel for one party, where it differs from the side's counsel above.
+  partyCounsel:  { type: [{ _id: false, side: String, party: String, name: String, address: String, emails: [String] }], default: [] },
   // Changes the court's registry records on the order of the court: a party
   // joined or struck out, counsel substituted. The filing itself stays.
   partyLog:      { type: [{ _id: false, kind: String, side: String, name: String, previous: String, address: String, emails: [String],
-                   orderDate: String, note: String, keepInTitle: Boolean, stoppedEmails: [String], byName: String, at: Date }], default: [] },
+                   orderDate: String, note: String, party: String, keepInTitle: Boolean, stoppedEmails: [String], byName: String, at: Date }], default: [] },
   filedOn:       String,                              // YYYY-MM-DD
   efcc:          { type: Boolean, default: false },
   official:      { type: Boolean, default: false },  // no filing fee (criminal cases filed by the State, EFCC matters)
