@@ -883,3 +883,60 @@ test('suit numbers this year: the administrator sets the last number used by han
   const crim = (await admin.get('/api/process/numbering')).body.letters.find(x => x.suffix === 'c');
   assert.ok(crim.last < 500, 'each letter counts on its own');
 });
+
+test('parties and counsel: the court\'s registry joins a party, strikes one out and substitutes counsel; the diary and emails follow', async () => {
+  const mail = require('../src/services/mail');
+  const iso = (d) => d.toISOString().slice(0, 10);
+  const ahead = new Date(); ahead.setDate(ahead.getDate() + 10);
+  const c = await fileAndRegister({ firstParty: 'Joinder Plaintiff', secondParty: 'First Defendant\nSecond Defendant', counsel: 'Old Counsel Esq.',
+    emails: { firstParty: 'plaintiff@example.com', secondParty: 'def1@example.com, def2@example.com', counsel: 'old@example.com' } });
+  await u.cj.post(`/api/process/cases/${c.id}/assign`, { unitKey: 'hc3', pin: '1357' });
+  const d = await u.court3.post('/api/diary', { unitKey: 'hc3', caseId: c.id, date: iso(ahead), business: 'Mention' });
+  assert.equal(d.status, 201);
+  const url = (k) => `/api/process/cases/${c.id}/parties/${k}`;
+
+  assert.equal((await u.clerk.post(url('join'), { side: 'second', name: 'X' })).status, 403, 'the court\'s registry, not the Process Registry');
+  assert.equal((await u.court3.post(url('join'), { side: 'nowhere', name: 'X' })).status, 400);
+  assert.equal((await u.court3.post(url('join'), { side: 'second', name: 'X', orderDate: '2999-01-01' })).status, 400, 'no order in the future');
+  const j = await u.court3.post(url('join'), { side: 'second', name: 'Third Defendant', address: 'No. 3 Bauchi Road', email: 'def3@example.com', orderDate: '2026-11-02', note: 'Motion for joinder granted' });
+  assert.equal(j.status, 200, JSON.stringify(j.body));
+  assert.equal(j.body.case.secondParty, 'First Defendant\nSecond Defendant\nThird Defendant');
+  assert.match(j.body.case.secondPartyAddress, /Third Defendant: No. 3 Bauchi Road/);
+  assert.ok(j.body.case.emails.secondParty.includes('def3@example.com'));
+  assert.equal((await u.court3.post(url('join'), { side: 'second', name: 'third defendant' })).status, 400, 'not twice');
+  const tp = await u.court3.post(url('join'), { side: 'third', name: 'Intervener Ltd' });
+  assert.equal(tp.body.case.thirdParty, 'Intervener Ltd');
+
+  const s1 = await u.court3.post(url('strike'), { side: 'second', name: 'First Defendant', orderDate: '2026-11-03', reason: 'Struck out on application', keepInTitle: true, stopEmails: ['def1@example.com'] });
+  assert.equal(s1.status, 200, JSON.stringify(s1.body));
+  assert.equal(s1.body.case.secondParty, 'First Defendant (struck out)\nSecond Defendant\nThird Defendant');
+  assert.ok(!s1.body.case.emails.secondParty.includes('def1@example.com'), 'updates stopped');
+  const s2 = await u.court3.post(url('strike'), { side: 'second', name: 'Second Defendant', keepInTitle: false, stopEmails: [] });
+  assert.equal(s2.body.case.secondParty, 'First Defendant (struck out)\nThird Defendant', 'drops from the title');
+  assert.ok(s2.body.case.emails.secondParty.includes('def2@example.com'), 'the registry chose to keep the updates');
+  assert.equal((await u.court3.post(url('strike'), { side: 'second', name: 'Third Defendant' })).status, 400, 'the last party on a side stays');
+
+  const k1 = await u.court3.post(url('counsel'), { side: 'first', name: 'New Counsel SAN', email: 'new@example.com', date: '2026-11-04' });
+  assert.equal(k1.status, 200, JSON.stringify(k1.body));
+  assert.equal(k1.body.case.counsel, 'New Counsel SAN');
+  assert.deepEqual(k1.body.case.emails.counsel, ['new@example.com'], 'the former counsel stops');
+  const k2 = await u.court3.post(url('counsel'), { side: 'second', name: 'Defence Counsel Esq.', email: 'defence@example.com', stopEmails: false });
+  assert.equal(k2.body.case.counselSecond, 'Defence Counsel Esq.');
+  assert.equal((await u.court3.post(url('counsel'), { side: 'second', name: 'defence counsel esq.' })).status, 400, 'already counsel');
+  const log = k2.body.case.partyLog;
+  assert.deepEqual(log.map(l => l.kind), ['join', 'join', 'strike', 'strike', 'counsel', 'counsel']);
+  assert.equal(log[4].previous, 'Old Counsel Esq.');
+  assert.deepEqual(log[4].stoppedEmails, ['old@example.com']);
+
+  const entry = (await u.court3.get(`/api/diary?unitKey=hc3&caseId=${c.id}`)).body.entries[0];
+  assert.equal(entry.counsel, 'New Counsel SAN'); assert.equal(entry.counselSecond, 'Defence Counsel Esq.');
+  assert.match(entry.parties, /Joinder Plaintiff v\. First Defendant \(struck out\), Third Defendant/);
+  const before = mail.sent.length;
+  const moved = await u.court3.put(`/api/diary/${entry.id}`, { date: iso(new Date(ahead.getTime() + 86400000)) });
+  assert.equal(moved.status, 200, JSON.stringify(moved.body));
+  const sentTo = mail.sent.slice(before).map(m => m.to);
+  for (const x of ['new@example.com', 'def3@example.com', 'def2@example.com', 'defence@example.com', 'old@example.com', 'def1@example.com']) {
+    assert.equal(sentTo.includes(x), !['old@example.com', 'def1@example.com'].includes(x), `the date email ${sentTo.includes(x) ? 'went' : 'did not go'} to ${x}`);
+  }
+  assert.equal((await admin.get(`/api/process/cases/${c.id}`)).body.case.filedOn, '2026-10-21', 'the filing itself unchanged');
+});

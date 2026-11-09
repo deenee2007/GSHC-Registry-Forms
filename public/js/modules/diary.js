@@ -163,7 +163,7 @@
     const { ui, api, workflow: wf, user } = ctx;
     const el = ui.el;
     const cases = await registerCases(api, unit.key);
-    const rows = entries.map(e => ({ include: true, suitNumber: e.suitNumber, parties: e.parties, nature: e.nature, stage: e.business, counsel: e.counsel, time: e.time }));
+    const rows = entries.map(e => ({ include: true, suitNumber: e.suitNumber, parties: e.parties, nature: e.nature, stage: e.business, counsel: e.counsel, counselSecond: e.counselSecond || '', time: e.time }));
     const list = el('div', { class: 'pick-list cl-list' });
     function render() {
       list.replaceChildren(...rows.map((r, i) => {
@@ -191,7 +191,7 @@
         try { await sendWithLimit((force) => api.post('/diary', { unitKey: unit.key, caseId: c.id, date: day, business: 'Others', other: business, force })); }
         catch (e) { ui.toast(e.message, 'error'); return; }
       }
-      rows.push({ include: true, added: true, suitNumber: c.suitNumber, parties: partiesOf(c), nature: c.nature || '', stage: business, counsel: c.counsel || '' });
+      rows.push({ include: true, added: true, suitNumber: c.suitNumber, parties: partiesOf(c), nature: c.nature || '', stage: business, counsel: c.counsel || '', counselSecond: c.counselSecond || '' });
       scheduled.add(c.suitNumber);
       stage.value = '';
       render();
@@ -218,7 +218,7 @@
     const firstTime = entries.map(e => e.time).filter(Boolean).sort()[0] || '9:00';
     wf.openForm({ unitKey: unit.key, formType: 'cause-list', values: {
       judgeType: 'single', judgeName, sittingDate: day, sittingTime: firstTime.replace(/^0/, ''),
-      entries: go.map((r, i) => ({ sn: String(i + 1), suitNumber: r.suitNumber, parties: r.parties, nature: r.nature, stage: r.stage, counselFirst: r.counsel, counselSecond: '', remarks: '' })),
+      entries: go.map((r, i) => ({ sn: String(i + 1), suitNumber: r.suitNumber, parties: r.parties, nature: r.nature, stage: r.stage, counselFirst: r.counsel, counselSecond: r.counselSecond || '', remarks: '' })),
       preparedBy: user.fullName
     } });
   }

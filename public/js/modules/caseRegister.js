@@ -156,8 +156,93 @@
             { label: 'Outcome', value: e => e.status === 'done' ? e.outcome.text : 'To come' }
           ], r.entries) : el('p', { class: 'muted' }, 'No date in the Court Diary yet.'));
         }).catch(() => dates.remove());
-        ui.modal(`Case ${full.suitNumber}`, el('div', null, [el('div', { class: 'doc-preview__actions' }, [close, formBtn, fixBtn, askBtn]), P.badge(ui, full.status), P.details(ui, full, settings), dates, P.processesPanel(ctx, full, settings, unit), P.documentsPanel(ui, api, full.id)]),
+        ui.modal(`Case ${full.suitNumber}`, el('div', null, [el('div', { class: 'doc-preview__actions' }, [close, formBtn, fixBtn, askBtn]), P.badge(ui, full.status), P.details(ui, full, settings), dates, partiesPanel(full, () => { dialog.close(); view(c); load(); }), P.processesPanel(ctx, full, settings, unit), P.documentsPanel(ui, api, full.id)]),
           { noFooter: true, wide: true, onOpen: (o) => { dialog = o; } });
+      }
+
+      // Parties and counsel, changed on the order of the court: join a party,
+      // strike one out, substitute counsel. Each change is kept, dated.
+      const SIDE = { first: 'First party', second: 'Second party', third: 'Third party' };
+      const COUNSEL = { first: 'counsel', second: 'counselSecond', third: 'counselThird' };
+      const EMAILS = { first: 'firstParty', second: 'secondParty', third: 'thirdParty' };
+      const COUNSEL_EMAILS = { first: 'counsel', second: 'counselSecond', third: 'counselThird' };
+      const PARTY = { first: 'firstParty', second: 'secondParty', third: 'thirdParty' };
+      const sideLines = (c, side) => String(c[PARTY[side]] || '').split(/\n+/).map(x => x.trim()).filter(Boolean);
+      function partiesPanel(c, changed) {
+        const open = canWork && !c.reassignedAway && ['assigned', 'dispatched', 'received'].includes(c.status);
+        const btn = (label, fn) => el('button', { class: 'btn btn--small btn--ghost', type: 'button', onclick: fn }, label);
+        const KIND = { join: 'Joined', strike: 'Struck out', counsel: 'Counsel substituted' };
+        const sides = ['first', 'second', 'third'].filter(s => s !== 'third' || sideLines(c, 'third').length || c.counselThird);
+        return el('div', { class: 'case-docs' }, [
+          el('div', { class: 'case-docs__head' }, [el('h3', null, 'Parties and Counsel'), open ? el('div', { class: 'reassign-tool' }, [
+            btn('+ Join a Party', () => changeDialog('join', c, changed)), btn('Strike Out a Party', () => changeDialog('strike', c, changed)), btn('Substitute Counsel', () => changeDialog('counsel', c, changed))
+          ]) : null]),
+          ui.table([
+            { label: 'Side', value: s => SIDE[s] },
+            { label: 'Parties', value: s => sideLines(c, s).join('; ') },
+            { label: 'Counsel', value: s => c[COUNSEL[s]] || '' }
+          ], sides),
+          c.partyLog.length ? ui.table([
+            { label: 'Order of', value: l => P.day(l.orderDate) },
+            { label: 'Change', value: l => `${KIND[l.kind]}: ${l.name}${l.previous ? ` in place of ${l.previous}` : ''} (${SIDE[l.side].toLowerCase()})${l.kind === 'strike' && !l.keepInTitle ? ', removed from the title' : ''}` },
+            { label: 'Note', value: l => [l.note, l.stoppedEmails.length ? `Email updates stopped: ${l.stoppedEmails.join(', ')}` : ''].filter(Boolean).join('. ') },
+            { label: 'Recorded by', value: l => `${l.byName}, ${P.day(l.at)}` }
+          ], [...c.partyLog].reverse()) : el('p', { class: 'muted' }, 'No change since filing. Joinder, striking out and change of counsel ordered by the court are recorded here.')
+        ]);
+      }
+      function changeDialog(kind, c, changed) {
+        const side = el('select', null, Object.entries(SIDE).map(([k, v]) => el('option', { value: k }, v)));
+        const date = el('input', { type: 'date', value: new Date().toISOString().slice(0, 10) });
+        const name = el('input', { type: 'text', maxlength: '200' }), address = el('input', { type: 'text', maxlength: '300' }), email = el('input', { type: 'text', placeholder: 'Optional; several separated by commas' });
+        const note = el('input', { type: 'text', maxlength: '500', placeholder: kind === 'strike' ? 'Optional: the reason, as in the order' : 'Optional: for example, motion for joinder granted' });
+        const who = el('select'), keep = el('select', null, [el('option', { value: '1' }, 'Stays in the title, marked "(struck out)"'), el('option', { value: '0' }, 'Leaves the title (kept in the history)')]);
+        const stopBox = el('div', { class: 'settings-list' });
+        const stopCounsel = el('input', { type: 'checkbox' }); stopCounsel.checked = true;
+        const stopCounselRow = el('label', { class: 'check check--plain' }, [stopCounsel, el('span')]);
+        function sync() {
+          if (kind === 'strike') {
+            const list = sideLines(c, side.value).filter(l => !l.endsWith('(struck out)'));
+            who.replaceChildren(...list.map(l => el('option', { value: l }, l)));
+            syncStop();
+          }
+          if (kind === 'counsel') {
+            const old = c[COUNSEL[side.value]], mails = (c.emails[COUNSEL_EMAILS[side.value]] || []);
+            stopCounselRow.hidden = !mails.length;
+            stopCounselRow.lastChild.textContent = ` Stop email updates to the former counsel${old ? ` (${old})` : ''}: ${mails.join(', ')}`;
+          }
+        }
+        // The side's addresses, ticked where they are known to be this party's:
+        // a party joined, by its own; a party from the filing, by the side's
+        // filing addresses when it was the only party filed on that side.
+        function syncStop() {
+          const joins = c.partyLog.filter(l => l.kind === 'join' && l.side === side.value);
+          const joinedNames = joins.map(l => l.name), joinedMails = joins.flatMap(l => l.emails);
+          const all = c.emails[EMAILS[side.value]] || [];
+          const filed = sideLines(c, side.value).map(l => l.replace(/ \(struck out\)$/, '')).filter(l => !joinedNames.includes(l));
+          const mine = joinedNames.includes(who.value) ? joins.filter(l => l.name === who.value).flatMap(l => l.emails)
+            : filed.length === 1 ? all.filter(m => !joinedMails.includes(m)) : [];
+          stopBox.replaceChildren(...(all.length ? [el('span', { class: 'muted' }, 'Stop email updates to (the filing does not say whose each address is; tick this party\'s):'), ...all.map(m => {
+            const b = el('input', { type: 'checkbox', value: m }); b.checked = mine.includes(m);
+            return el('label', { class: 'check check--plain' }, [b, ' ' + m]);
+          })] : [el('span', { class: 'muted' }, 'No email address on this side.')]));
+        }
+        side.addEventListener('change', sync); who.addEventListener('change', syncStop);
+        const titles = { join: 'Join a Party', strike: 'Strike Out a Party', counsel: 'Substitute Counsel' };
+        const fields = kind === 'join' ? [ui.field('Joined as', side), ui.field('Name of the party *', name), ui.field('Address', address), ui.field('Email for updates', email), ui.field('Date of the order', date), ui.field('Note', note)]
+          : kind === 'strike' ? [ui.field('Side', side), ui.field('Party struck out', who), ui.field('In the case title', keep), ui.field('Date of the order', date), ui.field('Reason', note), stopBox]
+          : [ui.field('Counsel for', side), ui.field('Name of the new counsel *', name), ui.field('Address', address), ui.field('Email for updates', email), ui.field('Date', date), ui.field('Note', note), stopCounselRow];
+        sync();
+        ui.modal(`${titles[kind]} · ${c.suitNumber}`, el('div', null, [
+          el('p', { class: 'muted' }, 'Record the change as ordered by the court. Attach the order under Documents if you have it. The original filing is not changed.'), ...fields]), {
+          confirmText: 'Record',
+          onConfirm: async () => {
+            const body = { side: side.value, orderDate: date.value, date: date.value, name: kind === 'strike' ? who.value : name.value, address: address.value, email: email.value, note: note.value, reason: note.value,
+              keepInTitle: keep.value === '1', stopEmails: kind === 'strike' ? [...stopBox.querySelectorAll('input:checked')].map(b => b.value) : (stopCounselRow.hidden ? true : stopCounsel.checked) };
+            const r = await api.post(`/process/cases/${c.id}/parties/${kind}`, body);
+            ui.toast(`Recorded: ${r.change}.`, 'success', 6000);
+            changed(); return true;
+          }
+        });
       }
 
       // Ask the Hon. Chief Judge to reassign the case, with the reason.
