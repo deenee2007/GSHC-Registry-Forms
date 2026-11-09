@@ -75,40 +75,84 @@
 
   function viewReceipt(id) { window.open(`/api/process/cases/${id}/receipt`, '_blank', 'noopener'); }
 
-  // The facts of a case, for the review screens.
+  // The facts of a case, for the review screens: a header with the title,
+  // the stages it has passed, then the details grouped in boxes.
   function details(ui, c, settings) {
-    const row = (k, v) => v ? ui.el('div', { class: 'doc-kv' }, [ui.el('strong', null, k + ': '), typeof v === 'string' ? v : v]) : null;
-    return ui.el('div', { class: 'case-details' }, [
-      row('Suit number', caseNo(ui, c.suitNumber)),
-      row('Case type', typeLabel(settings, c.caseType) + (c.efcc ? ' · EFCC matter' : '')),
-      row('Parties', parties(c)),
-      row('Third party', String(c.thirdParty || '').split(/\n+/).filter(Boolean).join(', ')),
-      row('Addresses', [c.firstPartyAddress && `First party: ${c.firstPartyAddress}`, c.secondPartyAddress && `Second party: ${c.secondPartyAddress}`, c.thirdPartyAddress && `Third party: ${c.thirdPartyAddress}`].filter(Boolean).join('; ')),
-      row('Nature of case', c.nature),
-      row('Originating process', c.process),
-      row(c.counselSecond || c.counselThird ? 'Counsel for the first party' : 'Counsel', [c.counsel, c.counselAddress].filter(Boolean).join(', ')),
-      row('Counsel for the second party', [c.counselSecond, c.counselSecondAddress].filter(Boolean).join(', ')),
-      row('Counsel for the third party', [c.counselThird, c.counselThirdAddress].filter(Boolean).join(', ')),
-      row('Date of filing', day(c.filedOn)),
-      c.official ? row('Fees', 'Official: no filing fee') : row('Fees', `${c.fees.map(f => `${f.item}${f.qty > 1 ? ' × ' + f.qty : ''} ${naira(f.amount * f.qty)}`).join('; ')} · Total ${naira(c.feeTotal)}`),
-      c.official ? null : row('Invoice', c.invoice ? `${c.invoice.reference}, issued ${day(c.invoice.issuedAt)} by ${c.invoice.issuedByName}` : 'Not yet issued'),
-      invoiceStale(c) ? ui.el('div', { class: 'notice notice--warn' }, 'The fees changed after the invoice was issued. Print the invoice again so it shows the new fees (the reference stays the same).') : null,
-      c.official ? null : row('Receipt', ui.el('span', null, [c.receiptNumber || 'No number',
-        c.receipt ? (settings.me && (settings.me.inProcess || settings.me.chiefJudge) ? ui.el('button', { class: 'btn btn--small btn--ghost', type: 'button', onclick: () => viewReceipt(c.id) }, '📄 View receipt') : ' · uploaded') : ' · not uploaded'])),
-      row('Email updates to', emailList(c)),
-      row('Emails sent', emailSent(c)),
-      row('Filed by', c.createdByName),
-      row('Registered', c.registeredAt ? `${day(c.registeredAt)} by ${c.registeredByName}` : ''),
-      row('Proposed court', c.proposed && c.status === 'awaiting_assignment' ? c.proposed.name : ''),
-      row('Assigned to', c.assigned ? `High Court No. ${c.assigned.roman} on ${day(c.assignedAt)}${c.assignment ? ', by ' + [c.assignment.title, c.assignment.name].filter(Boolean).join(' ') : ''}` : ''),
-      row('Reassigned from', c.reassignedFrom ? `High Court No. ${c.reassignedFrom.roman}` : ''),
-      row('Earlier courts', (c.formerUnits || []).map(f => `High Court No. ${f.court ? f.court.roman : '?'} until ${day(f.leftAt)} (${f.reason})`).join('; ')),
-      c.reassignRequest ? ui.el('div', { class: 'notice notice--warn' }, `Reassignment asked for on ${day(c.reassignRequest.at)} by ${c.reassignRequest.byName}: ${c.reassignRequest.reason}${c.reassignRequest.note ? '. ' + c.reassignRequest.note : ''}`) : null,
-      c.reassignedAway ? ui.el('div', { class: 'notice notice--warn' }, `Reassigned to ${c.reassignedAway.to} on ${day(c.reassignedAway.at)} (${c.reassignedAway.reason}). This court keeps it in its register for the record.`) : null,
-      row('File dispatched', c.dispatchedAt ? `${day(c.dispatchedAt)} by ${c.dispatchedByName}` : ''),
-      row('File received', c.receivedAt ? `${day(c.receivedAt)} by ${c.receivedByName}` : ''),
-      row('Remark', c.disposal ? `${c.disposal.remark} (${day(c.disposal.date)})` : ''),
-      c.status === 'returned' && c.returnComment ? ui.el('div', { class: 'notice notice--warn' }, `Returned by ${c.returnedByName}: ${c.returnComment}`) : null
+    const el = ui.el;
+    const lines = (t) => String(t || '').split(/\n+/).map(x => x.trim()).filter(Boolean);
+    // One labelled value; nothing when empty.
+    const f = (k, v, wide) => (v === undefined || v === null || v === '' || (Array.isArray(v) && !v.length)) ? null
+      : el('div', { class: 'cd-field' + (wide ? ' cd-field--wide' : '') }, [el('div', { class: 'cd-label' }, k), el('div', { class: 'cd-value' }, typeof v === 'string' ? v : v)]);
+    const box = (title, fields) => { const list = fields.filter(Boolean); return list.length ? el('section', { class: 'cd-box' }, [el('h4', null, title), el('div', { class: 'cd-fields' }, list)]) : null; };
+    const by = (who) => who ? ` by ${who}` : '';
+    const notice = (t) => el('div', { class: 'notice notice--warn' }, t);
+
+    // Where the case stands: each stage with its date, ticked when done.
+    const stages = [
+      ['Filed', c.filedOn, c.createdByName],
+      ...(c.earlier && !c.registeredAt ? [] : [['Registered', c.registeredAt, c.registeredByName]]),
+      ['Assigned', c.assignedAt, c.assigned ? `High Court No. ${c.assigned.roman}` : (c.proposed && c.status === 'awaiting_assignment' ? `Proposed: ${c.proposed.name}` : '')],
+      ...(c.earlier && !c.dispatchedAt ? [] : [['File dispatched', c.dispatchedAt, c.dispatchedByName]]),
+      ['File received', c.receivedAt, c.receivedByName],
+      ['Disposed of', c.disposal && c.disposal.date, c.disposal && c.disposal.remark]
+    ];
+    const next = stages.findIndex(st => !st[1]);
+    const progress = c.status === 'draft' || c.status === 'returned' || c.status === 'submitted' ? null : el('ol', { class: 'cd-steps' }, stages.map(([name, date, note], i) =>
+      el('li', { class: 'cd-step' + (date ? ' is-done' : i === next ? ' is-next' : '') }, [
+        el('span', { class: 'cd-dot' }, date ? '✓' : String(i + 1)),
+        el('span', { class: 'cd-step__name' }, name),
+        el('span', { class: 'cd-step__date' }, date ? day(date) : i === next ? 'Next' : ''),
+        note ? el('span', { class: 'cd-step__note' }, note) : null
+      ])));
+
+    const sideParties = (label, t, addr) => lines(t).length ? f(label, el('div', null, [
+      ...lines(t).map(x => el('div', { class: /\(struck out\)$/.test(x) ? 'cd-struck' : '' }, x)),
+      addr ? el('div', { class: 'cd-note' }, addr) : null])) : null;
+    const counselRow = (label, name, addr) => name ? f(label, el('div', null, [el('div', null, name), addr ? el('div', { class: 'cd-note' }, addr) : null])) : null;
+    const ownCounsel = (c.partyCounsel || []).filter(x => lines(c[{ first: 'firstParty', second: 'secondParty', third: 'thirdParty' }[x.side]]).includes(x.party));
+    const several = c.counselSecond || c.counselThird || ownCounsel.length;
+    const receipt = el('span', null, [c.receiptNumber || 'No number',
+      c.receipt ? (settings.me && (settings.me.inProcess || settings.me.chiefJudge) ? el('button', { class: 'btn btn--small btn--ghost', type: 'button', onclick: () => viewReceipt(c.id) }, '📄 View receipt') : ' · uploaded') : ' · not uploaded']);
+
+    return el('div', { class: 'case-details' }, [
+      el('header', { class: 'cd-head' }, [
+        el('div', { class: 'cd-head__top' }, [el('span', { class: 'cd-suit' }, [caseNo(ui, c.suitNumber)]), badge(ui, c.status),
+          el('span', { class: 'cd-type' }, typeLabel(settings, c.caseType) + (c.efcc ? ' · EFCC matter' : '') + (c.official ? ' · Official' : ''))]),
+        el('div', { class: 'cd-title' }, [lines(c.firstParty).filter(x => !/\(struck out\)$/.test(x)).join(', '), el('span', { class: 'cd-v' }, ' v. '), lines(c.secondParty).filter(x => !/\(struck out\)$/.test(x)).join(', ')]),
+        c.nature ? el('div', { class: 'cd-sub' }, c.nature) : null
+      ]),
+      c.status === 'returned' && c.returnComment ? notice(`Returned by ${c.returnedByName}: ${c.returnComment}`) : null,
+      invoiceStale(c) ? notice('The fees changed after the invoice was issued. Print the invoice again so it shows the new fees (the reference stays the same).') : null,
+      c.reassignRequest ? notice(`Reassignment asked for on ${day(c.reassignRequest.at)} by ${c.reassignRequest.byName}: ${c.reassignRequest.reason}${c.reassignRequest.note ? '. ' + c.reassignRequest.note : ''}`) : null,
+      c.reassignedAway ? notice(`Reassigned to ${c.reassignedAway.to} on ${day(c.reassignedAway.at)} (${c.reassignedAway.reason}). This court keeps it in its register for the record.`) : null,
+      progress,
+      el('div', { class: 'cd-grid' }, [
+        box('Case', [
+          f('Originating process', c.process), f('Date of filing', day(c.filedOn)),
+          f('Court', c.assigned ? `High Court No. ${c.assigned.roman}` : ''),
+          f('Assigned', c.assigned ? `${day(c.assignedAt)}${c.assignment ? by([c.assignment.title, c.assignment.name].filter(Boolean).join(' ')) : ''}` : ''),
+          f('Reassigned from', c.reassignedFrom ? `High Court No. ${c.reassignedFrom.roman}` : ''),
+          f('Earlier courts', (c.formerUnits || []).map(x => `High Court No. ${x.court ? x.court.roman : '?'} until ${day(x.leftAt)} (${x.reason})`).join('; '), true),
+          f('Remark', c.disposal ? `${c.disposal.remark} (${day(c.disposal.date)})` : '', true),
+          c.earlier ? f('Entered', 'From the court\'s register (filed before the system)', true) : null
+        ]),
+        box('Parties', [
+          sideParties('First party', c.firstParty, c.firstPartyAddress), sideParties('Second party', c.secondParty, c.secondPartyAddress),
+          sideParties('Third party', c.thirdParty, c.thirdPartyAddress)
+        ]),
+        box('Counsel', [
+          counselRow(several ? 'For the first party' : 'Counsel', c.counsel, c.counselAddress),
+          counselRow('For the second party', c.counselSecond, c.counselSecondAddress),
+          counselRow('For the third party', c.counselThird, c.counselThirdAddress),
+          ...ownCounsel.map(x => counselRow(`For ${x.party}`, x.name, x.address))
+        ]),
+        c.earlier && !c.feeTotal && !c.invoice ? null : box('Fees and payment', c.official ? [f('Fees', 'Official: no filing fee', true)] : [
+          f('Fees', el('div', null, c.fees.map(x => el('div', null, `${x.item}${x.qty > 1 ? ' × ' + x.qty : ''}: ${naira(x.amount * x.qty)}`))), true),
+          f('Total', naira(c.feeTotal)), f('Invoice', c.invoice ? `${c.invoice.reference}, ${day(c.invoice.issuedAt)}${by(c.invoice.issuedByName)}` : 'Not yet issued'),
+          f('Receipt', receipt)
+        ]),
+        box('Email updates', [f('Sent to', emailList(c), true), f('Emails sent', emailSent(c), true)])
+      ])
     ]);
   }
 
@@ -559,7 +603,7 @@
         after(`File ${c.suitNumber} dispatched. The court has been told.`)(true);
       }, c.status === 'assigned' && me.inProcess)
     ]);
-    ui.modal(c.suitNumber ? `Case ${c.suitNumber}` : 'Case Filing', ui.el('div', null, [actions, badge(ui, c.status), details(ui, c, settings), documentsPanel(ui, api, c.id)]),
+    ui.modal(c.suitNumber ? `Case ${c.suitNumber}` : 'Case Filing', ui.el('div', null, [actions, details(ui, c, settings), documentsPanel(ui, api, c.id)]),
       { noFooter: true, wide: true, onOpen: (o) => { dialog = o; } });
   }
 
