@@ -67,7 +67,7 @@ const LABELS = { invoice: 'Invoice issued', registered: 'Registered', assigned: 
 
 const addresses = (c) => {
   const e = c.emails || {};
-  return [...new Set([...(e.firstParty || []), ...(e.secondParty || []), ...(e.counsel || [])].map(x => String(x).toLowerCase()))];
+  return [...new Set(['firstParty', 'secondParty', 'thirdParty', 'counsel', 'counselSecond', 'counselThird'].flatMap(k => e[k] || []).map(x => String(x).toLowerCase()))];
 };
 
 // Send the email for a stage to everyone on the case; note each on the case

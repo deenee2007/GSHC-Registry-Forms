@@ -201,10 +201,21 @@ const CaseSchema = new Schema({
   secondParty:   { type: String, trim: true, default: '' },
   nature:        { type: String, trim: true, default: '' },
   process:       { type: String, trim: true, default: '' },   // originating process
-  counsel:       { type: String, trim: true, default: '' },
+  counsel:       { type: String, trim: true, default: '' },   // counsel for the first party (the filer)
   counselAddress:{ type: String, trim: true, default: '' },
   firstPartyAddress:  { type: String, trim: true, default: '' },
   secondPartyAddress: { type: String, trim: true, default: '' },
+  // Joined later by order of court, and counsel for the other sides.
+  thirdParty:    { type: String, trim: true, default: '' },
+  thirdPartyAddress: { type: String, trim: true, default: '' },
+  counselSecond: { type: String, trim: true, default: '' },
+  counselSecondAddress: { type: String, trim: true, default: '' },
+  counselThird:  { type: String, trim: true, default: '' },
+  counselThirdAddress: { type: String, trim: true, default: '' },
+  // Changes the court's registry records on the order of the court: a party
+  // joined or struck out, counsel substituted. The filing itself stays.
+  partyLog:      { type: [{ _id: false, kind: String, side: String, name: String, previous: String, address: String, emails: [String],
+                   orderDate: String, note: String, keepInTitle: Boolean, stoppedEmails: [String], byName: String, at: Date }], default: [] },
   filedOn:       String,                              // YYYY-MM-DD
   efcc:          { type: Boolean, default: false },
   official:      { type: Boolean, default: false },  // no filing fee (criminal cases filed by the State, EFCC matters)
@@ -214,7 +225,8 @@ const CaseSchema = new Schema({
   receiptKey:    { type: String, index: true },        // the receipt number written one way, to find it used twice
   receipt:       { type: FileRef, default: null },
   // Email updates on the stage of the case, to the addresses given at filing.
-  emails:        { type: { _id: false, firstParty: [String], secondParty: [String], counsel: [String] }, default: () => ({ firstParty: [], secondParty: [], counsel: [] }) },
+  emails:        { type: { _id: false, firstParty: [String], secondParty: [String], counsel: [String], thirdParty: [String], counselSecond: [String], counselThird: [String] },
+                   default: () => ({ firstParty: [], secondParty: [], counsel: [], thirdParty: [], counselSecond: [], counselThird: [] }) },
   emailLog:      { type: [{ _id: false, stage: String, to: String, at: Date, ok: Boolean }], default: [] },
   // The invoice given to the filer to go and pay: its reference and what it listed.
   invoice:       { type: { _id: false, reference: String, issuedAt: Date, issuedByName: String,
@@ -306,7 +318,8 @@ const DiaryEntrySchema = new Schema({
   suitNumber:    { type: String, trim: true, required: true },
   parties:       { type: String, trim: true, default: '' },
   nature:        { type: String, trim: true, default: '' },
-  counsel:       { type: String, trim: true, default: '' },
+  counsel:       { type: String, trim: true, default: '' },   // for the first party
+  counselSecond: { type: String, trim: true, default: '' },   // for the second party
   business:      { type: String, trim: true, required: true },
   notes:         { type: String, trim: true, default: '' },
   status:        { type: String, enum: ['fixed', 'done'], default: 'fixed', index: true },

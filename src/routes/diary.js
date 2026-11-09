@@ -33,7 +33,7 @@ async function court(key) {
 
 const serialize = (e, u) => ({
   id: String(e._id), unitKey: e.unitKey, date: e.date, time: e.time || '', caseId: e.case ? String(e.case) : null,
-  suitNumber: e.suitNumber, parties: e.parties, nature: e.nature, counsel: e.counsel,
+  suitNumber: e.suitNumber, parties: e.parties, nature: e.nature, counsel: e.counsel, counselSecond: e.counselSecond || '',
   business: e.business, notes: e.notes, status: e.status, outcome: e.outcome || null,
   createdByName: e.createdByName, updatedByName: e.updatedByName, updatedAt: e.updatedAt,
   canWrite: canWrite(u, e.unitKey)
@@ -76,7 +76,7 @@ async function makeEntry(req, src) {
     if (!mongoose.isValidObjectId(src.caseId)) throw new HttpError(404, 'Case not found.');
     const c = await Case.findById(src.caseId);
     if (!c || c.assignedUnit !== unit.key || !['assigned', 'dispatched', 'received', 'disposed'].includes(c.status)) throw new HttpError(400, 'That case is not in this court\'s register.');
-    Object.assign(fields, { case: c._id, suitNumber: c.suitNumber, parties: partiesOf(c), nature: c.nature || '', counsel: c.counsel || '' });
+    Object.assign(fields, { case: c._id, suitNumber: c.suitNumber, parties: partiesOf(c), nature: c.nature || '', counsel: c.counsel || '', counselSecond: c.counselSecond || '' });
   } else {
     const suitNumber = String(src.suitNumber || '').trim().slice(0, 60);
     if (!suitNumber) throw new HttpError(400, 'Choose the case, or type its suit number.');
@@ -174,7 +174,7 @@ router.post('/:id/outcome', wrap(async (req, res) => {
   if (!text) throw new HttpError(400, 'Say what happened at the sitting.');
   let next = null;
   if (b.nextDate) {
-    next = await makeEntry(req, { unitKey: e.unitKey, caseId: e.case ? String(e.case) : null, suitNumber: e.suitNumber, parties: e.parties, nature: e.nature, counsel: e.counsel,
+    next = await makeEntry(req, { unitKey: e.unitKey, caseId: e.case ? String(e.case) : null, suitNumber: e.suitNumber, parties: e.parties, nature: e.nature, counsel: e.counsel, counselSecond: e.counselSecond,
       date: b.nextDate, time: b.nextTime, business: b.nextBusiness, other: b.nextOther, force: b.force });
     if (next.date <= e.date) throw new HttpError(400, 'The next date must be after this sitting.');
     next.previous = e._id;

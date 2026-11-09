@@ -34,6 +34,7 @@ const audit = require('../services/audit');
 const mail = require('../services/mail');
 const settings = require('../services/settings');
 const caseEmail = require('../services/caseEmail');
+const partiesSvc = require('../services/parties');
 const registerImport = require('../services/registerImport');
 const { verifyPin } = require('./me');
 const { HttpError, requireLogin, canAccessUnit, can, isAdmin } = require('../middleware/auth');
@@ -86,7 +87,11 @@ function serialize(c, units, extra = {}) {
     proposed: court(o.proposedUnit), assigned: court(o.assignedUnit), assignedAt: o.assignedAt,
     assignment: o.assignment ? { name: o.assignment.name, title: o.assignment.title, signedAt: o.assignment.signedAt } : null,
     verifyCode: o.verifyCode, verifyUrl: o.verifyUrl,
-    emails: { firstParty: (o.emails && o.emails.firstParty) || [], secondParty: (o.emails && o.emails.secondParty) || [], counsel: (o.emails && o.emails.counsel) || [] },
+    emails: Object.fromEntries(['firstParty', 'secondParty', 'thirdParty', 'counsel', 'counselSecond', 'counselThird'].map(k => [k, (o.emails && o.emails[k]) || []])),
+    thirdParty: o.thirdParty || '', thirdPartyAddress: o.thirdPartyAddress || '',
+    counselSecond: o.counselSecond || '', counselSecondAddress: o.counselSecondAddress || '', counselThird: o.counselThird || '', counselThirdAddress: o.counselThirdAddress || '',
+    partyLog: (o.partyLog || []).map(l => ({ kind: l.kind, side: l.side, name: l.name, previous: l.previous || '', address: l.address || '', emails: l.emails || [],
+      orderDate: l.orderDate, note: l.note || '', keepInTitle: l.keepInTitle !== false, stoppedEmails: l.stoppedEmails || [], byName: l.byName, at: l.at })),
     emailLog: (o.emailLog || []).map(e => ({ stage: e.stage, label: caseEmail.LABELS[e.stage] || e.stage, to: e.to, at: e.at, ok: e.ok })),
     dispatchedAt: o.dispatchedAt, dispatchedByName: o.dispatchedByName,
     receivedAt: o.receivedAt, receivedByName: o.receivedByName, disposal: o.disposal || null,
@@ -680,6 +685,18 @@ router.post('/cases/:id/received', wrap(async (req, res) => {
   await caseEmail.notify(c, 'received', await Unit.findOne({ key: c.assignedUnit }));
   await audit.log(req, 'case_file_received', { unitKey: c.assignedUnit, details: { caseId: String(c._id), suitNumber: c.suitNumber } });
   res.json({ case: serialize(c, await unitNames()) });
+}));
+
+// Parties and counsel, changed by the court's registry on the order of the
+// court: join a party, strike one out, substitute counsel.
+router.post('/cases/:id/parties/:kind', wrap(async (req, res) => {
+  const c = await load(req.params.id, req.user);
+  assertCourtWork(req.user, c);
+  if (!IN_COURT.includes(c.status)) throw new HttpError(409, 'Parties and counsel change only while the case is pending in the court.');
+  let what;
+  try { what = await partiesSvc.apply(c, req.params.kind, req.body, req.user); } catch (e) { throw new HttpError(e.status || 500, e.message); }
+  await audit.log(req, `case_party_${req.params.kind}`, { unitKey: c.assignedUnit, details: { caseId: String(c._id), suitNumber: c.suitNumber, change: what } });
+  res.json({ case: serialize(c, await unitNames()), change: what });
 }));
 
 router.post('/cases/:id/disposal', wrap(async (req, res) => {

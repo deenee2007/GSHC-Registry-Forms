@@ -82,10 +82,13 @@
       row('Suit number', caseNo(ui, c.suitNumber)),
       row('Case type', typeLabel(settings, c.caseType) + (c.efcc ? ' · EFCC matter' : '')),
       row('Parties', parties(c)),
-      row('Addresses', [c.firstPartyAddress && `First party: ${c.firstPartyAddress}`, c.secondPartyAddress && `Second party: ${c.secondPartyAddress}`].filter(Boolean).join('; ')),
+      row('Third party', String(c.thirdParty || '').split(/\n+/).filter(Boolean).join(', ')),
+      row('Addresses', [c.firstPartyAddress && `First party: ${c.firstPartyAddress}`, c.secondPartyAddress && `Second party: ${c.secondPartyAddress}`, c.thirdPartyAddress && `Third party: ${c.thirdPartyAddress}`].filter(Boolean).join('; ')),
       row('Nature of case', c.nature),
       row('Originating process', c.process),
-      row('Counsel', [c.counsel, c.counselAddress].filter(Boolean).join(', ')),
+      row(c.counselSecond || c.counselThird ? 'Counsel for the first party' : 'Counsel', [c.counsel, c.counselAddress].filter(Boolean).join(', ')),
+      row('Counsel for the second party', [c.counselSecond, c.counselSecondAddress].filter(Boolean).join(', ')),
+      row('Counsel for the third party', [c.counselThird, c.counselThirdAddress].filter(Boolean).join(', ')),
       row('Date of filing', day(c.filedOn)),
       c.official ? row('Fees', 'Official: no filing fee') : row('Fees', `${c.fees.map(f => `${f.item}${f.qty > 1 ? ' × ' + f.qty : ''} ${naira(f.amount * f.qty)}`).join('; ')} · Total ${naira(c.feeTotal)}`),
       c.official ? null : row('Invoice', c.invoice ? `${c.invoice.reference}, issued ${day(c.invoice.issuedAt)} by ${c.invoice.issuedByName}` : 'Not yet issued'),
@@ -109,7 +112,7 @@
     ]);
   }
 
-  const emailList = (c) => { const e = c.emails || {}; return [['First party', e.firstParty], ['Second party', e.secondParty], ['Counsel', e.counsel]].filter(([, l]) => l && l.length).map(([k, l]) => `${k}: ${l.join(', ')}`).join('; '); };
+  const emailList = (c) => { const e = c.emails || {}; return [['First party', e.firstParty], ['Second party', e.secondParty], ['Third party', e.thirdParty], [e.counselSecond && e.counselSecond.length ? 'Counsel for the first party' : 'Counsel', e.counsel], ['Counsel for the second party', e.counselSecond], ['Counsel for the third party', e.counselThird]].filter(([, l]) => l && l.length).map(([k, l]) => `${k}: ${l.join(', ')}`).join('; '); };
   // "Registered 21 Oct 2026 (3 sent)", one per stage, latest first.
   function emailSent(c) {
     const by = {};

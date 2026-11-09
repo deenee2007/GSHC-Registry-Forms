@@ -299,6 +299,17 @@ New cases are filed, numbered and assigned to a court here.
    case in its register, marked reassigned, read only. The courts, the
    Process Registry and the parties are told.
 
+**Parties and counsel.** In a case's View, the court's registry records
+changes the court orders: **+ Join a Party** (first, second or third party,
+with address and email), **Strike Out a Party** (the name stays in the title
+marked "(struck out)" or leaves it, as the registry chooses) and
+**Substitute Counsel** (counsel is now kept for each side). Each change is
+kept, dated by the order, with who recorded it, and audited; the filing is
+not changed. Diary dates still to come and the cause list (counsel for each
+side) follow. Email updates go to a party joined or new counsel at once; for
+a party struck out or a counsel replaced they stop, unless the registry
+unticks the box (only addresses known to be that party's are ticked).
+
 **Processes filed later and the fees list.** In a case's View, the court's
 registry records a process filed later (motion on notice, motion ex parte,
 or other), recorded against the suit number with no number of its own: its
