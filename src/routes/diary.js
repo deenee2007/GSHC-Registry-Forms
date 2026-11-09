@@ -23,6 +23,7 @@ const TIME = /^([01]?\d|2[0-3]):[0-5]\d$/;
 const canView = (u, key) => !!key && canAccessUnit(u, key) && (can(u, 'view') || u.signerRoles.length > 0);
 // Who writes in it: staff who create or edit, and the court's judges.
 const canWrite = (u, key) => canView(u, key) && (can(u, 'create') || can(u, 'edit') || u.signerRoles.length > 0);
+const partiesSvc = require('../services/parties');
 const partiesOf = (c) => [c.firstParty, c.secondParty].map(p => String(p || '').trim().replace(/\s*\n+\s*/g, ', ')).filter(Boolean).join(' v. ');
 
 async function court(key) {
@@ -76,7 +77,7 @@ async function makeEntry(req, src) {
     if (!mongoose.isValidObjectId(src.caseId)) throw new HttpError(404, 'Case not found.');
     const c = await Case.findById(src.caseId);
     if (!c || c.assignedUnit !== unit.key || !['assigned', 'dispatched', 'received', 'disposed'].includes(c.status)) throw new HttpError(400, 'That case is not in this court\'s register.');
-    Object.assign(fields, { case: c._id, suitNumber: c.suitNumber, parties: partiesOf(c), nature: c.nature || '', counsel: c.counsel || '', counselSecond: c.counselSecond || '' });
+    Object.assign(fields, { case: c._id, suitNumber: c.suitNumber, parties: partiesOf(c), nature: c.nature || '', counsel: partiesSvc.sideCounsel(c, 'first'), counselSecond: partiesSvc.sideCounsel(c, 'second') });
   } else {
     const suitNumber = String(src.suitNumber || '').trim().slice(0, 60);
     if (!suitNumber) throw new HttpError(400, 'Choose the case, or type its suit number.');

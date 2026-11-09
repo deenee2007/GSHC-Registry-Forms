@@ -46,7 +46,7 @@ const partyEmails = (c, side, name) => (c.partyLog || []).filter(l => l.kind ===
 const titleOf = (c) => [c.firstParty, c.secondParty].map(p => lines(p).join(', ')).filter(Boolean).join(' v. ');
 async function refreshDiary(c) {
   await DiaryEntry.updateMany({ case: c._id, status: 'fixed', date: { $gte: today() } },
-    { $set: { parties: titleOf(c), counsel: c.counsel || '', counselSecond: c.counselSecond || '' } });
+    { $set: { parties: titleOf(c), counsel: sideCounsel(c, 'first'), counselSecond: sideCounsel(c, 'second') } });
 }
 
 async function join(c, b, user) {
@@ -73,28 +73,56 @@ async function strike(c, b, user) {
   const keep = b.keepInTitle !== false;
   if (keep) list[i] = list[i] + STRUCK; else list.splice(i, 1);
   c[s.party] = list.join('\n');
-  const stop = (Array.isArray(b.stopEmails) ? b.stopEmails : []).map(x => String(x).toLowerCase()).filter(x => emailsOf(c, s.emails).map(e => e.toLowerCase()).includes(x));
-  if (stop.length) setEmails(c, s.emails, emailsOf(c, s.emails).filter(x => !stop.includes(x.toLowerCase())));
+  const counselMails = (own(c, b.side, b.name) || { emails: [] }).emails.map(x => x.toLowerCase());
+  const stop = (Array.isArray(b.stopEmails) ? b.stopEmails : []).map(x => String(x).toLowerCase())
+    .filter(x => emailsOf(c, s.emails).map(e => e.toLowerCase()).includes(x) || counselMails.includes(x));
+  if (stop.length) {
+    setEmails(c, s.emails, emailsOf(c, s.emails).filter(x => !stop.includes(x.toLowerCase())));
+    c.partyCounsel = (c.partyCounsel || []).map(x => x.side === b.side && x.party === b.name ? { ...(x.toObject ? x.toObject() : x), emails: (x.emails || []).filter(e => !stop.includes(e.toLowerCase())) } : x);
+    c.markModified('partyCounsel');
+  }
   c.partyLog.push({ kind: 'strike', side: b.side, name: b.name, orderDate: orderDate(b.orderDate), note: text(b.reason, 500), keepInTitle: keep, stoppedEmails: stop, byName: user.fullName, at: new Date() });
   return `${b.name} struck out as ${s.label.toLowerCase()}`;
 }
 
+// Counsel for a party: its own, where substituted; else the side's counsel.
+const own = (c, side, party) => (c.partyCounsel || []).find(x => x.side === side && x.party === party);
+function counselOf(c, side, party) {
+  const s = SIDES[side], o = own(c, side, party);
+  return o ? { name: o.name, address: o.address || '', emails: o.emails || [], own: true }
+    : { name: c[s.counsel] || '', address: c[s.counselAddress] || '', emails: emailsOf(c, s.counselEmails), own: false };
+}
+const live = (c, side) => lines(c[SIDES[side].party]).filter(l => !l.endsWith(STRUCK));
+// The counsel of a side for the diary and the cause list: one name, or each with their party.
+function sideCounsel(c, side) {
+  const list = live(c, side).map(p => ({ p, n: counselOf(c, side, p).name })).filter(x => x.n);
+  const names = [...new Set(list.map(x => x.n))];
+  return names.length <= 1 ? names[0] || '' : names.map(n => `${n} (for ${list.filter(x => x.n === n).map(x => x.p).join(', ')})`).join('; ');
+}
+
+// Counsel substituted for one party. The former counsel's updates stop
+// (unless unticked), but not while they still act for another party.
 async function substitute(c, b, user) {
   const s = sideOf(b.side);
+  const party = String(b.party || '');
+  if (!live(c, b.side).includes(party)) throw bad('Choose the party whose counsel changes.');
   const name = text(b.name, 200);
   if (!name) throw bad('Enter the name of the new counsel.');
-  if (b.side === 'third' && !lines(c.thirdParty).length) throw bad('There is no third party in this case.');
-  const previous = c[s.counsel] || '';
-  if (previous.toLowerCase() === name.toLowerCase()) throw bad(`${name} is already counsel for the ${s.label.toLowerCase()}.`);
+  const before = counselOf(c, b.side, party);
+  if (before.name.toLowerCase() === name.toLowerCase()) throw bad(`${name} is already counsel for ${party}.`);
   const email = b.email ? caseEmail.cleanEmails(b.email, 'the new counsel') : [];
-  const old = emailsOf(c, s.counselEmails);
-  const stop = b.stopEmails !== false ? old : [];
-  setEmails(c, s.counselEmails, [...old.filter(x => !stop.includes(x)), ...email]);
-  c[s.counsel] = name;
-  c[s.counselAddress] = text(b.address, 300);
-  c.partyLog.push({ kind: 'counsel', side: b.side, name, previous, address: c[s.counselAddress], emails: email, orderDate: orderDate(b.date), note: text(b.note, 500),
-    stoppedEmails: stop, byName: user.fullName, at: new Date() });
-  return `${name} now counsel for the ${s.label.toLowerCase()}${previous ? ` (in place of ${previous})` : ''}`;
+  c.partyCounsel = [...(c.partyCounsel || []).filter(x => !(x.side === b.side && x.party === party)), { side: b.side, party, name, address: text(b.address, 300), emails: email }];
+  let stopped = [];
+  if (b.stopEmails !== false && before.emails.length) {
+    // Addresses still used by counsel of any other party stay.
+    const inUse = new Set(Object.keys(SIDES).flatMap(sd => live(c, sd).map(p => counselOf(c, sd, p))).flatMap(x => x.emails).map(x => x.toLowerCase()));
+    stopped = before.emails.filter(x => !inUse.has(x.toLowerCase()));
+    if (!before.own && stopped.length) setEmails(c, s.counselEmails, emailsOf(c, s.counselEmails).filter(x => !stopped.includes(x)));
+  }
+  c.partyLog.push({ kind: 'counsel', side: b.side, name, previous: before.name, address: text(b.address, 300), emails: email, orderDate: orderDate(b.date), note: text(b.note, 500),
+    party, stoppedEmails: stopped, byName: user.fullName, at: new Date() });
+  c.markModified('partyCounsel');
+  return `${name} now counsel for ${party} (${s.label.toLowerCase()})${before.name ? `, in place of ${before.name}` : ''}`;
 }
 
 const ACTIONS = { join, strike, counsel: substitute };
@@ -108,4 +136,4 @@ async function apply(c, kind, body, user) {
   return what;
 }
 
-module.exports = { apply, partyEmails, lines, titleOf, SIDES, STRUCK };
+module.exports = { apply, partyEmails, lines, titleOf, counselOf, sideCounsel, SIDES, STRUCK };
