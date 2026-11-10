@@ -566,8 +566,79 @@
     "notice-appeal-fixed":    noticeAppealFixed,
 
     /* ── Registry: Court Order ── */
-    "court-order":            courtOrder
+    "court-order":            courtOrder,
+
+    /* ── Marriage Registry ── */
+    "marriage-particulars":      marriageParticulars,
+    "marriage-witnesses":        marriageWitnesses,
+    "marriage-oath-taking":      marriageOathTaking,
+    "marriage-oath-affirmation": marriageOathAffirmation,
+    "prohibited-degrees":        prohibitedDegrees
   };
+
+  /* ── Marriage Registry forms: signed by hand by the parties and witnesses ── */
+  const longDate = (v) => { const x = splitDate(v); return x.day ? `${ordinal(x.day)} ${x.month} ${x.year4}` : ''; };
+  const marriageFile = (d) => d.marriageNo ? `<div class="doc-official">Marriage File No.: ${esc(d.marriageNo)}</div>` : "";
+  const handSign = (label) => `<div class="doc-handsign"><span class="doc-handsign__label">${esc(label)}:</span> <span class="line long"></span></div>`;
+  const handSignDated = (label, date) => `<div class="doc-handsign-pair">${handSign(label)}<div class="doc-handsign"><span class="doc-handsign__label">Date:</span> ${L(longDate(date), "medium")}</div></div>`;
+  function marriagePerson(heading, p, d) {
+    const row = (label, v, size) => `<div class="doc-mline"><span class="doc-mline__label">${esc(label)}:</span> ${L(v, size || "long")}</div>`;
+    return `<div class="doc-mblock"><div class="doc-mhead">${esc(heading)}</div>` +
+      row("NAME", d[p + "Name"]) + row("AGE", d[p + "Age"]) + row("OCCUPATION", d[p + "Occupation"]) + row("ADDRESS", d[p + "Address"]) +
+      row("PHONE NO", d[p + "Phone"]) + row("CONDITION", d[p + "Condition"]) + row("FATHER NAME & SURNAME", d[p + "FatherName"]) +
+      row("FATHER OCCUPATION", d[p + "FatherOccupation"]) +
+      `<div class="doc-mline doc-mline--two"><span><span class="doc-mline__label">DATE:</span> ${L(longDate(d[p + "Date"]), "medium")}</span><span><span class="doc-mline__label">SIGN:</span> <span class="line medium"></span></span></div></div>`;
+  }
+  function marriageParticulars(d, u, r) {
+    return shell(u, marriageFile(d) + title("MARRIAGE REGISTRY") + `<div class="doc-msub">HIGH COURT OF JUSTICE GOMBE, GOMBE STATE</div>` +
+      marriagePerson("HUSBAND", "husband", d) + marriagePerson("WIFE", "wife", d), r);
+  }
+  function marriageWitnesses(d, u, r) {
+    const of = d.husbandName || d.wifeName ? `<div class="doc-msub">Marriage of ${L(d.husbandName, "medium")} and ${L(d.wifeName, "medium")}</div>` : "";
+    return shell(u, marriageFile(d) + title("MARRIAGE REGISTRY") + `<div class="doc-msub">HIGH COURT OF JUSTICE GOMBE, GOMBE STATE</div>` + of +
+      marriagePerson("HUSBAND WITNESS", "husbandWitness", d) + marriagePerson("WIFE WITNESS", "wifeWitness", d), r);
+  }
+  function marriageOathTaking(d, u, r) {
+    return shell(u, marriageFile(d) + title("OATH TAKING") +
+      `<p><strong>(Groom)</strong> I ${L(d.groomName, "long")} call upon all person present to bear me witness, that I ${L(d.groomName, "long")}
+      take you ${L(d.brideName, "long")} to be my lawful wife, to have and to hold From this moment hence forth, for better, for worse,
+      for richer for poorer, in sickness and in health. To love and to cherish forsaking all other women clinging to you only till death
+      do us part" Amen. (Claps).</p>` + handSignDated("Groom Signature", d.groomDate) +
+      `<p><strong>(Bride),</strong> I ${L(d.brideName, "long")} call upon all persons present to bear me witness, that I ${L(d.brideName, "long")}
+      take you ${L(d.groomName, "long")} to be my lawful husband to have and to hold, from this moment hence forth, for better, for worse,
+      for richer for poorer, in sickness and in health. To love and to cherish forsaking all other men, clinging to you only till death
+      do us part" Amen. (Claps).</p>` + handSignDated("Bride Signature", d.brideDate), r);
+  }
+  function marriageOathAffirmation(d, u, r) {
+    return shell(u, marriageFile(d) + title("OATH AFFIRMATION") +
+      `<p>I hereby affirm, that all statements as contained in this affidavit and attested to by my signature thereof, are all correct
+      and true, the whole truth and nothing but the truth. So help me God Amen.</p>` +
+      handSignDated("Groom Signature", d.groomDate) + handSignDated("Bride Signature", d.brideDate) +
+      title("RING OATH") +
+      `<p class="doc-upper">I ${L(d.groomName, "long")} (HUSBAND) WITH THIS ${esc(d.ringOathWith || "RING/BIBLE/QUR'AN")} I WED YOU ${L(d.brideName, "long")}
+      (WIFE) WITH MY BODY I ADORE YOU, WITH ALL MY WORLDLY PROPERTY; I ENDOW YOU FOR AS LONG AS BOTH OF US SHALL LIVE.</p>`, r);
+  }
+  // As printed on the registry's form.
+  const PROHIBITED_MAN = ["Mother", "Daughter", "Father's mother", "Son's daughter", "Daughter's daughter", "Sister", "Wife's mother", "Wife's daughter",
+    "Father's wife", "Son's wife", "Father's father wife", "Mother's father's wife", "Wife's mother's mother", "Wife's daughter's daughter",
+    "Wife's daughter's daughter", "Son's son's wife", "Daughter's son's wife", "Mother", "Father's sister", "Mother's sister", "Brother's daughter", "Sister's daughter"];
+  const PROHIBITED_WOMAN = ["Father", "Son", "Father's father", "Daughter's son", "Son's son", "Brother", "Husband's father", "Husband's son",
+    "Mother's Husband", "Daughter's Husband", "Mother's mother's Husband", "Father's mother's Husband", "Husband's father's father", "Husband's daughter's son",
+    "Husband's son's son", "Daughter's Daughter's husband", "Son's Daughter's Husband wife's father", "Husband's mother's father", "Mother's brother",
+    "father's brother", "Sister's son", "Brother's son"];
+  function prohibitedDegrees(d, u, r) {
+    const rows = PROHIBITED_MAN.map((m, i) => `<tr><td>${esc(m)}</td><td>${esc(PROHIBITED_WOMAN[i] || "")}</td></tr>`).join("");
+    const dd = splitDate(d.declarationDate);
+    return shell(u, `<div class="doc-official">(For Official Use Only)${d.marriageNo ? `<br>Marriage File No.: ${esc(d.marriageNo)}` : ""}</div>` + title("PROHIBITED DEGREES OF RELATIONSHIP") +
+      `<table class="doc-degrees"><thead><tr><th>A Man must not marry his:</th><th>A Woman must not marry her:</th></tr></thead><tbody>${rows}</tbody></table>
+      <p>We hereby certify that after reading the above, we understand which Degrees of relationship are prohibited by law for couples
+      intending to marry.</p><p>We declare that we are in no way affected.</p>
+      <div class="doc-twosign">
+        <div class="doc-sign">${esc(d.husbandName || "")}<br>Proposed Husband's Signature</div>
+        <div class="doc-sign">${esc(d.wifeName || "")}<br>Proposed Wife's Signature</div>
+      </div>
+      <p>Dated this ${L(ordinal(dd.day), "short")} Day of ${L(dd.month ? `${dd.month} ${dd.year4}` : "", "medium")} at the Gombe Marriage Registry.</p>`, r);
+  }
 
   /* ── Summons to Settle Record of Appeal ── */
   function summonsSettleRecord(d, u, r) {

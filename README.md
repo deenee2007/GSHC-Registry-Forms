@@ -456,6 +456,17 @@ confirmed by the Directorate.
 Other staff matters (promotion exercises, postings, discipline) will start
 from the officer's record too.
 
+## Marriage Registry
+A unit of its own (**Marriage Registry**, created by itself on databases
+made before it) with the forms in use at the registry: Particulars of
+Husband and Wife; Particulars of Witnesses (Husband Witness and Wife
+Witness); Oath Taking (Vows); Oath Affirmation and Ring Oath; and the
+declaration on the Prohibited Degrees of Relationship. They are signed by
+hand by the parties and witnesses, so each is finalised (locked, with its
+QR code) and printed for signing. The notice of marriage, caveats,
+certificates and the marriage register are to follow with the registry's
+workflow.
+
 ## Before going live: clearing test data
 Until it has been used, Home shows administrators a **Before Going Live**
 section with **🗑 Clear Test Data**. Typing `CLEAR TEST DATA` removes every

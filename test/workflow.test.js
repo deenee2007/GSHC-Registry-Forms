@@ -317,3 +317,24 @@ test('a judge sees all of the court\'s forms once the administrator ticks View i
   assert.equal((await judge1.post('/api/records', { unitKey: 'hc1', formType: 'civil-summons', data: summons })).status, 403, 'View alone does not let them make forms');
   await admin.raw('PATCH', `/api/admin/users/${judge1.id}`, { privileges: [] });
 });
+
+test('Marriage Registry: the unit and its five forms; signed by hand, finalised with a QR code', async () => {
+  const { Unit } = require('../src/models');
+  const catalogue = require('../src/forms/catalogue');
+  assert.ok(await Unit.exists({ key: 'marriage', type: 'marriage', name: 'Marriage Registry' }));
+  assert.deepEqual(catalogue.byUnitType.marriage, ['marriage-particulars', 'marriage-witnesses', 'marriage-oath-taking', 'marriage-oath-affirmation', 'prohibited-degrees']);
+  const witnesses = catalogue.get('marriage-witnesses').schema.filter(s => s.section).map(s => s.section);
+  assert.deepEqual(witnesses, ['Marriage File', 'The Marriage', 'Husband Witness', 'Wife Witness'], 'husband witness and wife witness, not "witness" only');
+  const clerk = await makeUser({ fullName: 'Marriage Clerk', username: 'marriageclerk', unitKeys: ['marriage'], privileges: ['view', 'create', 'edit', 'finalize', 'print'] });
+  let r = await clerk.post('/api/records', { unitKey: 'marriage', formType: 'marriage-particulars',
+    data: { marriageNo: 'GMR/1/2026', husbandName: 'Musa Bello', husbandCondition: 'Bachelor', wifeName: 'Aisha Ahmed', wifeCondition: 'Spinster', husbandDate: '2026-11-10' } });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  assert.equal(r.body.record.summary, 'Musa Bello');
+  r = await clerk.post(`/api/records/${r.body.record.id}/submit`, {});
+  assert.equal(r.body.record.status, 'final', 'no digital signature line: finalised');
+  assert.ok(r.body.record.verifyCode);
+  await clerk.post('/api/records', { unitKey: 'marriage', formType: 'prohibited-degrees', data: { marriageNo: 'gmr/1/2026', husbandName: 'Musa Bello', wifeName: 'Aisha Ahmed' } });
+  const file = await clerk.get('/api/cases?q=GMR/1/2026&exact=1');
+  assert.equal(file.body.cases[0].documents.length, 2, 'the Case File shows the couple\'s forms together');
+  assert.equal((await clerk.post('/api/records', { unitKey: 'hc1', formType: 'marriage-particulars', data: {} })).status, 403, 'only the Marriage Registry\'s staff');
+});

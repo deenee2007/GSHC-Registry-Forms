@@ -805,3 +805,23 @@ button.dash-card:hover { border-color: var(--green-500); }
 .cd-status--closed { background: #5b6b62; color: #fff; }
 .cd-status--waiting { background: #f3d58a; color: #5c4400; }
 .cd-status--moved { background: #d9e2dc; color: #33443a; }
+
+/* Marriage Registry forms */
+.doc-msub { text-align: center; font-weight: 700; margin: -4px 0 10px; }
+.doc-mblock { margin: 10px 0 14px; }
+.doc-mhead { font-weight: 700; text-decoration: underline; margin-bottom: 4px; }
+.doc-mline { display: flex; align-items: baseline; gap: 6px; margin: 7px 0; }
+.doc-mline .line { flex: 1; }
+.doc-mline__label { white-space: nowrap; }
+.doc-mline--two { justify-content: space-between; gap: 30px; }
+.doc-mline--two > span { display: flex; align-items: baseline; gap: 6px; flex: 1; }
+.doc-mline--two .line { flex: 1; }
+.doc-handsign-pair { margin: 14px 0 22px auto; width: 60%; }
+.doc-handsign { display: flex; align-items: baseline; gap: 6px; margin: 10px 0; }
+.doc-handsign__label { white-space: nowrap; }
+.doc-handsign .line { flex: 1; }
+.doc-upper { text-transform: uppercase; }
+.doc-official { text-align: right; font-weight: 700; }
+.doc-degrees { width: 100%; border-collapse: collapse; margin: 8px 0 12px; }
+.doc-degrees th { text-align: left; padding: 2px 6px; }
+.doc-degrees td { padding: 1px 6px; }
