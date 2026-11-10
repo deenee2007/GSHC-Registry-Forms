@@ -849,3 +849,24 @@ button.dash-card:hover { border-color: var(--green-500); }
 .moath { margin: 14px 0 4px; }
 .moath__tag { display: inline-block; padding: 3px 16px; border-radius: 999px; background: #0b5d33; color: #fff; font-weight: 700; font-size: 10pt;
   letter-spacing: .12em; text-transform: uppercase; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+/* The marriage forms fit one A4 page with the verification QR block:
+   less padding round the page, closer lines, compact cards and table. */
+.court-doc:has(.mcards), .court-doc:has(.doc-degrees) { padding: 14mm 16mm 12mm; line-height: 1.35; }
+.court-doc:has(.mcards) .doc-masthead, .court-doc:has(.doc-degrees) .doc-masthead { margin-bottom: 4px; }
+.mcards { gap: 10px; }
+.mcard__band { padding: 4px 12px; font-size: 10pt; }
+.mcard__cell { padding: 3px 10px 4px; min-height: 34px; }
+.mcard__label { font-size: 7pt; }
+.mcard__value { font-size: 10.5pt; line-height: 1.3; }
+.mcard__cell--sign .mcard__value { min-height: 24px; }
+.mhead { margin: 0 0 8px; }
+.mcouple { margin: -2px 0 8px; font-size: 10.5pt; }
+.doc-degrees { font-size: 10pt; line-height: 1.12; margin: 2px 0 6px; }
+.doc-degrees td, .doc-degrees th { padding: 0 6px; }
+.court-doc:has(.doc-degrees) p { margin: 6px 0; }
+.court-doc:has(.doc-degrees) .doc-twosign { margin-top: 22px; }
+.court-doc:has(.doc-degrees) .doc-title { margin: 4px 0 6px; }
+.court-doc:has(.doc-degrees) .doc-official { font-size: 10pt; }
+.court-doc:has(.mcards) .doc-verify, .court-doc:has(.doc-degrees) .doc-verify { margin-top: 10px; }
+.court-doc:has(.mcards) .doc-footer, .court-doc:has(.doc-degrees) .doc-footer { margin-top: 8px; }
