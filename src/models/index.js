@@ -58,7 +58,7 @@ UserSchema.methods.toSafeJSON = function () {
 
 const UnitSchema = new Schema({
   key:          { type: String, required: true, unique: true, lowercase: true, trim: true },
-  type:         { type: String, enum: ['registry', 'appeals', 'execution', 'general', 'process'], required: true },
+  type:         { type: String, enum: ['registry', 'appeals', 'execution', 'general', 'process', 'marriage'], required: true },
   name:         { type: String, required: true, trim: true },
   courtNo:      Number,
   allowedForms: { type: [String], default: null },

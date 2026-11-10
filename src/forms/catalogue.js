@@ -2,7 +2,7 @@
  * src/forms/catalogue.js — the server's copy of the form definitions.
  *
  * The forms are defined once, in public/js/modules/{registry,appeals,
- * execution}.js, for the browser. Rather than duplicating 33 schemas, the
+ * execution,marriage}.js, for the browser. Rather than duplicating 33 schemas, the
  * server runs those same files in an isolated sandbox and reads the
  * definitions they register, so the browser and the server can never
  * disagree about a form's fields.
@@ -17,7 +17,8 @@ const MODULE_DIR = path.join(__dirname, '..', '..', 'public', 'js', 'modules');
 const MODULES = {
   registry:  { file: 'registry.js',  name: 'Registry' },
   appeals:   { file: 'appeals.js',   name: 'Appeals' },
-  execution: { file: 'execution.js', name: 'Execution' }
+  execution: { file: 'execution.js', name: 'Execution' },
+  marriage:  { file: 'marriage.js',  name: 'Marriage' }
 };
 
 function load() {
@@ -93,7 +94,7 @@ function courtDates(formType, data) {
 // the same way however they were typed: capitals, no spaces
 // ("gm / 45 / 2026" is GM/45/2026).
 const CASE_FIELDS = ['suitNumber', 'caseNumber', 'suitNo', 'processSuitNumber', 'processSuitNo',
-  'highCourtAppealNo', 'lowerCourtSuitNo', 'appealNumber'];
+  'highCourtAppealNo', 'lowerCourtSuitNo', 'appealNumber', 'marriageNo'];
 const normalizeCase = (v) => String(v || '').toUpperCase().replace(/\s+/g, '').replace(/[.,;:]+$/, '').slice(0, 80);
 
 function caseNumbers(formType, data) {

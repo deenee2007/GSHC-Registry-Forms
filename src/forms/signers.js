@@ -60,6 +60,13 @@ const DEFAULT_SIGNERS = {
   'judgment-summons': [],                // judgment creditor or solicitor
   'notice-of-attachment': [{ role: 'chief_registrar', label: 'Chief Registrar' }],
   'statutory-notice-auction': chiefBailiff,
+
+  // Marriage Registry: signed by hand by the parties and their witnesses.
+  'marriage-particulars': [],
+  'marriage-witnesses': [],
+  'marriage-oath-taking': [],
+  'marriage-oath-affirmation': [],
+  'prohibited-degrees': [],
   'request-nscdc-personnel': chiefBailiff,
   // The Deputy Sheriff is the Director of Litigation.
   'public-auction-receipt': [
