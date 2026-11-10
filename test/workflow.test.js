@@ -334,6 +334,13 @@ test('Marriage Registry: the unit and its five forms; signed by hand, finalised 
   assert.equal(r.body.record.status, 'final', 'no digital signature line: finalised');
   assert.ok(r.body.record.verifyCode);
   await clerk.post('/api/records', { unitKey: 'marriage', formType: 'prohibited-degrees', data: { marriageNo: 'gmr/1/2026', husbandName: 'Musa Bello', wifeName: 'Aisha Ahmed' } });
+  // Fill once: a later form of the same Marriage File No. takes the names (the groom is the husband).
+  const pre = await clerk.get('/api/cases/prefill?caseNo=GMR/1/2026&formType=marriage-oath-taking');
+  assert.equal(pre.body.values.groomName, 'Musa Bello');
+  assert.equal(pre.body.values.brideName, 'Aisha Ahmed');
+  const pre2 = await clerk.get('/api/cases/prefill?caseNo=GMR/1/2026&formType=marriage-witnesses');
+  assert.equal(pre2.body.values.husbandName, 'Musa Bello');
+  assert.equal(pre2.body.values.marriageNo, undefined, 'the number itself is not filled');
   const file = await clerk.get('/api/cases?q=GMR/1/2026&exact=1');
   assert.equal(file.body.cases[0].documents.length, 2, 'the Case File shows the couple\'s forms together');
   assert.equal((await clerk.post('/api/records', { unitKey: 'hc1', formType: 'marriage-particulars', data: {} })).status, 403, 'only the Marriage Registry\'s staff');

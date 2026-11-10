@@ -109,7 +109,8 @@ router.get('/', wrap(async (req, res) => {
 // (dates, times, fees, amounts, references, who was served) never are.
 const NOT_COPIED = /date|time|fee|mileage|amount|levied|^ourref$|^refno|writno|noticedays|personnelcount|^served|deliveredto|unknownperson|pointedoutby|askedidentity|identityresponse|^recipient|receiptnumber|sum(naira|kobo)$|^execution|additionalgrounds/i;
 // The first and second party go by different names on different forms.
-const ALIASES = [['plaintiff', 'complainant', 'plaintiffName'], ['defendant']];
+// Boxes that hold the same person under different names (the groom is the husband, the bride the wife).
+const ALIASES = [['plaintiff', 'complainant', 'plaintiffName'], ['defendant'], ['husbandName', 'groomName'], ['wifeName', 'brideName']];
 
 function prefillValues(def, sources) {
   const values = {};

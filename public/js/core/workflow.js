@@ -121,9 +121,9 @@
     });
   }
 
-  // On a new form: once a suit or case number is typed, offer to fill the
-  // empty boxes from earlier documents for that case. Online only.
-  const CASE_FIELDS = ['suitNumber', 'caseNumber', 'suitNo', 'processSuitNumber', 'processSuitNo', 'highCourtAppealNo', 'lowerCourtSuitNo', 'appealNumber'];
+  // On a new form: once a suit or case number (or a Marriage File No.) is
+  // typed, offer to fill the empty boxes from earlier documents for it. Online only.
+  const CASE_FIELDS = ['suitNumber', 'caseNumber', 'suitNo', 'processSuitNumber', 'processSuitNo', 'highCourtAppealNo', 'lowerCourtSuitNo', 'appealNumber', 'marriageNo'];
   function offerPrefill(def, formType, formNode, body) {
     const bar = ui().el('div', { class: 'notice notice--info prefill-bar', hidden: 'hidden' });
     body.insertBefore(bar, formNode);

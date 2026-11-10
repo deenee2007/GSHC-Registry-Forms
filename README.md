@@ -463,7 +463,11 @@ Husband and Wife; Particulars of Witnesses (Husband Witness and Wife
 Witness); Oath Taking (Vows); Oath Affirmation and Ring Oath; and the
 declaration on the Prohibited Degrees of Relationship. They are signed by
 hand by the parties and witnesses, so each is finalised (locked, with its
-QR code) and printed for signing. The notice of marriage, caveats,
+QR code) and printed for signing. Each form takes a **Marriage File No.**;
+typed on a later form, it offers to fill the names and particulars from the
+couple's earlier forms (the groom being the husband, the bride the wife),
+and the Case File shows the couple's forms together. Each form, with its
+QR block, prints on one A4 page. The notice of marriage, caveats,
 certificates and the marriage register are to follow with the registry's
 workflow.
 
