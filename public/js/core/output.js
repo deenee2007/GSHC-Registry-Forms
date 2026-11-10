@@ -581,30 +581,42 @@
   const marriageFile = (d) => d.marriageNo ? `<div class="doc-official">Marriage File No.: ${esc(d.marriageNo)}</div>` : "";
   const handSign = (label) => `<div class="doc-handsign"><span class="doc-handsign__label">${esc(label)}:</span> <span class="line long"></span></div>`;
   const handSignDated = (label, date) => `<div class="doc-handsign-pair">${handSign(label)}<div class="doc-handsign"><span class="doc-handsign__label">Date:</span> ${L(longDate(date), "medium")}</div></div>`;
-  function marriagePerson(heading, p, d) {
-    const row = (label, v, size) => `<div class="doc-mline"><span class="doc-mline__label">${esc(label)}:</span> ${L(v, size || "long")}</div>`;
-    return `<div class="doc-mblock"><div class="doc-mhead">${esc(heading)}</div>` +
-      row("NAME", d[p + "Name"]) + row("AGE", d[p + "Age"]) + row("OCCUPATION", d[p + "Occupation"]) + row("ADDRESS", d[p + "Address"]) +
-      row("PHONE NO", d[p + "Phone"]) + row("CONDITION", d[p + "Condition"]) + row("FATHER NAME & SURNAME", d[p + "FatherName"]) +
-      row("FATHER OCCUPATION", d[p + "FatherOccupation"]) +
-      `<div class="doc-mline doc-mline--two"><span><span class="doc-mline__label">DATE:</span> ${L(longDate(d[p + "Date"]), "medium")}</span><span><span class="doc-mline__label">SIGN:</span> <span class="line medium"></span></span></div></div>`;
+  // One person's particulars as a card: a coloured band with the role, the
+  // details in labelled boxes two to a row, and a box for the signature.
+  function marriagePerson(heading, p, d, icon) {
+    // where: "wide" (the whole row), "left" (left of a pair) or none (right of a pair).
+    const cell = (label, v, where) => `<div class="mcard__cell${where ? ` mcard__cell--${where}` : ""}"><div class="mcard__label">${esc(label)}</div><div class="mcard__value">${fmt(v || "")}</div></div>`;
+    return `<section class="mcard">
+      <div class="mcard__band"><span class="mcard__icon">${icon || ""}</span>${esc(heading)}</div>
+      <div class="mcard__grid">` +
+        cell("Name", d[p + "Name"], "wide") +
+        cell("Age", d[p + "Age"], "left") + cell("Phone No.", d[p + "Phone"]) +
+        cell("Occupation", d[p + "Occupation"], "left") + cell("Condition", d[p + "Condition"]) +
+        cell("Address", d[p + "Address"], "wide") +
+        cell("Father's Name & Surname", d[p + "FatherName"], "left") + cell("Father's Occupation", d[p + "FatherOccupation"]) +
+        cell("Date", longDate(d[p + "Date"]), "left") +
+        `<div class="mcard__cell mcard__cell--sign"><div class="mcard__label">Signature</div><div class="mcard__value"></div></div>
+      </div>
+    </section>`;
   }
+  // The court's heading above already names the Marriage Registry: the form's name only.
+  const marriageHead = (sub) => `<div class="mhead"><div class="mhead__form">${sub}</div></div>`;
   function marriageParticulars(d, u, r) {
-    return shell(u, marriageFile(d) + title("MARRIAGE REGISTRY") + `<div class="doc-msub">HIGH COURT OF JUSTICE GOMBE, GOMBE STATE</div>` +
-      marriagePerson("HUSBAND", "husband", d) + marriagePerson("WIFE", "wife", d), r);
+    return shell(u, marriageFile(d) + marriageHead("Particulars of Husband and Wife") +
+      `<div class="mcards">${marriagePerson("Husband", "husband", d, "♂")}${marriagePerson("Wife", "wife", d, "♀")}</div>`, r);
   }
   function marriageWitnesses(d, u, r) {
-    const of = d.husbandName || d.wifeName ? `<div class="doc-msub">Marriage of ${L(d.husbandName, "medium")} and ${L(d.wifeName, "medium")}</div>` : "";
-    return shell(u, marriageFile(d) + title("MARRIAGE REGISTRY") + `<div class="doc-msub">HIGH COURT OF JUSTICE GOMBE, GOMBE STATE</div>` + of +
-      marriagePerson("HUSBAND WITNESS", "husbandWitness", d) + marriagePerson("WIFE WITNESS", "wifeWitness", d), r);
+    const of = d.husbandName || d.wifeName ? `<div class="mcouple">Marriage of <strong>${esc(d.husbandName || "")}</strong> and <strong>${esc(d.wifeName || "")}</strong></div>` : "";
+    return shell(u, marriageFile(d) + marriageHead("Particulars of Witnesses") + of +
+      `<div class="mcards">${marriagePerson("Husband Witness", "husbandWitness", d)}${marriagePerson("Wife Witness", "wifeWitness", d)}</div>`, r);
   }
   function marriageOathTaking(d, u, r) {
     return shell(u, marriageFile(d) + title("OATH TAKING") +
-      `<p><strong>(Groom)</strong> I ${L(d.groomName, "long")} call upon all persons present to bear me witness, that I ${L(d.groomName, "long")}
+      `<div class="moath"><span class="moath__tag">Groom</span></div><p>I ${L(d.groomName, "long")} call upon all persons present to bear me witness, that I ${L(d.groomName, "long")}
       take you ${L(d.brideName, "long")} to be my lawful wife, to have and to hold from this moment hence forth, for better, for worse,
       for richer for poorer, in sickness and in health. To love and to cherish forsaking all other women clinging to you only till death
       do us part. Amen.</p>` + handSignDated("Groom Signature", d.groomDate) +
-      `<p><strong>(Bride),</strong> I ${L(d.brideName, "long")} call upon all persons present to bear me witness, that I ${L(d.brideName, "long")}
+      `<div class="moath"><span class="moath__tag">Bride</span></div><p>I ${L(d.brideName, "long")} call upon all persons present to bear me witness, that I ${L(d.brideName, "long")}
       take you ${L(d.groomName, "long")} to be my lawful husband to have and to hold, from this moment hence forth, for better, for worse,
       for richer for poorer, in sickness and in health. To love and to cherish forsaking all other men, clinging to you only till death
       do us part. Amen.</p>` + handSignDated("Bride Signature", d.brideDate), r);
