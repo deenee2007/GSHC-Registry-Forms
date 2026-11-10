@@ -825,3 +825,27 @@ button.dash-card:hover { border-color: var(--green-500); }
 .doc-degrees { width: 100%; border-collapse: collapse; margin: 8px 0 12px; }
 .doc-degrees th { text-align: left; padding: 2px 6px; }
 .doc-degrees td { padding: 1px 6px; }
+
+/* Marriage Registry: particulars as cards, and the vow tags */
+.mhead { text-align: center; margin: 2px 0 12px; }
+.mhead__title { font-size: 17pt; font-weight: 700; letter-spacing: .12em; color: #0b5d33; }
+.mhead__sub { font-size: 10.5pt; font-weight: 700; letter-spacing: .04em; }
+.mhead__form { display: inline-block; padding: 4px 18px; border: 1.5px solid #0b5d33; border-radius: 999px; font-size: 10pt;
+  font-weight: 700; color: #0b5d33; text-transform: uppercase; letter-spacing: .06em; }
+.mcouple { text-align: center; margin: -4px 0 12px; font-size: 11pt; }
+.mcards { display: grid; gap: 14px; }
+.mcard { border: 1.5px solid #0b5d33; border-radius: 10px; overflow: hidden; break-inside: avoid; page-break-inside: avoid; }
+.mcard__band { background: #0b5d33; color: #fff; padding: 6px 12px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; font-size: 11pt;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.mcard__icon { margin-right: 8px; opacity: .85; }
+.mcard__grid { display: grid; grid-template-columns: 1fr 1fr; }
+.mcard__cell { padding: 5px 12px 6px; border-top: 1px solid #cfe0d5; min-height: 38px; }
+.mcard__cell--left { border-right: 1px solid #cfe0d5; }
+.mcard__cell--wide { grid-column: 1 / -1; }
+.mcard__label { font-size: 7.5pt; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: #4a6a57; }
+.mcard__value { font-size: 11pt; font-weight: 600; min-height: 1.3em; }
+.mcard__cell--sign { background: #f3f8f5; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.mcard__cell--sign .mcard__value { min-height: 30px; }
+.moath { margin: 14px 0 4px; }
+.moath__tag { display: inline-block; padding: 3px 16px; border-radius: 999px; background: #0b5d33; color: #fff; font-weight: 700; font-size: 10pt;
+  letter-spacing: .12em; text-transform: uppercase; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
