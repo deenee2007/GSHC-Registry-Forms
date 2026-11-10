@@ -600,14 +600,14 @@
   }
   function marriageOathTaking(d, u, r) {
     return shell(u, marriageFile(d) + title("OATH TAKING") +
-      `<p><strong>(Groom)</strong> I ${L(d.groomName, "long")} call upon all person present to bear me witness, that I ${L(d.groomName, "long")}
-      take you ${L(d.brideName, "long")} to be my lawful wife, to have and to hold From this moment hence forth, for better, for worse,
+      `<p><strong>(Groom)</strong> I ${L(d.groomName, "long")} call upon all persons present to bear me witness, that I ${L(d.groomName, "long")}
+      take you ${L(d.brideName, "long")} to be my lawful wife, to have and to hold from this moment hence forth, for better, for worse,
       for richer for poorer, in sickness and in health. To love and to cherish forsaking all other women clinging to you only till death
-      do us part" Amen. (Claps).</p>` + handSignDated("Groom Signature", d.groomDate) +
+      do us part. Amen.</p>` + handSignDated("Groom Signature", d.groomDate) +
       `<p><strong>(Bride),</strong> I ${L(d.brideName, "long")} call upon all persons present to bear me witness, that I ${L(d.brideName, "long")}
       take you ${L(d.groomName, "long")} to be my lawful husband to have and to hold, from this moment hence forth, for better, for worse,
       for richer for poorer, in sickness and in health. To love and to cherish forsaking all other men, clinging to you only till death
-      do us part" Amen. (Claps).</p>` + handSignDated("Bride Signature", d.brideDate), r);
+      do us part. Amen.</p>` + handSignDated("Bride Signature", d.brideDate), r);
   }
   function marriageOathAffirmation(d, u, r) {
     return shell(u, marriageFile(d) + title("OATH AFFIRMATION") +
@@ -618,14 +618,15 @@
       `<p class="doc-upper">I ${L(d.groomName, "long")} (HUSBAND) WITH THIS ${esc(d.ringOathWith || "RING/BIBLE/QUR'AN")} I WED YOU ${L(d.brideName, "long")}
       (WIFE) WITH MY BODY I ADORE YOU, WITH ALL MY WORLDLY PROPERTY; I ENDOW YOU FOR AS LONG AS BOTH OF US SHALL LIVE.</p>`, r);
   }
-  // As printed on the registry's form.
+  // As on the registry's form, with its slips corrected (a repeated
+  // "Mother" and "Wife's daughter's daughter", two entries run together).
   const PROHIBITED_MAN = ["Mother", "Daughter", "Father's mother", "Son's daughter", "Daughter's daughter", "Sister", "Wife's mother", "Wife's daughter",
-    "Father's wife", "Son's wife", "Father's father wife", "Mother's father's wife", "Wife's mother's mother", "Wife's daughter's daughter",
-    "Wife's daughter's daughter", "Son's son's wife", "Daughter's son's wife", "Mother", "Father's sister", "Mother's sister", "Brother's daughter", "Sister's daughter"];
+    "Father's wife", "Son's wife", "Father's father's wife", "Mother's father's wife", "Wife's mother's mother", "Wife's daughter's daughter",
+    "Wife's son's daughter", "Son's son's wife", "Daughter's son's wife", "Mother's mother", "Father's sister", "Mother's sister", "Brother's daughter", "Sister's daughter"];
   const PROHIBITED_WOMAN = ["Father", "Son", "Father's father", "Daughter's son", "Son's son", "Brother", "Husband's father", "Husband's son",
     "Mother's Husband", "Daughter's Husband", "Mother's mother's Husband", "Father's mother's Husband", "Husband's father's father", "Husband's daughter's son",
-    "Husband's son's son", "Daughter's Daughter's husband", "Son's Daughter's Husband wife's father", "Husband's mother's father", "Mother's brother",
-    "father's brother", "Sister's son", "Brother's son"];
+    "Husband's son's son", "Daughter's Daughter's husband", "Son's Daughter's Husband", "Husband's mother's father", "Mother's brother",
+    "Father's brother", "Sister's son", "Brother's son"];
   function prohibitedDegrees(d, u, r) {
     const rows = PROHIBITED_MAN.map((m, i) => `<tr><td>${esc(m)}</td><td>${esc(PROHIBITED_WOMAN[i] || "")}</td></tr>`).join("");
     const dd = splitDate(d.declarationDate);
