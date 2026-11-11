@@ -12,7 +12,7 @@ const sandbox = { window: { App: {} }, document: {} };
 vm.createContext(sandbox);
 vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'core', 'output.js'), 'utf8'), sandbox);
 const render = (formType, data) => sandbox.window.App.output.render({ formType, data, status: 'final', createdAt: '2026-11-10T09:00:00Z' }, 'Marriage Registry');
-const text = (html) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+const text = (html) => html.replace(/<[^>]+>/g, ' ').replace(/&#039;/g, "'").replace(/\s+/g, ' ');
 
 test('the vows: "all persons present" for both, no stray quotation mark, no "(Claps)"', () => {
   const t = text(render('marriage-oath-taking', { groomName: 'Musa Bello', brideName: 'Aisha Ahmed' }));
@@ -33,4 +33,17 @@ test('the prohibited degrees: no entry twice in a column, none run together', ()
   assert.ok(man.includes("Mother's mother") && man.includes("Wife's son's daughter") && man.includes("Father's father's wife"));
   assert.ok(woman.includes("Son's Daughter's Husband") && woman.includes("Father's brother"));
   assert.ok(!woman.some(w => /wife's father/i.test(w)));
+});
+
+test('the notice of marriage shows its expiry; the ring oaths are one for the groom and one for the bride', () => {
+  const t = text(render('notice-of-marriage', { registrarDistrict: 'Gombe', marriagePlace: 'the Marriage Registry, Gombe', noticeDate: '2026-11-11', expiryDate: '2027-02-11',
+    husbandName: 'Musa Bello', wifeName: 'Aisha Ahmed' }));
+  assert.match(t, /NOTICE OF MARRIAGE/);
+  assert.match(t, /Expires on 11th February 2027/);
+  assert.match(t, /Witness my hand this 11th day of November 20 ?26/);
+  const o = text(render('marriage-oath-affirmation', { groomName: 'Musa Bello', brideName: 'Aisha Ahmed', ringOathWith: 'RING', brideRingWith: "QUR'AN" }));
+  assert.match(o, /I Musa Bello \(HUSBAND\) WITH THIS RING I WED YOU Aisha Ahmed \(WIFE\)/);
+  assert.match(o, /I Aisha Ahmed \(WIFE\) WITH THIS QUR'AN I WED YOU Musa Bello \(HUSBAND\)/);
+  assert.equal((o.match(/Groom Signature/g) || []).length, 2, 'the groom signs the affirmation and his ring oath');
+  assert.equal((o.match(/Bride Signature/g) || []).length, 2);
 });

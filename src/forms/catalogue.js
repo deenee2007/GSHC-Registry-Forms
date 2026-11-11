@@ -113,6 +113,19 @@ function caseNumbers(formType, data) {
 }
 
 // Keep only fields the schema defines; check required ones are filled.
+// A date some months after another, as YYYY-MM-DD (the day kept, or the month's last day).
+function addMonths(iso, n) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '');
+  if (!m) return '';
+  const total = (+m[1]) * 12 + (+m[2] - 1) + n, y = Math.floor(total / 12), mo = total % 12 + 1;
+  const d = Math.min(+m[3], new Date(Date.UTC(y, mo, 0)).getUTCDate());
+  return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+function computeValue(c, value) {
+  if (c && c.addMonths) return addMonths(String(value || ''), c.addMonths);
+  return '';
+}
+
 function cleanData(formType, input) {
   const def = get(formType);
   if (!def) return { error: 'Unknown form type.' };
@@ -133,6 +146,8 @@ function cleanData(formType, input) {
       if (f.required && out[f.name].length === 0) return { error: `Please add at least one entry to ${f.label}.` };
       continue;
     }
+    // A worked-out box (an expiry date) is worked out here, whatever was sent.
+    if (f.type === 'computed') { out[f.name] = computeValue(f.compute, input[f.compute.from]); continue; }
     const s = v === undefined || v === null ? '' : String(v).slice(0, 20000).trim();
     if (f.required && !s) return { error: `Please fill: ${f.label}` };
     out[f.name] = s;
@@ -140,4 +155,4 @@ function cleanData(formType, input) {
   return { data: out };
 }
 
-module.exports = { ...catalogue, MODULES, get, formsForUnit, describe, cleanData, caseNumbers, normalizeCase, CASE_FIELDS, COURT_DATES, courtDates };
+module.exports = { ...catalogue, MODULES, get, formsForUnit, describe, cleanData, addMonths, caseNumbers, normalizeCase, CASE_FIELDS, COURT_DATES, courtDates };
