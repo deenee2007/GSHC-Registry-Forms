@@ -275,11 +275,11 @@
         dash.appendChild(section(ui, 'Units', ui.table(
           [
             { label: 'Unit', value: r => r.unit.name },
-            { label: 'Drafts', value: r => r.draft || 0 },
-            { label: 'Awaiting Signature', value: r => r.pending || 0 },
-            { label: 'Returned', value: r => r.returned || 0 },
-            { label: 'Signed', value: r => r.final || 0 },
-            { label: 'Revoked', value: r => r.revoked || 0 }
+            { label: 'Drafts', value: r => r.draft || 0, num: true },
+            { label: 'Awaiting Signature', value: r => r.pending || 0, num: true },
+            { label: 'Returned', value: r => r.returned || 0, num: true },
+            { label: 'Signed', value: r => r.final || 0, num: true },
+            { label: 'Revoked', value: r => r.revoked || 0, num: true }
           ],
           unitRows,
           [{ label: 'Open', onClick: r => router.loadUnit(r.unit) }]

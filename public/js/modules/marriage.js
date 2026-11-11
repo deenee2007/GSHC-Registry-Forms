@@ -37,7 +37,7 @@
   // particulars, so a couple's notice fills from (or into) their other forms.
   const noticeParty = (p, title, condition) => [
     { section: title },
-    { name: `${p}Name`, label: 'Name', required: true, full: true },
+    { name: `${p}Name`, label: 'Name', required: true, full: true, summary: p === 'husband' },
     { name: `${p}Condition`, label: 'Condition', type: 'select', options: ['', ...condition].map(c => ({ value: c, label: c || 'Choose' })) },
     { name: `${p}Occupation`, label: 'Occupation, Rank or Profession' },
     { name: `${p}Age`, label: 'Age' },

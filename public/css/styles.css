@@ -505,11 +505,28 @@ button.dash-card:hover { border-color: var(--green-500); }
 /* Phones: tables become stacked cards */
 @media (max-width: 720px) {
   .content { padding: 1rem; }
+  /* Each row is a card: a title, the details in two columns with small
+     labels above, counts as number tiles, the buttons along the bottom. */
+  .table-scroll { box-shadow: none; overflow: visible; }
+  .data-table { background: transparent; box-shadow: none; }
   .data-table thead { display: none; }
-  .data-table, .data-table tbody, .data-table tr, .data-table td { display: block; width: 100%; }
-  .data-table tr { border-top: 1px solid var(--line); padding: .4rem 0; }
-  .data-table td { border: none; padding: .25rem .9rem; }
-  .data-table td[data-label]::before { content: attr(data-label) ": "; font-weight: 600; color: var(--muted); font-size: .78rem; }
+  .data-table, .data-table tbody { display: block; width: 100%; }
+  .data-table tbody { display: flex; flex-direction: column; gap: .7rem; }
+  .data-table tr { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem .9rem; background: #fff; border: 1px solid var(--line);
+    border-radius: 14px; padding: .8rem .9rem; box-shadow: 0 1px 4px rgba(16, 60, 35, .07); }
+  .data-table td { display: block; border: none; padding: 0; min-width: 0; font-size: .92rem; overflow-wrap: anywhere; }
+  .data-table td[data-label]::before { content: attr(data-label); display: block; font-size: .68rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .05em; color: var(--muted); margin-bottom: .1rem; }
+  .data-table td.td-primary { grid-column: 1 / -1; font-size: 1.02rem; font-weight: 700; color: var(--ink); padding-bottom: .55rem;
+    border-bottom: 1px solid var(--line); }
+  .data-table td.td-primary::before { display: none; }
+  .data-table td.td-primary { order: -1; }
+  .data-table tr:has(.td-num) { grid-template-columns: repeat(3, 1fr); }
+  .data-table td.td-num { background: var(--green-50, #eef7f1); border-radius: 10px; padding: .45rem .3rem; text-align: center; font-size: 1.25rem;
+    font-weight: 700; color: var(--green-700, #0b5d33); }
+  .data-table td.td-num::before { font-size: .6rem; margin-bottom: .15rem; }
+  .data-table td.row-actions { grid-column: 1 / -1; display: flex; gap: .5rem; padding-top: .55rem; border-top: 1px solid var(--line); }
+  .data-table td.row-actions .btn { flex: 1 1 auto; min-height: 38px; }
   .row-actions { flex-wrap: wrap; }
   .note { grid-template-columns: 1fr; gap: .2rem; }
   .signer-row { grid-template-columns: 1fr; }

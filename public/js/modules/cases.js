@@ -73,7 +73,7 @@
           ]),
           ui.table([
             { label: 'Date', value: d => day(d.date) },
-            { label: 'Form', value: d => d.formLabel },
+            { label: 'Form', value: d => d.formLabel, primary: true },
             { label: 'Unit', value: d => d.unitName },
             { label: 'Status', node: d => d.formType === 'scan' ? ui.el('span', { class: 'badge badge--final' }, 'Scanned') : ui.statusBadge(d.status) },
             { label: 'Prepared by', value: d => d.canOpen || d.fileUrl ? d.createdByName : 'Not in your unit' }

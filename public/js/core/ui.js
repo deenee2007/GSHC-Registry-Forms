@@ -235,11 +235,15 @@
   }
 
   // Render a records table with optional row actions
+  // On a phone each row shows as a card: the primary column (c.primary,
+  // else the first) is its title; c.num columns are number tiles.
   function table(columns, rows, actions) {
     const head = el('tr', null, columns.map(c => el('th', null, c.label)));
     if (actions) head.appendChild(el('th', null, 'Actions'));
+    const primary = Math.max(0, columns.findIndex(c => c.primary));
+    const cls = (c, i) => [i === primary ? 'td-primary' : '', c.num ? 'td-num' : ''].filter(Boolean).join(' ');
     const body = rows.map(r => {
-      const tr = el('tr', null, columns.map(c => el('td', c.label ? { 'data-label': c.label } : null,
+      const tr = el('tr', null, columns.map((c, i) => el('td', { ...(c.label ? { 'data-label': c.label } : {}), ...(cls(c, i) ? { class: cls(c, i) } : {}) },
         c.node ? c.node(r) : String(c.value ? c.value(r) : (r[c.key] ?? '')))));
       if (actions) {
         const cell = el('td', { class: 'row-actions' });
