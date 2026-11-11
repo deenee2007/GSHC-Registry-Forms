@@ -42,3 +42,9 @@ test('Court Registry forms: the judicial division, or the appeal session when th
   assert.doesNotMatch(text(render('hearing-notice', {}, 'High Court 1 Registry')), /APPEAL SESSION/);
   assert.match(text(render('hearing-notice', { appealSession: 'Gombe' }, 'High Court 1 Registry')), /IN THE GOMBE APPEAL SESSION HOLDEN AT GOMBE/);
 });
+
+test('the Notice of Appeal Fixed letter is sent from the Appeals Registry', () => {
+  const t = text(render('notice-appeal-fixed', { refNo: 'GMA/1' }));
+  assert.match(t, /Appeals Registry, High Court of Justice, Gombe/);
+  assert.doesNotMatch(t, /High Court Registry/);
+});

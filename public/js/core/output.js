@@ -727,7 +727,7 @@
     return shell(u,
       formRef(appealHead(d.appealSession || 'Gombe')) +
       `<div class="doc-letter-meta">
-        <span>Ref No: ${L(d.refNo)} &nbsp;&nbsp; High Court Registry,<br>
+        <span>Ref No: ${L(d.refNo)} &nbsp;&nbsp; Appeals Registry,<br>
         High Court of Justice, Gombe<br>
         Date: ${L(ld)}<br>
         High Court Appeal No: ${L(d.highCourtAppealNo)}</span>
