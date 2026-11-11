@@ -59,7 +59,8 @@ function describe(formType, data) {
   const def = get(formType);
   if (!def) return { ref: '', summary: '' };
   const fields = def.schema.filter(s => s.name);
-  const sumField = fields.find(s => s.full && typeof data[s.name] === 'string') ||
+  // A form may name the box that sums it up (summary: true); else the first wide box or a party's name.
+  const sumField = fields.find(s => s.summary) || fields.find(s => s.full && typeof data[s.name] === 'string') ||
                    fields.find(s => /title|party|name|plaintiff|appellant/i.test(s.name));
   const refField = fields.find(s => /no\.?$|number|ref|suitno/i.test(s.name) || /No\./i.test(s.label || ''));
   const text = v => (typeof v === 'string' ? v : '').slice(0, 300);
