@@ -23,7 +23,8 @@
 
   // The court's registered cases, for choosing one (loaded once per screen).
   async function registerCases(api, unitKey) {
-    try { return (await api.get(`/process/register?unitKey=${encodeURIComponent(unitKey)}`)).cases; } catch (e) { return []; }
+    // Only cases whose file has been received in this court can be given a date.
+    try { return (await api.get(`/process/register?unitKey=${encodeURIComponent(unitKey)}`)).cases.filter(c => !c.reassignedAway && ['received', 'disposed'].includes(c.status)); } catch (e) { return []; }
   }
 
   // A search box over the register's cases; returns { node, value() }.

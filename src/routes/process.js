@@ -364,7 +364,7 @@ router.post('/cases/:id/invoice', wrap(async (req, res) => {
 // everyone who can see the case can open them. The uploader may delete a
 // document on the day it was uploaded; after that, only an administrator.
 const canUploadDoc = (u, c) => (inProcess(u) && (can(u, 'create') || can(u, 'edit') || isRegistrar(u))) ||
-  (inCourt(u, c.assignedUnit) && (can(u, 'create') || can(u, 'edit')));
+  (inCourt(u, c.assignedUnit) && ['received', 'disposed'].includes(c.status) && (can(u, 'create') || can(u, 'edit')));
 const sameDay = (a, b) => new Date(a).toDateString() === new Date(b).toDateString();
 const canDeleteDoc = (u, d) => isAdmin(u) || (String(d.uploadedBy) === String(u._id) && sameDay(d.createdAt, new Date()));
 const serializeDoc = (d, u) => ({
@@ -640,6 +640,15 @@ function assertCourtWork(user, c) {
   if (!inCourt(user, c.assignedUnit) || !(can(user, 'edit') || can(user, 'create'))) throw new HttpError(403, 'Only staff of the assigned court update its register.');
 }
 
+// The court works on a case only once its file has been received there: no
+// remark, process, party change, document or date before that. A case
+// reassigned to another court waits for that court to receive it too.
+const FILE_HERE = ['received', 'disposed'];
+const fileHere = (c) => FILE_HERE.includes(c.status);
+function assertFileHere(c) {
+  if (!fileHere(c)) throw new HttpError(409, `The file of ${c.suitNumber} has not been received in this court yet. Mark it received in the Case Register first.`);
+}
+
 router.post('/cases/:id/received', wrap(async (req, res) => {
   const c = await load(req.params.id, req.user);
   assertCourtWork(req.user, c);
@@ -657,7 +666,8 @@ router.post('/cases/:id/received', wrap(async (req, res) => {
 router.post('/cases/:id/parties/:kind', wrap(async (req, res) => {
   const c = await load(req.params.id, req.user);
   assertCourtWork(req.user, c);
-  if (!IN_COURT.includes(c.status)) throw new HttpError(409, 'Parties and counsel change only while the case is pending in the court.');
+  if (c.status === 'disposed') throw new HttpError(409, 'Parties and counsel change only while the case is pending in the court.');
+  assertFileHere(c);
   let what;
   try { what = await partiesSvc.apply(c, req.params.kind, req.body, req.user); } catch (e) { throw new HttpError(e.status || 500, e.message); }
   await audit.log(req, `case_party_${req.params.kind}`, { unitKey: c.assignedUnit, details: { caseId: String(c._id), suitNumber: c.suitNumber, change: what } });
@@ -667,14 +677,13 @@ router.post('/cases/:id/parties/:kind', wrap(async (req, res) => {
 router.post('/cases/:id/disposal', wrap(async (req, res) => {
   const c = await load(req.params.id, req.user);
   assertCourtWork(req.user, c);
-  if (!['assigned', 'dispatched', 'received', 'disposed'].includes(c.status)) throw new HttpError(409, 'This case is not in a court register.');
+  assertFileHere(c);
   let remark = String(req.body.remark || '').trim();
   if (remark === 'Other') remark = String(req.body.other || '').trim();
   if (!remark) throw new HttpError(400, 'Choose the remark, or type it under Other.');
   const date = DAY.test(req.body.date || '') ? req.body.date : today();
   c.disposal = { remark: remark.slice(0, 300), date, byName: req.user.fullName, at: new Date() };
   c.status = 'disposed';
-  if (!c.receivedAt) Object.assign(c, { receivedAt: new Date(), receivedByName: req.user.fullName });
   await c.save();
   await audit.log(req, 'case_disposed', { unitKey: c.assignedUnit, details: { caseId: String(c._id), suitNumber: c.suitNumber, remark } });
   res.json({ case: serialize(c, await unitNames()) });
@@ -766,13 +775,14 @@ router.get('/cases/:id/processes', wrap(async (req, res) => {
   const s = await processSvc.getSettings();
   const list = await CaseProcess.find({ case: c._id }).sort({ filedOn: 1, createdAt: 1 });
   res.json({ processes: list.map(p => serializeProcess(p, s)), processTypes: PROCESS_TYPES,
-    canFile: !!c.assignedUnit && inCourt(req.user, c.assignedUnit) && (can(req.user, 'edit') || can(req.user, 'create')) });
+    canFile: !!c.assignedUnit && fileHere(c) && inCourt(req.user, c.assignedUnit) && (can(req.user, 'edit') || can(req.user, 'create')),
+    fileHere: fileHere(c) });
 }));
 
 router.post('/cases/:id/processes', wrap(async (req, res) => {
   const c = await load(req.params.id, req.user);
   assertCourtWork(req.user, c);
-  if (!['assigned', 'dispatched', 'received', 'disposed'].includes(c.status)) throw new HttpError(409, 'This case is not in a court register.');
+  assertFileHere(c);
   const s = await processSvc.getSettings();
   const fields = await cleanProcess({ filedOn: '', fees: [], ...req.body }, s);
   if (!fields.processType) throw new HttpError(400, 'Choose the process, or type it under Others.');
@@ -785,6 +795,7 @@ router.post('/cases/:id/processes', wrap(async (req, res) => {
 router.put('/processes/:id', wrap(async (req, res) => {
   const { p, c } = await loadProcess(req.params.id, req.user);
   assertCourtWork(req.user, c);
+  assertFileHere(c);
   const s = await processSvc.getSettings();
   const changes = await cleanProcess(req.body || {}, s);
   if (changes.receiptNumber !== undefined && receiptKey(changes.receiptNumber) !== receiptKey(p.receiptNumber)) await checkReceipt(req, changes.receiptNumber, { processId: p._id });
@@ -797,6 +808,7 @@ router.put('/processes/:id', wrap(async (req, res) => {
 router.delete('/processes/:id', wrap(async (req, res) => {
   const { p, c } = await loadProcess(req.params.id, req.user);
   assertCourtWork(req.user, c);
+  assertFileHere(c);
   if (p.receiptNumber) throw new HttpError(409, 'A process with its receipt recorded cannot be deleted.');
   await CaseProcess.deleteOne({ _id: p._id });
   await audit.log(req, 'case_process_deleted', { unitKey: p.unitKey, details: { caseId: String(c._id), suitNumber: c.suitNumber, processType: p.processType } });
@@ -806,6 +818,7 @@ router.delete('/processes/:id', wrap(async (req, res) => {
 router.post('/processes/:id/invoice', wrap(async (req, res) => {
   const { p, c } = await loadProcess(req.params.id, req.user);
   assertCourtWork(req.user, c);
+  assertFileHere(c);
   if (!(p.feeTotal > 0)) throw new HttpError(400, 'Enter the fees first.');
   const reference = (p.invoice && p.invoice.reference) || await processSvc.nextInvoice();
   p.invoice = { reference, issuedAt: new Date(), issuedByName: req.user.fullName, fees: p.fees.map(f => ({ item: f.item, amount: f.amount, qty: f.qty })), total: p.feeTotal };
@@ -817,6 +830,7 @@ router.post('/processes/:id/invoice', wrap(async (req, res) => {
 router.post('/processes/:id/receipt', upload.single('file'), wrap(async (req, res) => {
   const { p, c } = await loadProcess(req.params.id, req.user);
   assertCourtWork(req.user, c);
+  assertFileHere(c);
   if (!req.file) throw new HttpError(400, 'Choose the receipt file.');
   try { p.receipt = await fileStore.save(req.file.buffer, req.file.originalname); }
   catch (e) { throw Object.assign(new HttpError(e.status || 500, e.message), { expose: true }); }

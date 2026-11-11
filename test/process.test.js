@@ -65,6 +65,14 @@ async function fileAndRegister(over) {
   return reg.body.case;
 }
 
+// The Process Registry dispatches the file and High Court 3 receives it: only
+// then does the court work on the case.
+async function receiveAtHc3(id) {
+  assert.equal((await u.clerk.post('/api/process/dispatch', { ids: [id] })).status, 200);
+  const r = await u.court3.post(`/api/process/cases/${id}/received`);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+}
+
 before(async () => {
   await mongoose.connect(DB);
   await mongoose.connection.dropDatabase();
@@ -384,6 +392,8 @@ test('scanned documents: added by the Process Registry and the assigned court, o
   assert.equal((await add(u.court3, c.id, { docType: 'Motion' })).status, 403, 'not yet the court\'s case');
 
   assert.equal((await u.cj.post(`/api/process/cases/${c.id}/assign`, { unitKey: 'hc3', pin: '1357' })).status, 200);
+  assert.equal((await add(u.court3, c.id, { docType: 'Motion' })).status, 403, 'not until the court has received the file');
+  await receiveAtHc3(c.id);
   const d2 = await add(u.court3, c.id, { docType: 'Others', other: 'Notice of appeal', title: 'Notice of appeal filed by the defendant', filedOn: '2026-11-02' });
   assert.equal(d2.status, 201, JSON.stringify(d2.body));
   const list = await u.court3.get(`/api/process/cases/${c.id}/documents`);
@@ -414,6 +424,7 @@ test('court diary: dates for register cases and typed ones, shared with the judg
   const inDays = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return iso(d); };
   const c = await fileAndRegister({ firstParty: 'Diary Party', emails: { counsel: 'diary@example.com' } });
   await u.cj.post(`/api/process/cases/${c.id}/assign`, { unitKey: 'hc3', pin: '1357' });
+  await receiveAtHc3(c.id);
   const judge3 = await makeUser({ fullName: 'Judge Three', title: 'Hon. Justice', email: 'judge3@example.com', unitKeys: ['hc3'], signerRoles: ['judge'] });
   const before = mail.sent.filter(m => m.to === 'diary@example.com').length;
 
@@ -596,6 +607,7 @@ test('fill a form from a case: its number, parties, addresses, court and judge; 
   const reg = await u.registrar.post(`/api/process/cases/${r.body.case.id}/register`);
   const id = reg.body.case.id, num = reg.body.case.suitNumber;
   await u.cj.post(`/api/process/cases/${id}/assign`, { unitKey: 'hc3', pin: '1357' });
+  await receiveAtHc3(id);
 
   const civil = await u.court3.get(`/api/cases/fill?formType=civil-summons&caseId=${id}`);
   assert.equal(civil.status, 200, JSON.stringify(civil.body));
@@ -616,6 +628,7 @@ test('fill a form from a case: its number, parties, addresses, court and judge; 
 
   const c = await fileAndRegister({ caseType: 'criminal', official: true, firstParty: 'The State', secondParty: 'Accused Person', nature: 'Theft', secondPartyAddress: 'Tumfure' });
   await u.cj.post(`/api/process/cases/${c.id}/assign`, { unitKey: 'hc3', pin: '1357' });
+  await receiveAtHc3(c.id);
   const crim = (await u.court3.get(`/api/cases/fill?formType=criminal-summons&caseId=${c.id}`)).body.values;
   assert.equal(crim.complainant, 'The State');
   assert.equal(crim.accusedName, 'Accused Person');
@@ -651,6 +664,7 @@ test('summonses: the court to appear before is the court and its number; times s
 
   const c = await fileAndRegister({ firstParty: 'Court Place Party' });
   await u.cj.post(`/api/process/cases/${c.id}/assign`, { unitKey: 'hc3', pin: '1357' });
+  await receiveAtHc3(c.id);
   const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const day = (() => { const d = new Date(); d.setDate(d.getDate() + 8); return iso(d); })();
   const e = await u.court3.post('/api/diary', { unitKey: 'hc3', caseId: c.id, date: day, time: '14:30', business: 'Hearing' });
@@ -670,6 +684,7 @@ test('warrant of arrest and order to produce: the court to bring before is the c
   assert.equal(field('order-to-produce-prisoner', 'courtToProduceBefore').defaultValue, undefined);
   const c = await fileAndRegister({ caseType: 'criminal', official: true, firstParty: 'The State', secondParty: 'Warrant Accused' });
   await u.cj.post(`/api/process/cases/${c.id}/assign`, { unitKey: 'hc3', pin: '1357' });
+  await receiveAtHc3(c.id);
   assert.equal((await u.court3.get(`/api/cases/fill?formType=warrant-of-arrest&caseId=${c.id}`)).body.values.courtToBringBefore, 'High Court No. 3');
   assert.equal((await u.court3.get(`/api/cases/fill?formType=order-to-produce-prisoner&caseId=${c.id}`)).body.values.courtToProduceBefore, 'High Court No. 3');
 });
@@ -705,6 +720,7 @@ test('one receipt pays for one filing: a receipt number already used is refused,
 test('processes filed later at the court registry: fees, invoice, receipt (checked), documents; the daily fees list', async () => {
   const c = await fileAndRegister({ firstParty: 'Later Process', receiptNumber: 'GSR 7001' });
   await u.cj.post(`/api/process/cases/${c.id}/assign`, { unitKey: 'hc3', pin: '1357' });
+  await receiveAtHc3(c.id);
   assert.equal((await u.clerk.post(`/api/process/cases/${c.id}/processes`, { processType: 'Motion on notice' })).status, 403, 'the court files it, not the Process Registry');
   const r = await u.court3.post(`/api/process/cases/${c.id}/processes`, { processType: 'Motion on notice', filedOn: '2026-10-21', fees: [{ item: 'Motion', qty: 1 }, { item: 'Affidavit', amount: 500, qty: 2 }] });
   assert.equal(r.status, 201, JSON.stringify(r.body));
@@ -875,6 +891,7 @@ test('parties and counsel: the court\'s registry joins a party, strikes one out 
   const c = await fileAndRegister({ firstParty: 'Joinder Plaintiff', secondParty: 'First Defendant\nSecond Defendant', counsel: 'Old Counsel Esq.',
     emails: { firstParty: 'plaintiff@example.com', secondParty: 'def1@example.com, def2@example.com', counsel: 'old@example.com' } });
   await u.cj.post(`/api/process/cases/${c.id}/assign`, { unitKey: 'hc3', pin: '1357' });
+  await receiveAtHc3(c.id);
   const d = await u.court3.post('/api/diary', { unitKey: 'hc3', caseId: c.id, date: iso(ahead), business: 'Mention' });
   assert.equal(d.status, 201);
   const url = (k) => `/api/process/cases/${c.id}/parties/${k}`;
@@ -929,6 +946,7 @@ test('parties and counsel: the court\'s registry joins a party, strikes one out 
 test('counsel for each party: two parties on one side with different counsel; the former counsel keeps updates while still acting for another', async () => {
   const c = await fileAndRegister({ firstParty: 'Lead Claimant\nSecond Claimant', secondParty: 'Sole Defendant', counsel: 'Shared Counsel', emails: { counsel: 'shared@example.com' } });
   await u.cj.post(`/api/process/cases/${c.id}/assign`, { unitKey: 'hc3', pin: '1357' });
+  await receiveAtHc3(c.id);
   const r = await u.court3.post(`/api/process/cases/${c.id}/parties/counsel`, { side: 'first', party: 'Second Claimant', name: 'Own Counsel', email: 'own@example.com' });
   assert.equal(r.status, 200, JSON.stringify(r.body));
   assert.deepEqual(r.body.case.emails.counsel, ['shared@example.com'], 'still counsel for the Lead Claimant: updates continue');
@@ -939,4 +957,33 @@ test('counsel for each party: two parties on one side with different counsel; th
   assert.equal(parties.counselOf(doc, 'first', 'Lead Claimant').name, 'Shared Counsel');
   const addresses = require('../src/services/caseEmail').addresses(doc);
   assert.ok(addresses.includes('own@example.com') && addresses.includes('shared@example.com'));
+});
+
+test('the court does nothing on a case until it has received the file: remark, process, parties, documents, dates, forms', async () => {
+  const c = await fileAndRegister({ firstParty: 'Waiting Party' });
+  await u.cj.post(`/api/process/cases/${c.id}/assign`, { unitKey: 'hc3', pin: '1357' });
+  const day = new Date(Date.now() + 3 * 864e5).toISOString().slice(0, 10);
+  const tries = async () => ({
+    remark: (await u.court3.post(`/api/process/cases/${c.id}/disposal`, { remark: 'Struck out' })).status,
+    process: (await u.court3.post(`/api/process/cases/${c.id}/processes`, { processType: 'Motion on notice' })).status,
+    party: (await u.court3.post(`/api/process/cases/${c.id}/parties/join`, { side: 'second', name: 'Joined Too Early' })).status,
+    date: (await u.court3.post('/api/diary', { unitKey: 'hc3', caseId: c.id, date: day, business: 'Mention' })).status,
+    form: (await u.court3.get(`/api/cases/fill?formType=hearing-notice&caseId=${c.id}`)).status
+  });
+  for (const stage of ['assigned', 'dispatched']) {
+    if (stage === 'dispatched') await u.clerk.post('/api/process/dispatch', { ids: [c.id] });
+    const t = await tries();
+    assert.deepEqual(t, { remark: 409, process: 409, party: 409, date: 409, form: 409 }, `nothing while the file is ${stage}`);
+    const pr = await u.court3.get(`/api/process/cases/${c.id}/processes`);
+    assert.equal(pr.body.canFile, false, 'no File a Process button');
+    assert.equal((await u.court3.get(`/api/process/cases/${c.id}/documents`)).body.canUpload, false, 'no Add Document button');
+    assert.ok(!(await u.court3.get('/api/cases/registered?q=Waiting')).body.cases.length, 'not offered to fill a form from');
+  }
+  assert.match((await u.court3.post(`/api/process/cases/${c.id}/disposal`, { remark: 'Struck out' })).body.error, /not been received in this court yet/);
+  assert.equal((await u.court3.post(`/api/process/cases/${c.id}/received`)).status, 200);
+  assert.equal((await u.court3.get(`/api/process/cases/${c.id}/processes`)).body.canFile, true);
+  assert.equal((await u.court3.post(`/api/process/cases/${c.id}/parties/join`, { side: 'second', name: 'Joined In Time' })).status, 200);
+  assert.equal((await u.court3.post('/api/diary', { unitKey: 'hc3', caseId: c.id, date: day, business: 'Mention' })).status, 201);
+  assert.equal((await u.court3.get(`/api/cases/fill?formType=hearing-notice&caseId=${c.id}`)).status, 200);
+  assert.equal((await u.court3.post(`/api/process/cases/${c.id}/disposal`, { remark: 'Struck out' })).status, 200, 'and the remark, once received');
 });

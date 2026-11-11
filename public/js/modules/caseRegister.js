@@ -114,7 +114,7 @@
         const remarks = (c) => c.reassignedAway ? el('span', null, remarkText(c)) : el('div', { class: 'reg-remark' }, [
           c.disposal ? el('span', null, c.disposal.remark) : null,
           !c.disposal && c.reassignedFrom ? el('span', { class: 'muted' }, `Reassigned from High Court No. ${c.reassignedFrom.roman}`) : null,
-          canWork ? btn(c.disposal ? 'Change' : 'Record Remark', 'btn--ghost', () => remark(c)) : null
+          canWork && fileHere(c) ? btn(c.disposal ? 'Change' : 'Record Remark', 'btn--ghost', () => remark(c)) : null
         ]);
         const COLS = [
           ['S/No', 'c-sn', c => String(c.sn)], ['Name of case', 'c-name', c => P.parties(c)], ['Suit number', 'c-suit', c => el('div', { class: 'reg-remark' }, [P.caseNo(ui, c.suitNumber), btn('View', 'btn--ghost', () => view(c))])],
@@ -130,6 +130,9 @@
         ])]));
       }
 
+      // Nothing is done on a case here until its file is received in this court.
+      const fileHere = (c) => !c.reassignedAway && ['received', 'disposed'].includes(c.status);
+
       // A case reassigned away: its first assignment here, and the remark.
       const assignedOn = (c) => c.reassignedAway ? c.reassignedAway.assignedAt : c.assignedAt;
       const remarkText = (c) => c.reassignedAway ? `Reassigned to ${c.reassignedAway.to} on ${P.day(c.reassignedAway.at)} (${c.reassignedAway.reason})` : c.disposal ? c.disposal.remark : '';
@@ -141,7 +144,10 @@
         let dialog;
         const close = el('button', { class: 'btn btn--ghost', onclick: () => dialog.close() }, '✕  Close');
         if (c.reassignedAway) full.reassignedAway = c.reassignedAway;
-        const here = !c.reassignedAway;
+        const here = fileHere(full);
+        const waiting = !c.reassignedAway && !here ? el('div', { class: 'doc-status__note doc-status__note--warn' }, [el('strong', null, 'File not yet received in this court. '),
+          full.status === 'dispatched' ? 'Mark it received in the Case Register (File received) to work on the case: remarks, processes, parties, documents and court dates.'
+            : 'The file is still at the Process Registry. Once it is dispatched and marked received here, the case can be worked on.']) : null;
         const formBtn = canWork && here ? el('button', { class: 'btn btn--ghost', onclick: () => { dialog.close(); ctx.workflow.fillFromCase({ caseId: full.id, unitKey: unit.key }); } }, '📝 Fill a Form') : null;
         const fixBtn = canWork && here && window.App.diaryUi ? el('button', { class: 'btn btn--primary', onclick: async () => { dialog.close(); await window.App.diaryUi.fix(ctx, unit, { caseId: full.id }); } }, '📅 Fix a Date') : null;
         const dates = el('div', { class: 'case-docs' });
@@ -153,7 +159,7 @@
             { label: 'Outcome', value: e => e.status === 'done' ? e.outcome.text : 'To come' }
           ], r.entries) : el('p', { class: 'muted' }, 'No date in the Court Diary yet.'));
         }).catch(() => dates.remove());
-        ui.modal(`Case ${full.suitNumber}`, el('div', null, [el('div', { class: 'doc-preview__actions' }, [close, formBtn, fixBtn]), P.details(ui, full, settings), dates, partiesPanel(full, () => { dialog.close(); view(c); load(); }), P.processesPanel(ctx, full, settings, unit), P.documentsPanel(ui, api, full.id)]),
+        ui.modal(`Case ${full.suitNumber}`, el('div', null, [el('div', { class: 'doc-preview__actions' }, [close, formBtn, fixBtn]), waiting, P.details(ui, full, settings), dates, partiesPanel(full, () => { dialog.close(); view(c); load(); }), P.processesPanel(ctx, full, settings, unit), P.documentsPanel(ui, api, full.id)]),
           { noFooter: true, wide: true, onOpen: (o) => { dialog = o; } });
       }
 
@@ -175,7 +181,7 @@
       }
       const partySelect = (c) => el('select', null, liveParties(c).map(p => el('option', { value: `${p.side}|${p.name}` }, `${p.name} (${SIDE[p.side].toLowerCase()})`)));
       function partiesPanel(c, changed) {
-        const open = canWork && !c.reassignedAway && ['assigned', 'dispatched', 'received'].includes(c.status);
+        const open = canWork && !c.reassignedAway && c.status === 'received';
         const btn = (label, fn) => el('button', { class: 'btn btn--small btn--ghost', type: 'button', onclick: fn }, label);
         const KIND = { join: 'Joined', strike: 'Struck out', counsel: 'Counsel substituted' };
         const rows = Object.keys(SIDE).flatMap(side => sideLines(c, side).map(name => ({ side, name, struck: name.endsWith(STRUCK) })));
