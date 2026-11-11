@@ -1381,6 +1381,34 @@
 
   // Send a record to the printer via the dedicated print root. A signed
   // document passes its saved copy as markup, so it prints exactly as signed.
+  // One form, one A4 page: a form that runs a little over (long grounds, a
+  // long address) is shrunk evenly to fit, down to 80% at most, rather than
+  // spilling its signature, QR block or footer onto a second sheet. Longer
+  // documents (a long cause list) still run on, at 80%. Measured at A4 width
+  // with the screen's spacing, which is a little looser than print's.
+  const A4_HEIGHT = 1123, FIT_TARGET = 1070, MIN_ZOOM = 0.8;
+  function fitToPage(root) {
+    const page = root && root.querySelector(".court-doc");
+    if (!page) return 1;
+    const before = root.getAttribute("style");
+    root.style.cssText = "display:block;position:absolute;left:-10000px;top:0;visibility:hidden";
+    page.style.zoom = ""; page.style.width = "";
+    page.style.maxWidth = "none";
+    const height = () => page.getBoundingClientRect().height;
+    let h = height(), z = 1;
+    if (h > FIT_TARGET) {
+      z = Math.max(MIN_ZOOM, FIT_TARGET / h);
+      for (let i = 0; i < 8; i++) {
+        page.style.zoom = String(z);
+        page.style.width = `${Math.round(794 / z)}px`; // still the full width of the sheet
+        if (height() <= FIT_TARGET || z <= MIN_ZOOM) break;
+        z = Math.max(MIN_ZOOM, z - 0.02);
+      }
+    }
+    if (before === null) root.removeAttribute("style"); else root.setAttribute("style", before);
+    return z;
+  }
+
   async function print(record, unitName, def, markup) {
     let root = document.getElementById("print-root");
     if (!root) { root = document.createElement("div"); root.id = "print-root"; document.body.appendChild(root); }
@@ -1391,6 +1419,7 @@
       root.innerHTML = "";
       throw new Error("A signature image could not be loaded. Check the connection and try again.");
     }
+    fitToPage(root);
     document.body.classList.add("is-printing");
     const cleanup = () => { document.body.classList.remove("is-printing"); root.innerHTML = ""; window.removeEventListener("afterprint", cleanup); };
     window.addEventListener("afterprint", cleanup);
@@ -1398,5 +1427,5 @@
     setTimeout(cleanup, 1000);
   }
 
-  window.App.output = { render, print, splitDate, formatDateTime };
+  window.App.output = { render, print, fitToPage, splitDate, formatDateTime };
 })();

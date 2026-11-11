@@ -24,6 +24,14 @@ confirm it is genuine.
 * **Execution / Bailiffs Unit** (14 forms)
 * **Settings** (administrators only)
 
+## One form, one page
+Every form prints on one A4 page. When the text runs a little over (long
+grounds of appeal, a long address), printing shrinks the whole form evenly
+to fit, down to 80% at most, rather than letting the signature, the QR
+block or the footer spill onto a second sheet; the screen keeps it at full
+size. A downloaded saved copy does the same when printed from the file.
+Only a document too long even at 80% (a long cause list) runs on.
+
 ## User guide
 **❓ Help** in the menu (and **User guide** on the sign in screen) opens
 `/guide`: one page each for everyone, registry and unit staff, judges and

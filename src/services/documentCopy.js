@@ -79,6 +79,31 @@ async function save(rec) {
   } catch (e) { console.error(`Saved copy for ${rec._id} failed: ${e.message}`); }
 }
 
+// Printed from the downloaded file, a form that runs a little over one A4
+// page is shrunk evenly to fit (down to 80%), with the same tighter print
+// spacing, as when printed in the system.
+// Added as the file is sent, so the stored copy stays as it was signed.
+const FIT_SCRIPT = `<style>@media print { .doc-sign-wrap, .doc-twosign { margin-top: 30px; } .doc-footer { margin-top: 14px; } }</style>
+<script>(function () {
+  var TARGET = 1070, MIN = 0.8;
+  function page() { return document.querySelector('.court-doc'); }
+  function undo() { var p = page(); if (p) { p.style.zoom = ''; p.style.width = ''; p.style.maxWidth = ''; } }
+  function fit() {
+    var p = page(); if (!p) return; undo();
+    p.style.width = '794px'; p.style.maxWidth = 'none';
+    var h = p.getBoundingClientRect().height, z = 1;
+    if (h <= TARGET) return;
+    z = Math.max(MIN, TARGET / h);
+    for (var i = 0; i < 8; i++) {
+      p.style.zoom = String(z); p.style.width = Math.round(794 / z) + 'px';
+      if (p.getBoundingClientRect().height <= TARGET || z <= MIN) break;
+      z = Math.max(MIN, z - 0.02);
+    }
+  }
+  window.addEventListener('beforeprint', fit);
+  window.addEventListener('afterprint', undo);
+})();</script>`;
+
 // The file to download. Revoked documents carry a banner on screen.
 async function get(rec) {
   let copy = await DocumentCopy.findOne({ record: rec._id });
@@ -89,7 +114,7 @@ async function get(rec) {
 REVOKED on ${esc(new Date(rec.revokedAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }))} by ${esc(rec.revokedBy)}. Reason: ${esc(rec.revokeReason)}. This document must not be relied on.</div>`;
     html = html.replace('<!--REVOKED-->', banner);
   }
-  return html;
+  return html.replace('</body></html>', `${FIT_SCRIPT}\n</body></html>`);
 }
 
 function fileName(rec) {
