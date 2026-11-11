@@ -121,7 +121,13 @@ const RecordSchema = new Schema({
   revokedBy:     String,
   revokeReason:  String,
   firstPrintedAt: Date,
-  printCount:    { type: Number, default: 0 }
+  printCount:    { type: Number, default: 0 },
+  // Caveats against a notice of marriage (Marriage Registry), resolved by the
+  // Registrar. Kept outside the signed content, so they never alter the
+  // notice's verification.
+  caveats:       { type: [{ caveator: String, address: String, phone: String, grounds: String, lodgedOn: String,
+    enteredBy: String, enteredAt: Date, status: { type: String, enum: ['open', 'withdrawn', 'upheld', 'removed'], default: 'open' },
+    decidedOn: String, decision: String, resolvedBy: String, resolvedAt: Date }], default: undefined }
 }, { timestamps: true, minimize: false, optimisticConcurrency: true });
 
 RecordSchema.index({ 'slots.approvers': 1, status: 1 });

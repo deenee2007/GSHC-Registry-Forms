@@ -60,6 +60,16 @@ test('where a notice stands: caveat period to day 21, may hold from day 22 to th
   assert.equal(listNote('marriage-particulars', { noticeDate: '2026-11-11' }), null, 'only for the notice');
 });
 
+test('a caveat holds the marriage; upheld it stops it; withdrawn or removed it lets it go ahead', () => {
+  const { listNote } = require('../src/forms/catalogue');
+  const at = (day, caveats) => listNote('notice-of-marriage', { noticeDate: '2026-11-11' }, day, caveats);
+  assert.match(at('2026-11-20', [{ status: 'open' }]).text, /Caveat entered: marriage on hold/);
+  assert.match(at('2026-12-10', [{ status: 'open' }]).text, /on hold/, 'still held after the 21 days while it is open');
+  assert.match(at('2026-12-10', [{ status: 'removed' }, { status: 'withdrawn' }]).text, /Marriage may hold/);
+  assert.match(at('2026-12-10', [{ status: 'upheld' }]).text, /Caveat upheld: the marriage cannot hold/);
+  assert.match(at('2027-03-01', [{ status: 'open' }]).text, /Expired/, 'an expired notice needs a new one either way');
+});
+
 test('a notice saved before the caveat dates were kept still prints them, from its date', () => {
   const t = text(render('notice-of-marriage', { noticeDate: '2026-11-11', husbandName: 'A', wifeName: 'B' }));
   assert.match(t, /Caveat period ends 2nd December 2026/);

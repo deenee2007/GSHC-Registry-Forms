@@ -473,9 +473,22 @@ QR code) and printed for signing. Each form takes a **Marriage File No.**;
 typed on a later form, it offers to fill the names and particulars from the
 couple's earlier forms (the groom being the husband, the bride the wife),
 and the Case File shows the couple's forms together. Each form, with its
-QR block, prints on one A4 page. The notice of marriage, caveats,
-certificates and the marriage register are to follow with the registry's
-workflow.
+QR block, prints on one A4 page.
+
+**Caveats.** On a notice of marriage, **⚠ Enter a Caveat** records who
+lodged it (name, address, phone), the date lodged (not before the notice,
+not after it expired, not in the future) and the grounds. While a caveat is
+open the notice shows **Caveat entered: marriage on hold** on the list,
+even after the 21 days. Only the **Registrar** (a user of the unit with the
+Registrar signing role) resolves it, with the signing
+PIN: **withdrawn** by the caveator, or **removed** or **upheld** after
+inquiry (reasons required for these two). Withdrawn or removed, the notice
+goes back to its stage by the dates; upheld, it shows **Caveat upheld: the
+marriage cannot hold on this notice** and takes no further caveats.
+Caveats sit outside the notice's signed content, so its QR verification is
+unchanged; each entry and decision is in the record's History. The
+Registrar's certificate, the marriage certificate and the marriage register
+are to follow.
 
 ## Before going live: clearing test data
 Until it has been used, Home shows administrators a **Before Going Live**

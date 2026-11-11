@@ -460,6 +460,20 @@ h1 { font-size: 1.35rem; margin: 0; }
 .doc-status__note--warn { background: #fff4e0; }
 .doc-status__note--bad { background: #fdeceb; }
 .doc-preview__actions { flex-wrap: wrap; }
+
+/* Caveats against a notice of marriage */
+.caveats { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: .7rem 1rem; margin-bottom: .7rem;
+  font-size: .88rem; display: flex; flex-direction: column; gap: .6rem; }
+.caveats__head { font-weight: 700; color: var(--green-700); }
+.caveat { border-left: 4px solid #c0392b; background: #fdf3f2; border-radius: 8px; padding: .55rem .75rem;
+  display: flex; flex-direction: column; gap: .3rem; align-items: flex-start; }
+.caveat--withdrawn, .caveat--removed { border-left-color: #7f8c8d; background: #f5f6f6; }
+.caveat--upheld { border-left-color: #7b1d14; background: #fbe4e1; }
+.caveat__top { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; width: 100%; justify-content: space-between; }
+.caveat__status { font-size: .75rem; font-weight: 700; border-radius: 999px; padding: .15rem .6rem; background: #c0392b; color: #fff; }
+.caveat__status--withdrawn, .caveat__status--removed { background: #7f8c8d; }
+.caveat__status--upheld { background: #7b1d14; }
+.caveat__grounds, .caveat__decision { overflow-wrap: anywhere; }
 .history { margin: 0; padding-left: 1.2rem; display: flex; flex-direction: column; gap: .5rem; font-size: .9rem; }
 
 /* Dashboard */

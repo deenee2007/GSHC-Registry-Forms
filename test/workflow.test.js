@@ -354,3 +354,43 @@ test('Marriage Registry: the unit and its six forms; signed by hand, finalised w
   assert.equal(file.body.cases[0].documents.length, 3, 'the Case File shows the couple\'s forms together');
   assert.equal((await clerk.post('/api/records', { unitKey: 'hc1', formType: 'marriage-particulars', data: {} })).status, 403, 'only the Marriage Registry\'s staff');
 });
+
+test('Marriage Registry: a caveat entered on a notice holds the marriage until the Registrar resolves it', async () => {
+  const clerk = await makeUser({ fullName: 'Caveat Clerk', username: 'caveatclerk', unitKeys: ['marriage'], privileges: ['view', 'create', 'edit', 'finalize', 'print'] });
+  const reg = await makeUser({ fullName: 'Marriage Registrar', username: 'marriagereg', unitKeys: ['marriage'], privileges: ['view'], signerRoles: ['registrar'] });
+  await makeSigner(reg);
+  const day = (n) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
+  const n = await clerk.post('/api/records', { unitKey: 'marriage', formType: 'notice-of-marriage',
+    data: { marriageNo: 'GMR/9/2026', registrarDistrict: 'Gombe', marriagePlace: 'Marriage Registry', noticeDate: day(-5), husbandName: 'Sani Umar', wifeName: 'Hauwa Ali' } });
+  const id = n.body.record.id;
+  assert.equal((await clerk.post(`/api/records/${id}/caveats`, { caveator: 'Zainab Umar', grounds: '' })).status, 400, 'grounds are needed');
+  assert.equal((await clerk.post(`/api/records/${id}/caveats`, { caveator: 'Zainab Umar', grounds: 'x', lodgedOn: day(-6) })).status, 400, 'not before the notice');
+  assert.equal((await clerk.post(`/api/records/${id}/caveats`, { caveator: 'Zainab Umar', grounds: 'x', lodgedOn: day(1) })).status, 400, 'not in the future');
+  let r = await clerk.post(`/api/records/${id}/caveats`, { caveator: 'Zainab Umar', phone: '08030000000', grounds: 'He is already married to me under the Act' });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const cav = r.body.record.caveats[0];
+  assert.equal(cav.status, 'open');
+  assert.match(r.body.record.note.text, /Caveat entered: marriage on hold/);
+  const listed = (await clerk.get('/api/records?unitKey=marriage')).body.records.find(x => x.id === id);
+  assert.match(listed.note.text, /on hold/, 'the list shows it');
+  // Only the Registrar resolves it, with the signing PIN and reasons after inquiry.
+  assert.equal((await clerk.post(`/api/records/${id}/caveats/${cav.id}/resolve`, { outcome: 'withdrawn', pin: '2468' })).status, 403);
+  assert.equal((await reg.post(`/api/records/${id}/caveats/${cav.id}/resolve`, { outcome: 'upheld', pin: '2468' })).status, 400, 'reasons needed');
+  assert.notEqual((await reg.post(`/api/records/${id}/caveats/${cav.id}/resolve`, { outcome: 'removed', decision: 'Not proved', pin: '0000' })).status, 200, 'wrong PIN');
+  r = await reg.post(`/api/records/${id}/caveats/${cav.id}/resolve`, { outcome: 'removed', decision: 'No record of an earlier marriage under the Act was produced', pin: '2468' });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.record.caveats[0].status, 'removed');
+  assert.equal(r.body.record.caveats[0].resolvedBy, 'Marriage Registrar');
+  assert.doesNotMatch(r.body.record.note.text, /hold until|upheld/);
+  assert.equal((await reg.post(`/api/records/${id}/caveats/${cav.id}/resolve`, { outcome: 'upheld', decision: 'x', pin: '2468' })).status, 409, 'once only');
+  // A second caveat, upheld: the marriage cannot hold on this notice, and no more caveats are taken.
+  r = await clerk.post(`/api/records/${id}/caveats`, { caveator: 'Ali Musa', grounds: 'The intended wife is under age and no consent was given' });
+  r = await reg.post(`/api/records/${id}/caveats/${r.body.record.caveats[1].id}/resolve`, { outcome: 'upheld', decision: 'Birth certificate shows she is 16; no consent', pin: '2468' });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.match(r.body.record.note.text, /Caveat upheld/);
+  assert.equal((await clerk.post(`/api/records/${id}/caveats`, { caveator: 'X', grounds: 'y' })).status, 409);
+  const hist = (await clerk.get(`/api/records/${id}/history`)).body.entries.map(e => e.action);
+  assert.ok(hist.includes('caveat_entered') && hist.includes('caveat_resolved'), 'kept in the history');
+  const other = await clerk.post('/api/records', { unitKey: 'marriage', formType: 'marriage-particulars', data: { husbandName: 'A', wifeName: 'B' } });
+  assert.equal((await clerk.post(`/api/records/${other.body.record.id}/caveats`, { caveator: 'X', grounds: 'y' })).status, 400, 'only on a notice');
+});
