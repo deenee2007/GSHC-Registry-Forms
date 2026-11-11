@@ -34,6 +34,7 @@ const signLimiter = rateLimit({
 });
 
 // ── Helpers ──
+const CAVEAT_FORM = 'notice-of-marriage';
 const same = (a, b) => String(a) === String(b);
 const slotDone = (s) => s.rule === 'all'
   ? s.approvers.length > 0 && s.approvers.every(a => s.signatures.some(g => same(g.user, a._id || a)))
@@ -102,7 +103,8 @@ function serialize(rec, forms) {
     id: String(o._id), version: o.__v, unitKey: o.unitKey, formType: o.formType,
     formLabel: def ? def.label : o.formType, status: o.status, ref: o.ref, summary: o.summary, caseNos: o.caseNos || [],
     data: forms === false ? undefined : o.data,
-    note: catalogue.listNote(o.formType, o.data),
+    note: catalogue.listNote(o.formType, o.data, undefined, o.caveats),
+    caveats: o.formType === CAVEAT_FORM ? (o.caveats || []).map(c => ({ ...c, id: String(c._id), _id: undefined })) : undefined,
     slots: o.slots.map(s => ({
       role: s.role, label: s.label, rule: s.rule,
       approvers: s.approvers.map(a => (a && a.fullName ? { id: String(a._id), fullName: a.fullName, title: a.title } : { id: String(a) })),
@@ -462,6 +464,69 @@ router.post('/:id/printed', wrap(async (req, res) => {
   await saveRecord(rec);
   await audit.log(req, 'record_printed', { record: rec, details: { copy: rec.printCount } });
   res.json({ record: serialize(rec, false) });
+}));
+
+// ── Caveats against a notice of marriage ──
+// The registry enters a caveat lodged against the intended marriage; while
+// it is open the marriage is on hold. Only the Registrar (a user of the
+// unit with the Registrar signing role) resolves it, with the signing PIN: withdrawn by the
+// caveator, or upheld or removed after inquiry.
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+const today = () => new Date().toISOString().slice(0, 10);
+const clip = (v, max) => String(v || '').trim().replace(/[ \t]+/g, ' ').slice(0, max);
+const OUTCOMES = { withdrawn: 'Withdrawn by the caveator', upheld: 'Upheld after inquiry', removed: 'Removed after inquiry' };
+
+async function loadNotice(id) {
+  const rec = await loadRecord(id);
+  if (rec.formType !== CAVEAT_FORM) throw new HttpError(400, 'Caveats are entered only on a notice of marriage.');
+  if (rec.status === 'revoked') throw new HttpError(409, 'This notice has been revoked.');
+  return rec;
+}
+
+router.post('/:id/caveats', wrap(async (req, res) => {
+  const rec = await loadNotice(req.params.id);
+  assertUnitAction(req.user, rec, 'create');
+  const b = req.body || {};
+  const caveator = clip(b.caveator, 200), grounds = clip(b.grounds, 3000);
+  if (!caveator) throw new HttpError(400, 'Enter the name of the person entering the caveat.');
+  if (!grounds) throw new HttpError(400, 'Enter the grounds of the caveat.');
+  const lodgedOn = b.lodgedOn || today();
+  if (!DAY.test(lodgedOn)) throw new HttpError(400, 'Enter the date the caveat was lodged as a date.');
+  if (lodgedOn > today()) throw new HttpError(400, 'The date the caveat was lodged cannot be in the future.');
+  const nd = rec.data && rec.data.noticeDate;
+  if (nd && lodgedOn < nd) throw new HttpError(400, 'A caveat cannot be lodged before the date of the notice.');
+  if (nd && lodgedOn > catalogue.addMonths(nd, 3)) throw new HttpError(400, 'This notice had expired when the caveat was lodged.');
+  if ((rec.caveats || []).some(c => c.status === 'upheld')) throw new HttpError(409, 'A caveat on this notice has already been upheld.');
+  rec.caveats = [...(rec.caveats || []), { caveator, address: clip(b.address, 300), phone: clip(b.phone, 40), grounds, lodgedOn,
+    enteredBy: req.user.fullName, enteredAt: new Date(), status: 'open' }];
+  await saveRecord(rec);
+  await audit.log(req, 'caveat_entered', { record: rec, details: { comment: `${caveator}: ${grounds}` } });
+  await rec.populate(POPULATE);
+  res.json({ record: serialize(rec) });
+}));
+
+router.post('/:id/caveats/:cid/resolve', signLimiter, wrap(async (req, res) => {
+  const rec = await loadNotice(req.params.id);
+  if (!(canAccessUnit(req.user, rec.unitKey) && req.user.signerRoles.includes('registrar'))) {
+    throw new HttpError(403, 'Only the Registrar resolves a caveat.');
+  }
+  const c = (rec.caveats || []).find(x => String(x._id) === String(req.params.cid));
+  if (!c) throw new HttpError(404, 'Caveat not found.');
+  if (c.status !== 'open') throw new HttpError(409, 'This caveat has already been resolved.');
+  const b = req.body || {};
+  if (!OUTCOMES[b.outcome]) throw new HttpError(400, 'Choose the outcome: withdrawn, upheld or removed.');
+  const decision = clip(b.decision, 3000);
+  if (b.outcome !== 'withdrawn' && !decision) throw new HttpError(400, 'Give the Registrar\'s reasons after the inquiry.');
+  const decidedOn = b.decidedOn || today();
+  if (!DAY.test(decidedOn) || decidedOn > today()) throw new HttpError(400, 'Enter the date of the decision; it cannot be in the future.');
+  if (decidedOn < c.lodgedOn) throw new HttpError(400, 'The decision cannot be dated before the caveat was lodged.');
+  await verifyPin(req.user, b.pin);
+  Object.assign(c, { status: b.outcome, decision, decidedOn, resolvedBy: req.user.fullName, resolvedAt: new Date() });
+  rec.markModified('caveats');
+  await saveRecord(rec);
+  await audit.log(req, 'caveat_resolved', { record: rec, details: { comment: `${OUTCOMES[b.outcome]}${decision ? ': ' + decision : ''}` } });
+  await rec.populate(POPULATE);
+  res.json({ record: serialize(rec) });
 }));
 
 module.exports = router;

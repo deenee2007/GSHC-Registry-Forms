@@ -54,7 +54,9 @@
       print:    status === 'final' && (p.can('print') || submittedByMe || signedByMe),
       printDraft: editable && status !== 'offline' && p.can('print'),
       revoke:   status === 'final' && (p.isAdmin() || signedByMe),
-      history:  status !== 'offline'
+      history:  status !== 'offline',
+      caveat:   rec.formType === 'notice-of-marriage' && status !== 'offline' && status !== 'revoked' && inUnit && p.can('create') &&
+                !(rec.caveats || []).some(c => c.status === 'upheld')
     };
   }
 
@@ -285,13 +287,16 @@
       B('⬇  Download Copy', 'btn--ghost', () => download(doc.id), doc.status === 'final' || doc.status === 'revoked'),
       B('🖨  Print', 'btn--primary', () => print(doc, def), can.print),
       B(submitLabel(doc), 'btn--primary', done(() => submitDialog(doc)), can.submit),
-      B('✔  Approve & Sign', 'btn--ok', done(() => approveDialog(doc)), can.approve)
+      B('✔  Approve & Sign', 'btn--ok', done(() => approveDialog(doc)), can.approve),
+      B('⚠  Enter a Caveat', 'btn--danger', () => caveatDialog(doc, reopen), can.caveat)
     ]);
+    // After a caveat is entered or resolved, the notice opens again as it now is.
+    function reopen(record) { overlay && overlay.close(); changed(); if (opts.onDone) opts.onDone(record); openDocument(record.id, opts); }
 
     const preview = ui().el('div', { class: 'doc-preview', html: App.output.render(doc, doc.unitName, def) });
     const zoom = fitToScreen(preview);
     overlay = null;
-    ui().modal(`${def.label}`, ui().el('div', null, [actions, statusPanel(doc), zoom.bar, preview]), {
+    ui().modal(`${def.label}`, ui().el('div', null, [actions, statusPanel(doc), caveatPanel(doc, reopen), zoom.bar, preview]), {
       noFooter: true, wide: true,
       onOpen: (o) => { overlay = o; zoom.fit(); }
     });
@@ -364,6 +369,84 @@
     return el('div', { class: 'doc-status' }, rows);
   }
 
+  // ── Caveats against a notice of marriage ──
+  const OUTCOME = { open: 'Open: marriage on hold', withdrawn: 'Withdrawn by the caveator', upheld: 'Upheld after inquiry', removed: 'Removed after inquiry' };
+  const isRegistrar = (doc) => perms().canAccessUnit(doc.unitKey) && me().signerRoles.includes('registrar');
+  const dayText = (iso) => (iso ? new Date(iso + 'T12:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : '');
+
+  function caveatPanel(doc, reopen) {
+    const list = doc.caveats || [];
+    if (doc.formType !== 'notice-of-marriage' || !list.length) return null;
+    const el = ui().el;
+    return el('div', { class: 'caveats' }, [
+      el('div', { class: 'caveats__head' }, `Caveats (${list.length})`),
+      ...list.map(c => el('div', { class: `caveat caveat--${c.status}` }, [
+        el('div', { class: 'caveat__top' }, [
+          el('strong', null, c.caveator),
+          el('span', { class: `caveat__status caveat__status--${c.status}` }, OUTCOME[c.status] || c.status)
+        ]),
+        el('div', { class: 'caveat__meta muted' }, [`Lodged ${dayText(c.lodgedOn)}`, c.phone ? ` · ${c.phone}` : '', c.address ? ` · ${c.address}` : '', ` · entered by ${c.enteredBy}`].join('')),
+        el('div', { class: 'caveat__grounds' }, [el('strong', null, 'Grounds: '), c.grounds]),
+        c.status !== 'open' ? el('div', { class: 'caveat__decision' }, [el('strong', null, `Registrar (${c.resolvedBy}), ${dayText(c.decidedOn)}: `), c.decision || OUTCOME[c.status]]) : null,
+        c.status === 'open' && isRegistrar(doc) ? el('button', { class: 'btn btn--small btn--primary', type: 'button', onclick: () => resolveDialog(doc, c, reopen) }, 'Resolve') : null,
+        c.status === 'open' && !isRegistrar(doc) ? el('div', { class: 'muted' }, 'Waiting for the Registrar to resolve it.') : null
+      ]))
+    ]);
+  }
+
+  function caveatDialog(doc, reopen) {
+    const el = ui().el;
+    const name = el('input', { type: 'text', maxlength: '200' });
+    const address = el('textarea', { rows: 2, maxlength: '300' });
+    const phone = el('input', { type: 'tel', maxlength: '40' });
+    const lodged = el('input', { type: 'date', value: new Date().toISOString().slice(0, 10) });
+    const grounds = el('textarea', { rows: 4, maxlength: '3000', placeholder: 'e.g. the intended husband is already married under the Act' });
+    setTimeout(() => name.focus(), 50);
+    return ui().modal('Enter a Caveat', el('div', null, [
+      el('p', null, 'A caveat against this intended marriage. While it is open, the notice shows the marriage on hold. The Registrar resolves it.'),
+      ui().field('Person entering the caveat', name),
+      ui().field('Address', address),
+      ui().field('Phone No.', phone),
+      ui().field('Date lodged', lodged),
+      ui().field('Grounds', grounds, 'Why the marriage ought not to take place')
+    ]), {
+      confirmText: 'Enter Caveat', confirmClass: 'btn--danger',
+      onConfirm: async () => {
+        if (!name.value.trim() || !grounds.value.trim()) { ui().toast('Enter the name and the grounds.', 'error'); return undefined; }
+        const { record } = await api().post(`/records/${doc.id}/caveats`, { caveator: name.value, address: address.value, phone: phone.value, lodgedOn: lodged.value, grounds: grounds.value });
+        ui().toast('Caveat entered. The marriage is on hold.', 'info', 5000);
+        setTimeout(() => reopen(record), 0);
+        return record;
+      }
+    });
+  }
+
+  function resolveDialog(doc, c, reopen) {
+    const el = ui().el;
+    const outcome = el('select', null, [el('option', { value: '' }, 'Choose'), ...['withdrawn', 'upheld', 'removed'].map(k => el('option', { value: k }, OUTCOME[k]))]);
+    const decided = el('input', { type: 'date', value: new Date().toISOString().slice(0, 10) });
+    const reasons = el('textarea', { rows: 4, maxlength: '3000' });
+    const pin = el('input', { type: 'password', inputmode: 'numeric', autocomplete: 'off', maxlength: '8', placeholder: 'Signing PIN' });
+    return ui().modal('Resolve Caveat', el('div', null, [
+      el('p', null, [el('strong', null, c.caveator), `: ${c.grounds}`]),
+      ui().field('Outcome', outcome, 'Upheld: the marriage cannot hold on this notice. Withdrawn or removed: the marriage may go ahead'),
+      ui().field('Date of the decision', decided),
+      ui().field('Reasons', reasons, 'Required when upheld or removed after inquiry'),
+      ui().field('Your signing PIN', pin)
+    ]), {
+      confirmText: 'Resolve', confirmClass: 'btn--primary',
+      onConfirm: async () => {
+        if (!outcome.value) { ui().toast('Choose the outcome.', 'error'); return undefined; }
+        if (outcome.value !== 'withdrawn' && !reasons.value.trim()) { ui().toast('Give the reasons after the inquiry.', 'error'); return undefined; }
+        if (!pin.value) { ui().toast('Enter your signing PIN.', 'error'); return undefined; }
+        const { record } = await api().post(`/records/${doc.id}/caveats/${c.id}/resolve`, { outcome: outcome.value, decidedOn: decided.value, decision: reasons.value, pin: pin.value });
+        ui().toast(`Caveat ${outcome.value}.`, 'success');
+        setTimeout(() => reopen(record), 0);
+        return record;
+      }
+    });
+  }
+
   async function showHistory(doc) {
     let entries = [];
     try { entries = (await api().get(`/records/${doc.id}/history`)).entries; }
@@ -371,7 +454,8 @@
     const NAMES = {
       record_created: 'Created', record_updated: 'Edited', record_submitted: 'Submitted for signature',
       record_signed: 'Signed', record_approved: 'Approved and signed', record_finalized: 'Finalised',
-      record_returned: 'Returned', record_withdrawn: 'Withdrawn', record_revoked: 'Revoked', record_printed: 'Printed'
+      record_returned: 'Returned', record_withdrawn: 'Withdrawn', record_revoked: 'Revoked', record_printed: 'Printed',
+      caveat_entered: 'Caveat entered', caveat_resolved: 'Caveat resolved'
     };
     const list = ui().el('ol', { class: 'history' }, entries.map(e => ui().el('li', null, [
       ui().el('strong', null, NAMES[e.action] || e.action), ` by ${e.username || 'system'} · ${ui().fmtDate(e.at)}`,

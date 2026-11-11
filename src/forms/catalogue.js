@@ -137,9 +137,14 @@ function computeValue(c, value) {
 // the notice), then the marriage may hold (from the day after) until the
 // notice expires (three months from the notice).
 const longDay = (iso) => new Date(iso + 'T12:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
-function listNote(formType, data, today = new Date().toISOString().slice(0, 10)) {
+function listNote(formType, data, today = new Date().toISOString().slice(0, 10), caveats = []) {
   if (formType !== 'notice-of-marriage' || !data || !/^\d{4}-\d{2}-\d{2}$/.test(data.noticeDate || '')) return null;
   const caveatEnds = addDays(data.noticeDate, 21), from = addDays(data.noticeDate, 22), expires = addMonths(data.noticeDate, 3);
+  const cv = caveats || [];
+  // A caveat upheld stops the marriage on this notice; one still open holds it.
+  if (cv.some(c => c.status === 'upheld')) return { text: 'Caveat upheld: the marriage cannot hold on this notice', tone: 'returned' };
+  if (today > expires) return { text: `Expired ${longDay(expires)}: a new notice is needed`, tone: 'returned' };
+  if (cv.some(c => c.status === 'open')) return { text: 'Caveat entered: marriage on hold until the Registrar resolves it', tone: 'returned' };
   if (today <= caveatEnds) return { text: `In caveat period, to ${longDay(caveatEnds)}`, tone: 'pending' };
   if (today <= expires) return { text: `Marriage may hold, ${longDay(from)} to ${longDay(expires)}`, tone: 'final' };
   return { text: `Expired ${longDay(expires)}: a new notice is needed`, tone: 'returned' };
