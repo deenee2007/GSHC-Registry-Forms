@@ -55,8 +55,12 @@
         { name: 'marriagePlace', label: 'The marriage to be had at', required: true, full: true, help: 'e.g. the Marriage Registry, High Court of Justice, Gombe' },
         { name: 'noticeNo', label: 'Notice No.' },
         { name: 'noticeDate', label: 'Date of the notice', type: 'date', required: true },
-        { name: 'expiryDate', label: 'Expires on', type: 'computed', compute: { from: 'noticeDate', addMonths: 3 },
-          help: 'Worked out: the marriage must be had within three months from the date of the notice' },
+        { name: 'caveatEnds', label: 'Caveat period ends', type: 'computed', compute: { from: 'noticeDate', addDays: 21 },
+          help: 'Worked out: 21 days after the notice, for any caveat to be filed' },
+        { name: 'marriageFrom', label: 'Marriage may hold from', type: 'computed', compute: { from: 'noticeDate', addDays: 22 },
+          help: 'Worked out: the day after the 21 days lapse, if no caveat was filed' },
+        { name: 'expiryDate', label: 'Notice expires on', type: 'computed', compute: { from: 'noticeDate', addMonths: 3 },
+          help: 'Worked out: three months from the date of the notice. If the marriage has not held by then, a new notice is needed' },
         ...noticeParty('husband', 'The Intended Husband', ['Bachelor', 'Widower', 'Divorced']),
         ...noticeParty('wife', 'The Intended Wife', ['Spinster', 'Widow', 'Divorced'])
       ]

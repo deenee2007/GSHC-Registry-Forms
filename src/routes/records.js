@@ -102,6 +102,7 @@ function serialize(rec, forms) {
     id: String(o._id), version: o.__v, unitKey: o.unitKey, formType: o.formType,
     formLabel: def ? def.label : o.formType, status: o.status, ref: o.ref, summary: o.summary, caseNos: o.caseNos || [],
     data: forms === false ? undefined : o.data,
+    note: catalogue.listNote(o.formType, o.data),
     slots: o.slots.map(s => ({
       role: s.role, label: s.label, rule: s.rule,
       approvers: s.approvers.map(a => (a && a.fullName ? { id: String(a._id), fullName: a.fullName, title: a.title } : { id: String(a) })),

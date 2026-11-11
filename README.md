@@ -459,8 +459,11 @@ from the officer's record too.
 ## Marriage Registry
 A unit of its own (**Marriage Registry**, created by itself on databases
 made before it) with the forms in use at the registry: Notice of Marriage
-(Form A, Schedule 1), its expiry worked out three months from its date
-(on screen as typed, and by the server when saved) and printed; Particulars of
+(Form A, Schedule 1), its dates worked out (on screen as typed, and by the
+server when saved) and printed: the caveat period ends 21 days after the
+notice, the marriage may hold from the day after, and the notice expires
+three months from its date; the unit's list shows each notice's stage (in
+caveat period, marriage may hold, expired); Particulars of
 Husband and Wife; Particulars of Witnesses (Husband Witness and Wife
 Witness); Oath Taking (Vows); Oath Affirmation and Ring Oaths (one for the
 groom and one for the bride, each with its signature); and the
