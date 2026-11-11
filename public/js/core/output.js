@@ -635,12 +635,19 @@
       ringOath("Bride", d.brideName, d.groomName, "WIFE", "HUSBAND", d.brideRingWith) + handSignDated("Bride Signature", d.brideDate) +
       `</div>`, r);
   }
-  // Notice of Marriage (Form A, Schedule 1): the expiry, three months from
-  // its date, is worked out and shown.
+  // Notice of Marriage (Form A, Schedule 1): its dates are worked out and
+  // shown: the caveat period (21 days), the day the marriage may hold (the
+  // day after), and the expiry (three months from the notice).
   function noticeOfMarriage(d, u, r) {
     const nd = splitDate(d.noticeDate);
     const row = (p) => `<tr><td>${fmt(d[p + "Name"])}</td><td>${esc(d[p + "Condition"])}</td><td>${fmt(d[p + "Occupation"])}</td><td>${esc(d[p + "Age"])}</td><td>${fmt(d[p + "Address"])}</td><td>${fmt(d[p + "Consent"])}</td></tr>`;
-    const expiry = d.expiryDate ? longDate(d.expiryDate) : "";
+    const when = (v) => esc(v ? longDate(v) : "………………");
+    // A notice saved before these dates were kept: work them out from its date.
+    const iso = /^\d{4}-\d{2}-\d{2}$/.test(d.noticeDate || "") ? d.noticeDate : "";
+    const plusDays = (n) => { if (!iso) return ""; const x = new Date(iso + "T12:00:00Z"); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+    const plusMonths = (n) => { if (!iso) return ""; const [y, m, dd] = iso.split("-").map(Number); const t = y * 12 + m - 1 + n, yy = Math.floor(t / 12), mm = t % 12 + 1;
+      return `${yy}-${String(mm).padStart(2, "0")}-${String(Math.min(dd, new Date(Date.UTC(yy, mm, 0)).getUTCDate())).padStart(2, "0")}`; };
+    d = { ...d, caveatEnds: d.caveatEnds || plusDays(21), marriageFrom: d.marriageFrom || plusDays(22), expiryDate: d.expiryDate || plusMonths(3) };
     return shell(u, marriageFile(d) + title("NOTICE OF MARRIAGE") + `<div class="doc-formref doc-formref--left">Form A. Schedule 1</div>
       <p class="mnotice__to">To the Registrar of Marriage for the ${L(d.registrarDistrict, "medium")} District of Nigeria</p>
       <p>I hereby give you notice that a marriage is intended to be had within three months from the date hereof at
@@ -651,8 +658,12 @@
         <div>Witness my hand this ${L(ordinal(nd.day), "short")} day of ${L(nd.month, "medium")} 20${L(nd.year2, "short")}</div>
         <div class="mnotice__sign"><div class="line long"></div><div>No. ${L(d.noticeNo, "medium")}</div></div>
       </div>
-      <div class="mexpiry"><span class="mexpiry__label">Expires on</span><span class="mexpiry__date">${esc(expiry || "………………")}</span>
-        <span class="mexpiry__note">The marriage must be had within three months from the date of this notice.</span></div>`, r);
+      <div class="mexpiry">
+        <div class="mexpiry__item"><span class="mexpiry__label">Caveat period ends</span><span class="mexpiry__date">${when(d.caveatEnds)}</span></div>
+        <div class="mexpiry__item"><span class="mexpiry__label">Marriage may hold from</span><span class="mexpiry__date">${when(d.marriageFrom)}</span></div>
+        <div class="mexpiry__item"><span class="mexpiry__label">Notice expires on</span><span class="mexpiry__date">${when(d.expiryDate)}</span></div>
+        <span class="mexpiry__note">Any caveat must be filed within 21 days of this notice. If none is filed, the marriage may hold from the day after the 21 days,
+        and must be had within three months from the date of this notice; after that a new notice is needed.</span></div>`, r);
   }
   // As on the registry's form, with its slips corrected (a repeated
   // "Mother" and "Wife's daughter's daughter", two entries run together).

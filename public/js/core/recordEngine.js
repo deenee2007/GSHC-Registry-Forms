@@ -121,7 +121,7 @@
           { label: 'Party / Title', value: r => r.summary || '—' },
           { label: 'By', value: r => r.createdByName || '' },
           { label: 'Date', value: r => ui.fmtDate(r.createdAt) },
-          { label: 'Status', node: r => ui.statusBadge(r.status) }
+          { label: 'Status', node: r => r.note ? ui.el('div', null, [ui.statusBadge(r.status), ui.el('div', { class: `badge badge--${r.note.tone} list-note` }, r.note.text)]) : ui.statusBadge(r.status) }
         ],
         recs,
         [

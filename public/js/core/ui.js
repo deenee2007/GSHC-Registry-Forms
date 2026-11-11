@@ -72,12 +72,14 @@
     const d = Math.min(+m[3], new Date(Date.UTC(y, mo, 0)).getUTCDate());
     return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
   }
+  function addDays(iso, n) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(iso || '')) return '';
+    const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n);
+    return d.toISOString().slice(0, 10);
+  }
   function computeValue(c, value) {
-    if (c.addMonths) {
-      const iso = addMonths(value, c.addMonths);
-      return iso ? new Date(iso + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : '';
-    }
-    return '';
+    const iso = c.addMonths ? addMonths(value, c.addMonths) : c.addDays ? addDays(value, c.addDays) : '';
+    return iso ? new Date(iso + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : '';
   }
 
   function form(schema, initial) {

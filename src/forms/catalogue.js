@@ -121,9 +121,27 @@ function addMonths(iso, n) {
   const d = Math.min(+m[3], new Date(Date.UTC(y, mo, 0)).getUTCDate());
   return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 }
+function addDays(iso, n) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso || '')) return '';
+  const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
 function computeValue(c, value) {
   if (c && c.addMonths) return addMonths(String(value || ''), c.addMonths);
+  if (c && c.addDays) return addDays(String(value || ''), c.addDays);
   return '';
+}
+
+// Where a notice of marriage stands today: the caveat period (21 days from
+// the notice), then the marriage may hold (from the day after) until the
+// notice expires (three months from the notice).
+const longDay = (iso) => new Date(iso + 'T12:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+function listNote(formType, data, today = new Date().toISOString().slice(0, 10)) {
+  if (formType !== 'notice-of-marriage' || !data || !/^\d{4}-\d{2}-\d{2}$/.test(data.noticeDate || '')) return null;
+  const caveatEnds = addDays(data.noticeDate, 21), from = addDays(data.noticeDate, 22), expires = addMonths(data.noticeDate, 3);
+  if (today <= caveatEnds) return { text: `In caveat period, to ${longDay(caveatEnds)}`, tone: 'pending' };
+  if (today <= expires) return { text: `Marriage may hold, ${longDay(from)} to ${longDay(expires)}`, tone: 'final' };
+  return { text: `Expired ${longDay(expires)}: a new notice is needed`, tone: 'returned' };
 }
 
 function cleanData(formType, input) {
@@ -155,4 +173,4 @@ function cleanData(formType, input) {
   return { data: out };
 }
 
-module.exports = { ...catalogue, MODULES, get, formsForUnit, describe, cleanData, addMonths, caseNumbers, normalizeCase, CASE_FIELDS, COURT_DATES, courtDates };
+module.exports = { ...catalogue, MODULES, get, formsForUnit, describe, cleanData, addMonths, addDays, listNote, caseNumbers, normalizeCase, CASE_FIELDS, COURT_DATES, courtDates };

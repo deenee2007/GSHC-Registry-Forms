@@ -36,14 +36,33 @@ test('the prohibited degrees: no entry twice in a column, none run together', ()
 });
 
 test('the notice of marriage shows its expiry; the ring oaths are one for the groom and one for the bride', () => {
-  const t = text(render('notice-of-marriage', { registrarDistrict: 'Gombe', marriagePlace: 'the Marriage Registry, Gombe', noticeDate: '2026-11-11', expiryDate: '2027-02-11',
+  const t = text(render('notice-of-marriage', { registrarDistrict: 'Gombe', marriagePlace: 'the Marriage Registry, Gombe', noticeDate: '2026-11-11', expiryDate: '2027-02-11', caveatEnds: '2026-12-02', marriageFrom: '2026-12-03',
     husbandName: 'Musa Bello', wifeName: 'Aisha Ahmed' }));
   assert.match(t, /NOTICE OF MARRIAGE/);
-  assert.match(t, /Expires on 11th February 2027/);
+  assert.match(t, /Caveat period ends 2nd December 2026/);
+  assert.match(t, /Marriage may hold from 3rd December 2026/);
+  assert.match(t, /Notice expires on 11th February 2027/);
   assert.match(t, /Witness my hand this 11th day of November 20 ?26/);
   const o = text(render('marriage-oath-affirmation', { groomName: 'Musa Bello', brideName: 'Aisha Ahmed', ringOathWith: 'RING', brideRingWith: "QUR'AN" }));
   assert.match(o, /I Musa Bello \(HUSBAND\) WITH THIS RING I WED YOU Aisha Ahmed \(WIFE\)/);
   assert.match(o, /I Aisha Ahmed \(WIFE\) WITH THIS QUR'AN I WED YOU Musa Bello \(HUSBAND\)/);
   assert.equal((o.match(/Groom Signature/g) || []).length, 2, 'the groom signs the affirmation and his ring oath');
   assert.equal((o.match(/Bride Signature/g) || []).length, 2);
+});
+
+test('where a notice stands: caveat period to day 21, may hold from day 22 to the expiry, then expired', () => {
+  const { listNote } = require('../src/forms/catalogue');
+  const at = (day) => listNote('notice-of-marriage', { noticeDate: '2026-11-11' }, day);
+  assert.equal(at('2026-12-02').tone, 'pending', 'the 21st day is still in the caveat period');
+  assert.match(at('2026-12-03').text, /Marriage may hold, 3 Dec 2026 to 11 Feb 2027/);
+  assert.equal(at('2027-02-11').tone, 'final', 'the last day of the three months');
+  assert.match(at('2027-02-12').text, /Expired 11 Feb 2027: a new notice is needed/);
+  assert.equal(listNote('marriage-particulars', { noticeDate: '2026-11-11' }), null, 'only for the notice');
+});
+
+test('a notice saved before the caveat dates were kept still prints them, from its date', () => {
+  const t = text(render('notice-of-marriage', { noticeDate: '2026-11-11', husbandName: 'A', wifeName: 'B' }));
+  assert.match(t, /Caveat period ends 2nd December 2026/);
+  assert.match(t, /Marriage may hold from 3rd December 2026/);
+  assert.match(t, /Notice expires on 11th February 2027/);
 });
