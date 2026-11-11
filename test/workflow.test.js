@@ -318,11 +318,11 @@ test('a judge sees all of the court\'s forms once the administrator ticks View i
   await admin.raw('PATCH', `/api/admin/users/${judge1.id}`, { privileges: [] });
 });
 
-test('Marriage Registry: the unit and its five forms; signed by hand, finalised with a QR code', async () => {
+test('Marriage Registry: the unit and its six forms; signed by hand, finalised with a QR code', async () => {
   const { Unit } = require('../src/models');
   const catalogue = require('../src/forms/catalogue');
   assert.ok(await Unit.exists({ key: 'marriage', type: 'marriage', name: 'Marriage Registry' }));
-  assert.deepEqual(catalogue.byUnitType.marriage, ['marriage-particulars', 'marriage-witnesses', 'marriage-oath-taking', 'marriage-oath-affirmation', 'prohibited-degrees']);
+  assert.deepEqual(catalogue.byUnitType.marriage, ['notice-of-marriage', 'marriage-particulars', 'marriage-witnesses', 'marriage-oath-taking', 'marriage-oath-affirmation', 'prohibited-degrees']);
   const witnesses = catalogue.get('marriage-witnesses').schema.filter(s => s.section).map(s => s.section);
   assert.deepEqual(witnesses, ['Marriage File', 'The Marriage', 'Husband Witness', 'Wife Witness'], 'husband witness and wife witness, not "witness" only');
   const clerk = await makeUser({ fullName: 'Marriage Clerk', username: 'marriageclerk', unitKeys: ['marriage'], privileges: ['view', 'create', 'edit', 'finalize', 'print'] });
@@ -334,6 +334,11 @@ test('Marriage Registry: the unit and its five forms; signed by hand, finalised 
   assert.equal(r.body.record.status, 'final', 'no digital signature line: finalised');
   assert.ok(r.body.record.verifyCode);
   await clerk.post('/api/records', { unitKey: 'marriage', formType: 'prohibited-degrees', data: { marriageNo: 'gmr/1/2026', husbandName: 'Musa Bello', wifeName: 'Aisha Ahmed' } });
+  // The notice: its expiry, three months on, is worked out by the server whatever is sent.
+  const n = await clerk.post('/api/records', { unitKey: 'marriage', formType: 'notice-of-marriage',
+    data: { marriageNo: 'GMR/1/2026', registrarDistrict: 'Gombe', marriagePlace: 'Marriage Registry, High Court of Justice, Gombe', noticeDate: '2026-11-30', expiryDate: '2030-01-01', husbandName: 'Musa Bello', wifeName: 'Aisha Ahmed' } });
+  assert.equal(n.status, 201, JSON.stringify(n.body));
+  assert.equal(n.body.record.data.expiryDate, '2027-02-28', '30 November + three months: the last day of February');
   // Fill once: a later form of the same Marriage File No. takes the names (the groom is the husband).
   const pre = await clerk.get('/api/cases/prefill?caseNo=GMR/1/2026&formType=marriage-oath-taking');
   assert.equal(pre.body.values.groomName, 'Musa Bello');
@@ -342,6 +347,6 @@ test('Marriage Registry: the unit and its five forms; signed by hand, finalised 
   assert.equal(pre2.body.values.husbandName, 'Musa Bello');
   assert.equal(pre2.body.values.marriageNo, undefined, 'the number itself is not filled');
   const file = await clerk.get('/api/cases?q=GMR/1/2026&exact=1');
-  assert.equal(file.body.cases[0].documents.length, 2, 'the Case File shows the couple\'s forms together');
+  assert.equal(file.body.cases[0].documents.length, 3, 'the Case File shows the couple\'s forms together');
   assert.equal((await clerk.post('/api/records', { unitKey: 'hc1', formType: 'marriage-particulars', data: {} })).status, 403, 'only the Marriage Registry\'s staff');
 });

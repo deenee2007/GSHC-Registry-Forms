@@ -64,7 +64,24 @@
 
   // Build a form from a schema: [{name,label,type,options?,required?}]
   // Returns { node, getValues(), setValues(obj), validate() }
+  // A date some months after another (the day kept, or the month's last day).
+  function addMonths(iso, n) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '');
+    if (!m) return '';
+    const total = (+m[1]) * 12 + (+m[2] - 1) + n, y = Math.floor(total / 12), mo = total % 12 + 1;
+    const d = Math.min(+m[3], new Date(Date.UTC(y, mo, 0)).getUTCDate());
+    return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  }
+  function computeValue(c, value) {
+    if (c.addMonths) {
+      const iso = addMonths(value, c.addMonths);
+      return iso ? new Date(iso + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : '';
+    }
+    return '';
+  }
+
   function form(schema, initial) {
+    const computed = [];
     const fields = {};
     const tableCtrls = {};   // holds table controllers for type:'table' fields
     const wrap = el('div', { class: 'form-grid' });
@@ -152,6 +169,17 @@
         return;
       }
 
+      // ── A box worked out from another (e.g. an expiry date): shown, not typed ──
+      if (f.type === 'computed') {
+        const input = el('input', { type: 'text', readonly: 'readonly', class: 'form-computed', tabindex: '-1' });
+        input.name = f.name;
+        fields[f.name] = input;
+        computed.push([f, input]);
+        wrap.appendChild(el('label', { class: 'form-field' }, [el('span', { class: 'form-field__label' }, f.label), input,
+          f.help ? el('span', { class: 'form-field__help' }, f.help) : null]));
+        return;
+      }
+
       // ── Standard fields ──
       let input;
       if (f.type === 'textarea') input = el('textarea', { rows: f.rows || 3 });
@@ -175,6 +203,15 @@
       ]);
       wrap.appendChild(cell);
     });
+
+    // Worked-out boxes follow the box they come from as it changes.
+    const refresh = () => computed.forEach(([f, input]) => {
+      const src = fields[f.compute.from];
+      input.value = src ? computeValue(f.compute, src.value) : '';
+    });
+    wrap.addEventListener('input', refresh);
+    wrap.addEventListener('change', refresh);
+    refresh();
 
     return {
       node: wrap,

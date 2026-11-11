@@ -458,9 +458,12 @@ from the officer's record too.
 
 ## Marriage Registry
 A unit of its own (**Marriage Registry**, created by itself on databases
-made before it) with the forms in use at the registry: Particulars of
+made before it) with the forms in use at the registry: Notice of Marriage
+(Form A, Schedule 1), its expiry worked out three months from its date
+(on screen as typed, and by the server when saved) and printed; Particulars of
 Husband and Wife; Particulars of Witnesses (Husband Witness and Wife
-Witness); Oath Taking (Vows); Oath Affirmation and Ring Oath; and the
+Witness); Oath Taking (Vows); Oath Affirmation and Ring Oaths (one for the
+groom and one for the bride, each with its signature); and the
 declaration on the Prohibited Degrees of Relationship. They are signed by
 hand by the parties and witnesses, so each is finalised (locked, with its
 QR code) and printed for signing. Each form takes a **Marriage File No.**;

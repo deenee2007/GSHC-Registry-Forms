@@ -62,6 +62,7 @@ const DEFAULT_SIGNERS = {
   'statutory-notice-auction': chiefBailiff,
 
   // Marriage Registry: signed by hand by the parties and their witnesses.
+  'notice-of-marriage': [],
   'marriage-particulars': [],
   'marriage-witnesses': [],
   'marriage-oath-taking': [],

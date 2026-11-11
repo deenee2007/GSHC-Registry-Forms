@@ -569,6 +569,7 @@
     "court-order":            courtOrder,
 
     /* ── Marriage Registry ── */
+    "notice-of-marriage":        noticeOfMarriage,
     "marriage-particulars":      marriageParticulars,
     "marriage-witnesses":        marriageWitnesses,
     "marriage-oath-taking":      marriageOathTaking,
@@ -622,13 +623,36 @@
       do us part. Amen.</p>` + handSignDated("Bride Signature", d.brideDate), r);
   }
   function marriageOathAffirmation(d, u, r) {
-    return shell(u, marriageFile(d) + title("OATH AFFIRMATION") +
+    const ringOath = (who, me, you, meRole, youRole, withWhat) => `<div class="moath"><span class="moath__tag">${who}</span></div>
+      <p class="doc-upper">I ${L(me, "long")} (${meRole}) WITH THIS ${esc(withWhat || "RING/BIBLE/QUR'AN")} I WED YOU ${L(you, "long")}
+      (${youRole}) WITH MY BODY I ADORE YOU, WITH ALL MY WORLDLY PROPERTY; I ENDOW YOU FOR AS LONG AS BOTH OF US SHALL LIVE.</p>`;
+    return shell(u, marriageFile(d) + `<div class="mcompact">` + title("OATH AFFIRMATION") +
       `<p>I hereby affirm, that all statements as contained in this affidavit and attested to by my signature thereof, are all correct
       and true, the whole truth and nothing but the truth. So help me God Amen.</p>` +
-      handSignDated("Groom Signature", d.groomDate) + handSignDated("Bride Signature", d.brideDate) +
+      `<div class="doc-handsign-row">${handSignDated("Groom Signature", d.groomDate)}${handSignDated("Bride Signature", d.brideDate)}</div>` +
       title("RING OATH") +
-      `<p class="doc-upper">I ${L(d.groomName, "long")} (HUSBAND) WITH THIS ${esc(d.ringOathWith || "RING/BIBLE/QUR'AN")} I WED YOU ${L(d.brideName, "long")}
-      (WIFE) WITH MY BODY I ADORE YOU, WITH ALL MY WORLDLY PROPERTY; I ENDOW YOU FOR AS LONG AS BOTH OF US SHALL LIVE.</p>`, r);
+      ringOath("Groom", d.groomName, d.brideName, "HUSBAND", "WIFE", d.ringOathWith) + handSignDated("Groom Signature", d.groomDate) +
+      ringOath("Bride", d.brideName, d.groomName, "WIFE", "HUSBAND", d.brideRingWith) + handSignDated("Bride Signature", d.brideDate) +
+      `</div>`, r);
+  }
+  // Notice of Marriage (Form A, Schedule 1): the expiry, three months from
+  // its date, is worked out and shown.
+  function noticeOfMarriage(d, u, r) {
+    const nd = splitDate(d.noticeDate);
+    const row = (p) => `<tr><td>${fmt(d[p + "Name"])}</td><td>${esc(d[p + "Condition"])}</td><td>${fmt(d[p + "Occupation"])}</td><td>${esc(d[p + "Age"])}</td><td>${fmt(d[p + "Address"])}</td><td>${fmt(d[p + "Consent"])}</td></tr>`;
+    const expiry = d.expiryDate ? longDate(d.expiryDate) : "";
+    return shell(u, marriageFile(d) + title("NOTICE OF MARRIAGE") + `<div class="doc-formref doc-formref--left">Form A. Schedule 1</div>
+      <p class="mnotice__to">To the Registrar of Marriage for the ${L(d.registrarDistrict, "medium")} District of Nigeria</p>
+      <p>I hereby give you notice that a marriage is intended to be had within three months from the date hereof at
+      ${L(d.marriagePlace, "long")} between me the undersigned and the other party herein named.</p>
+      <table class="mnotice"><thead><tr><th>Name</th><th>Condition</th><th>Occupation, Rank or Profession</th><th>Age</th><th>Dwelling or Place of Abode</th><th>Consent, if any, and by whom given</th></tr></thead>
+        <tbody>${row("husband")}${row("wife")}</tbody></table>
+      <div class="mnotice__foot">
+        <div>Witness my hand this ${L(ordinal(nd.day), "short")} day of ${L(nd.month, "medium")} 20${L(nd.year2, "short")}</div>
+        <div class="mnotice__sign"><div class="line long"></div><div>No. ${L(d.noticeNo, "medium")}</div></div>
+      </div>
+      <div class="mexpiry"><span class="mexpiry__label">Expires on</span><span class="mexpiry__date">${esc(expiry || "………………")}</span>
+        <span class="mexpiry__note">The marriage must be had within three months from the date of this notice.</span></div>`, r);
   }
   // As on the registry's form, with its slips corrected (a repeated
   // "Mother" and "Wife's daughter's daughter", two entries run together).
