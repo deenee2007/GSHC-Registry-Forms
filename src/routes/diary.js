@@ -77,6 +77,7 @@ async function makeEntry(req, src) {
     if (!mongoose.isValidObjectId(src.caseId)) throw new HttpError(404, 'Case not found.');
     const c = await Case.findById(src.caseId);
     if (!c || c.assignedUnit !== unit.key || !['assigned', 'dispatched', 'received', 'disposed'].includes(c.status)) throw new HttpError(400, 'That case is not in this court\'s register.');
+    if (!['received', 'disposed'].includes(c.status)) throw new HttpError(409, `The file of ${c.suitNumber} has not been received in this court yet. Mark it received in the Case Register before fixing a date.`);
     Object.assign(fields, { case: c._id, suitNumber: c.suitNumber, parties: partiesOf(c), nature: c.nature || '', counsel: partiesSvc.sideCounsel(c, 'first'), counselSecond: partiesSvc.sideCounsel(c, 'second') });
   } else {
     const suitNumber = String(src.suitNumber || '').trim().slice(0, 60);
@@ -184,6 +185,7 @@ router.post('/:id/outcome', wrap(async (req, res) => {
   if (disposal === 'Other') disposal = String(b.disposalOther || '').trim();
   const c = disposal && e.case ? await Case.findById(e.case) : null;
   if (disposal && !c) throw new HttpError(400, 'Only a case in the Case Register can be marked disposed here.');
+  if (c && (c.assignedUnit !== e.unitKey || !['received', 'disposed'].includes(c.status))) throw new HttpError(409, `The file of ${c.suitNumber} has not been received in this court, so it cannot be marked disposed here.`);
   e.status = 'done';
   e.outcome = { text, nextDate: next ? next.date : '', at: new Date(), byName: req.user.fullName };
   e.updatedByName = req.user.fullName;

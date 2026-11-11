@@ -214,7 +214,8 @@ router.get('/registered', wrap(async (req, res) => {
   const t = String(req.query.q || '').trim().slice(0, 60);
   if (t.length < 2) return res.json({ cases: [] });
   const rx = new RegExp(escapeRegex(t), 'i');
-  const list = await Case.find({ status: { $in: IN_REGISTER }, $or: [{ suitNumber: rx }, { firstParty: rx }, { secondParty: rx }] })
+  // Only cases whose file has reached their court: no form is filled before that.
+  const list = await Case.find({ status: { $in: ['received', 'disposed'] }, $or: [{ suitNumber: rx }, { firstParty: rx }, { secondParty: rx }] })
     .select('suitNumber firstParty secondParty nature assignedUnit').sort({ assignedAt: -1 }).limit(12).lean();
   const units = Object.fromEntries((await Unit.find({ type: 'registry' }, 'key courtNo').lean()).map(u => [u.key, u.courtNo]));
   res.json({ cases: list.map(c => ({ id: String(c._id), suitNumber: c.suitNumber, parties: [oneLine(c.firstParty), oneLine(c.secondParty)].filter(Boolean).join(' v. '),
@@ -236,6 +237,10 @@ router.get('/fill', wrap(async (req, res) => {
     if (!c) throw new HttpError(404, 'Case not found.');
   } else if (req.query.caseNo) {
     c = await Case.findOne({ caseNos: catalogue.normalizeCase(req.query.caseNo), status: { $in: IN_REGISTER } }).lean();
+  }
+  // A court fills no form from a case whose file it has not yet received.
+  if (c && c._id && ['assigned', 'dispatched'].includes(c.status)) {
+    throw new HttpError(409, `The file of ${c.suitNumber} has not been received in its court yet. Mark it received in the Case Register first.`);
   }
   // A typed case (no registered one): its number and parties, from the diary or as asked.
   if (!c) {

@@ -302,6 +302,12 @@ New cases are filed, numbered and assigned to a court here.
    Home (**New Cases Assigned**) and as a number beside **📒 Case Register**
    until its file is received. The Chief Judge who assigns a case is not
    sent the court's notice for it, even when they sit in that court.
+   The court does nothing on a case until it has received the file: no
+   remark or disposal, process, party or counsel change, document, diary
+   date or form filled from the case (the server refuses each, and the
+   screens hide the buttons, with a note on the case). The Process Registry
+   may still add documents. A case reassigned waits for its new court to
+   receive it.
 6. **Reassignment** (Hon. Chief Judge alone; a court cannot ask for it
    through the system): **Reassign** on a case under **Assigned** moves one
    case, with the court, the reason and the signing PIN. The **Reassign** tab moves
