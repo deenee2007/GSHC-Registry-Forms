@@ -84,6 +84,14 @@
   function caseLine(label, value) {
     return `<div class="doc-caseno">${esc(label)}: ${L(value, "medium")}</div>`;
   }
+  // The heading of a court sitting as one of the appeal sessions (Gombe, Dukku,
+  // Kaltungo), each holden at its own town; else the judicial division's.
+  const APPEAL_TOWNS = ["Gombe", "Dukku", "Kaltungo"];
+  function appealHead(session) {
+    const t = APPEAL_TOWNS.find(x => x.toLowerCase() === String(session || "").trim().toLowerCase());
+    return t ? `IN THE HIGH COURT OF GOMBE STATE<br>IN THE ${t.toUpperCase()} APPEAL SESSION<br>HOLDEN AT ${t.toUpperCase()}` : "";
+  }
+  const venue = (d, divisionHead) => appealHead(d.appealSession) || divisionHead;
   function formRef(text) { return text ? `<div class="doc-formref">${text}</div>` : ""; }
   function title(t) { return `<div class="doc-title">${esc(t)}</div>`; }
   /* ---- digital signatures ----------------------------------------------
@@ -196,7 +204,7 @@
   function civilSummons(d, u, r) {
     const ap = splitDate(d.appearanceDate), is = splitDate(d.issueDate);
     return shell(u,
-      formRef(`IN THE ${esc((d.division || "GOMBE JUDICIAL DIVISION").toUpperCase())}<br>HOLDEN AT GOMBE`) +
+      formRef(venue(d, `IN THE ${esc((d.division || "GOMBE JUDICIAL DIVISION").toUpperCase())}<br>HOLDEN AT GOMBE`)) +
       caseLine("Suit Number", d.suitNumber) +
       parties(d.plaintiff, "PLAINTIFF", d.defendant, "DEFENDANT") +
       title("CIVIL SUMMONS") +
@@ -252,7 +260,7 @@
   function criminalSummons(d, u, r) {
     const off = splitDate(d.offenceDate), ap = splitDate(d.appearanceDate), is = splitDate(d.issueDate);
     return shell(u,
-      formRef(`IN THE GOMBE JUDICIAL DIVISION<br>HOLDEN AT ${esc((d.courtLocation || "GOMBE").toUpperCase())}`) +
+      formRef(venue(d, `IN THE GOMBE JUDICIAL DIVISION<br>HOLDEN AT ${esc((d.courtLocation || "GOMBE").toUpperCase())}`)) +
       caseLine("Case No.", d.caseNumber) +
       parties(d.complainant, "COMPLAINANT", d.defendant, "DEFENDANT") +
       title("SUMMONS TO AN ACCUSED PERSON") +
@@ -272,7 +280,7 @@
     const placeTxt = d.offencePlace ? ` at ${L(d.offencePlace)}` : "";
     const dateTxt = d.offenceDate ? ` ${onDayLine(off)}` : "";
     return shell(u,
-      formRef("IN THE GOMBE JUDICIAL DIVISION<br>HOLDEN AT GOMBE") +
+      formRef(venue(d, "IN THE GOMBE JUDICIAL DIVISION<br>HOLDEN AT GOMBE")) +
       caseLine("Case No.", d.caseNumber) +
       parties(d.complainant, "COMPLAINANT", d.defendant, "DEFENDANT") +
       title("WARRANT OF ARREST") +
@@ -319,7 +327,7 @@
     const fem = d.personServedGender === "Female";
     const subj = fem ? "she" : "he", obj = fem ? "her" : "him";
     return shell(u,
-      formRef(`IN THE ${esc((d.division || "GOMBE JUDICIAL DIVISION").toUpperCase())}<br>HOLDEN AT GOMBE`) +
+      formRef(venue(d, `IN THE ${esc((d.division || "GOMBE JUDICIAL DIVISION").toUpperCase())}<br>HOLDEN AT GOMBE`)) +
       caseLine("Suit No.", d.suitNumber) +
       parties(d.plaintiff, "PLAINTIFF", d.defendant, "DEFENDANT") +
       title("AFFIDAVIT OF SERVICE") +
@@ -369,7 +377,7 @@
   function subpoenaTestification(d, u, r) {
     const at = splitDate(d.attendanceDate), is = splitDate(d.issueDate);
     return shell(u,
-      formRef(`FORM 40<br>IN THE ${esc((d.division || "GOMBE JUDICIAL DIVISION").toUpperCase())}<br>HOLDEN AT GOMBE`) +
+      formRef(`FORM 40<br>` + venue(d, `IN THE ${esc((d.division || "GOMBE JUDICIAL DIVISION").toUpperCase())}<br>HOLDEN AT GOMBE`)) +
       caseLine("Suit No.", d.suitNumber) +
       parties(d.plaintiff, "PLAINTIFF / APPLICANT", d.defendant, "DEFENDANT / RESPONDENT") +
       title("SUBPOENA AD TESTIFICANDUM") +
@@ -385,7 +393,7 @@
   function subpoenaDuces(d, u, r) {
     const at = splitDate(d.attendanceDate), is = splitDate(d.issueDate);
     return shell(u,
-      formRef(`IN THE ${esc((d.division || "GOMBE JUDICIAL DIVISION").toUpperCase())}<br>HOLDEN AT GOMBE`) +
+      formRef(venue(d, `IN THE ${esc((d.division || "GOMBE JUDICIAL DIVISION").toUpperCase())}<br>HOLDEN AT GOMBE`)) +
       caseLine("Suit No.", d.suitNumber) +
       parties(d.plaintiff, "PLAINTIFF", d.defendant, "DEFENDANT") +
       title("SUBPOENA DUCES TECUM") +
@@ -402,6 +410,7 @@
   function hearingNotice(d, u, r) {
     const hr = splitDate(d.hearingDate), is = splitDate(d.issueDate);
     return shell(u,
+      formRef(appealHead(d.appealSession)) +
       caseLine("Suit No.", d.suitNumber) +
       parties(d.plaintiff, "PLAINTIFF", d.defendant, "DEFENDANT") +
       title("HEARING NOTICE") +
@@ -501,7 +510,7 @@
       </tr>`).join('');
 
     return shell(u,
-      formRef(`IN THE ${esc((d.division || 'GOMBE JUDICIAL DIVISION').toUpperCase())}<br>HOLDEN AT GOMBE`) +
+      formRef(venue(d, `IN THE ${esc((d.division || 'GOMBE JUDICIAL DIVISION').toUpperCase())}<br>HOLDEN AT GOMBE`)) +
       `<div class="doc-cl-date">DATE: ${esc(dateStr)} &nbsp;&nbsp; TIME: ${esc(d.sittingTime || '')} O'CLOCK</div>` +
       judgeBlock +
       title('CAUSE LIST') +
@@ -692,6 +701,7 @@
   function summonsSettleRecord(d, u, r) {
     const ad = splitDate(d.attendanceDate), is = splitDate(d.issueDate);
     return shell(u,
+      formRef(appealHead(d.appealSession || 'Gombe')) +
       title('SUMMONS TO PARTIES BY REGISTRAR TO SETTLE RECORD OF APPEAL') +
       (d.appealNumber ? caseLine('Appeal No.', d.appealNumber) : '') +
       parties(d.appellant, 'Appellant', d.respondent, 'Respondent') +
@@ -715,6 +725,7 @@
       : `on the ${L(d.hearingDay)} day of ${L(d.hearingMonth)} ${L(d.hearingYear)}`;
     const amt = esc(d.depositAmount || '100');
     return shell(u,
+      formRef(appealHead(d.appealSession || 'Gombe')) +
       `<div class="doc-letter-meta">
         <span>Ref No: ${L(d.refNo)} &nbsp;&nbsp; High Court Registry,<br>
         High Court of Justice, Gombe<br>
@@ -853,7 +864,7 @@
       : '_____ DAY OF _____________ 20____';
 
     return shell(u,
-      formRef(`IN THE GOMBE JUDICIAL DIVISION<br>HOLDEN AT GOMBE`) +
+      formRef(venue(d, `IN THE GOMBE JUDICIAL DIVISION<br>HOLDEN AT GOMBE`)) +
       `<div style="text-align:center;font-weight:700;font-size:11pt;margin:4px 0">` +
         `ON ${dayName} THE ${ordDay} DAY OF ${mthName}, ${yr4}</div>` +
       `<div style="text-align:center;font-size:11pt;margin:2px 0">` +
@@ -1321,7 +1332,7 @@
          weight of evidence adduced before the court.`;
 
     return shell(u,
-      formRef('FORM 97 · ORDER 43 RULE 2') +
+      formRef('FORM 97 · ORDER 43 RULE 2<br>' + appealHead(d.appealSession || 'Gombe')) +
       title(isCriminal ? 'NOTICE OF CRIMINAL APPEAL' : 'NOTICE OF CIVIL APPEAL') +
       `<p>The Registrar,<br>${fmt(d.registrarAddress)}</p>
       <p>This is to give notice of appeal against the decision of the: ${L(d.decisionCourt)},

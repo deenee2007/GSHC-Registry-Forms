@@ -1572,6 +1572,21 @@
   }
 };
 
+  // A court may sit on an appeal as one of the High Court's appeal sessions
+  // (Gombe, Dukku or Kaltungo), not as a judicial division. On these forms the
+  // registry chooses which, and the heading follows.
+  const SITTING = { name: 'appealSession', label: 'Sitting as', type: 'select', defaultValue: '',
+    options: [{ value: '', label: 'Judicial Division (as above)' },
+      ...['Gombe', 'Dukku', 'Kaltungo'].map(t => ({ value: t, label: `${t} Appeal Session` }))],
+    help: 'Choose the appeal session when the court sits on an appeal; the heading then reads "In the ... Appeal Session, holden at ..." in place of the judicial division' };
+  ['civil-summons', 'criminal-summons', 'warrant-of-arrest', 'affidavit-of-service', 'subpoena-ad-testificandum',
+    'subpoena-duces-tecum', 'hearing-notice', 'cause-list', 'court-order'].forEach(k => {
+    const schema = forms[k] && forms[k].schema;
+    if (!schema || schema.some(f => f.name === 'appealSession')) return;
+    const i = schema.findIndex(f => f.name === 'division');
+    schema.splice(i >= 0 ? i + 1 : 1, 0, { ...SITTING });
+  });
+
   // ── Register forms globally so other units can be granted access ──
   window.App.allForms = window.App.allForms || {};
   window.App.allFormsByModule = window.App.allFormsByModule || {};
