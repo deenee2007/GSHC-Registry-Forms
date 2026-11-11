@@ -124,6 +124,16 @@
 
   };
 
+  // Appeals are heard in the High Court's appeal sessions, each holden at its
+  // own town: every appeal form names its session (one registry serves all).
+  Object.values(forms).forEach(def => {
+    if (def.schema.some(f => f.name === 'appealSession')) return;
+    def.schema.unshift({ section: 'Appeal Session' },
+      { name: 'appealSession', label: 'Appeal Session', type: 'select', required: true, defaultValue: 'Gombe',
+        options: ['Gombe', 'Dukku', 'Kaltungo'].map(t => ({ value: t, label: `${t} Appeal Session (holden at ${t})` })),
+        help: 'Printed at the head of the form: In the High Court of Gombe State, in the ... Appeal Session, holden at ...' });
+  });
+
   // ── Register forms globally so other units can be granted access ──
   window.App.allForms = window.App.allForms || {};
   window.App.allFormsByModule = window.App.allFormsByModule || {};

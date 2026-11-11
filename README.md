@@ -13,7 +13,14 @@ confirm it is genuine.
 
 ## Units
 * **Court Registries:** High Court 1 to 9 (one shared module, 15 forms); more can be added
-* **Appeals Registry** (4 forms)
+* **Appeals Registry** (4 forms). One registry serves the three appeal
+  sessions (Gombe, Dukku and Kaltungo, each holden at its own town). Every
+  appeal form asks for its session and is headed "In the High Court of
+  Gombe State, in the ... Appeal Session, holden at ...", never a judicial
+  division. The Court Registry forms with a court heading (summonses,
+  warrant of arrest, affidavit of service, subpoenas, hearing notice, cause
+  list, court order) have a **Sitting as** box: Judicial Division by
+  default, or an appeal session when the court sits on an appeal.
 * **Execution / Bailiffs Unit** (14 forms)
 * **Settings** (administrators only)
 
