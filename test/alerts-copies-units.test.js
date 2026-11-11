@@ -137,6 +137,8 @@ test('a signed document has a saved, self contained copy to download', async () 
   assert.match(r.headers.get('content-disposition'), /attachment; filename="Civil_Summons_GM-77-2026_GSHC-/);
   const html = r.body;
   assert.ok(html.startsWith('<!DOCTYPE html>'));
+  assert.match(html, /addEventListener\('beforeprint', fit\)/, 'the downloaded file fits itself to one A4 page when printed');
+  assert.doesNotMatch((await DocumentCopy.findOne({ record: id })).html, /beforeprint/, 'the stored copy stays as it was signed');
   const { AuditLog } = require('../src/models');
   const downloads = () => AuditLog.countDocuments({ record: id, action: 'copy_downloaded' });
   const n = await downloads();
