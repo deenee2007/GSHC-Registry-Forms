@@ -529,6 +529,16 @@ Settings → Units → **+ Add Unit** adds either another **Court Registry**
 choose its forms under Form Access. Its own forms and workflow can be added
 to the system later as a new module.
 
+Each unit shows whether it is active and what it holds (forms, cases,
+diary dates, users). **Deactivate** takes a unit off the menus and closes
+it to new forms and cases; what it holds stays readable in the Case File
+and Reports, and **Activate** brings it back. It is refused while the unit
+has cases pending (reassign them first) or forms awaiting signature, and
+never allowed for the Process Registry. **Delete permanently** (typing
+DELETE) is only for a unit never used, and never for the units the system
+makes itself (Process, Appeals, Execution, Marriage); the unit is also
+taken off its users. Each step is in the audit log.
+
 ## Startup log and admin recovery
 Each start prints the database in use and how many accounts it holds:
 ```

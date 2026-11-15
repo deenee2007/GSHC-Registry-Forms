@@ -265,11 +265,54 @@ router.post('/units', wrap(async (req, res) => {
   res.status(201).json({ unit });
 }));
 
+// What a unit holds: its forms, the cases of a court (now or before a
+// reassignment), its diary dates, and the users in it.
+async function unitUse(key) {
+  const { Record, Case, DiaryEntry, CaseProcess, CaseDocument } = require('../models');
+  const [records, awaiting, cases, pending, dates, processes, documents, users] = await Promise.all([
+    Record.countDocuments({ unitKey: key }),
+    Record.countDocuments({ unitKey: key, status: 'pending' }),
+    Case.countDocuments({ $or: [{ assignedUnit: key }, { proposedUnit: key }, { 'formerUnits.unitKey': key }] }),
+    Case.countDocuments({ assignedUnit: key, status: { $in: ['assigned', 'dispatched', 'received'] } }),
+    DiaryEntry.countDocuments({ unitKey: key }),
+    CaseProcess.countDocuments({ unitKey: key }),
+    CaseDocument.countDocuments({ unitKey: key }),
+    User.countDocuments({ unitKeys: key })
+  ]);
+  return { records, awaiting, cases, pending, dates, processes, documents, users, used: records + cases + dates + processes + documents > 0 };
+}
+// Units the system makes itself; they may be switched off but not deleted.
+const BUILT_IN = ['process', 'appeals', 'execution', 'marriage'];
+
+// Every unit, active or not, with what it holds (Settings, Units).
+router.get('/units', wrap(async (req, res) => {
+  const ORDER = { process: -1, registry: 0, appeals: 1, execution: 2, marriage: 3, general: 4 };
+  const units = (await Unit.find().lean()).sort((a, b) => (b.active - a.active) || ((ORDER[a.type] ?? 9) - (ORDER[b.type] ?? 9)) || ((a.courtNo || 0) - (b.courtNo || 0)) || a.name.localeCompare(b.name));
+  const out = [];
+  for (const u of units) {
+    const use = await unitUse(u.key);
+    out.push({ key: u.key, type: u.type, name: u.name, courtNo: u.courtNo, active: u.active !== false, use,
+      canDeactivate: u.type !== 'process', canDelete: !BUILT_IN.includes(u.type) && !use.used });
+  }
+  res.json({ units: out });
+}));
+
 router.patch('/units/:key', wrap(async (req, res) => {
   const unit = await Unit.findOne({ key: req.params.key });
   if (!unit) throw new HttpError(404, 'Unit not found.');
   if (req.body.name !== undefined) unit.name = String(req.body.name).trim() || unit.name;
-  if (req.body.active !== undefined) unit.active = !!req.body.active;
+  let switched = null;
+  if (req.body.active !== undefined && !!req.body.active !== (unit.active !== false)) {
+    if (!req.body.active) {
+      // Switched off: gone from the menus and from new work; what it holds stays.
+      if (unit.type === 'process') throw new HttpError(409, 'The Process Registry cannot be deactivated: every new case is filed through it.');
+      const use = await unitUse(unit.key);
+      if (use.pending) throw new HttpError(409, `${unit.name} still has ${use.pending} case(s) pending. Have the Hon. Chief Judge reassign them to another court first, or record their disposal.`);
+      if (use.awaiting) throw new HttpError(409, `${unit.name} has ${use.awaiting} form(s) awaiting signature. Have them signed, returned or withdrawn first.`);
+    }
+    unit.active = !!req.body.active;
+    switched = unit.active ? 'unit_activated' : 'unit_deactivated';
+  }
   if (req.body.allowedForms !== undefined) {
     if (req.body.allowedForms === null) unit.allowedForms = null;
     else {
@@ -280,8 +323,23 @@ router.patch('/units/:key', wrap(async (req, res) => {
     }
   }
   await unit.save();
-  await audit.log(req, 'unit_updated', { unitKey: unit.key });
+  await audit.log(req, switched || 'unit_updated', { unitKey: unit.key, details: { name: unit.name } });
   res.json({ unit });
+}));
+
+// Deleted for good: only a unit never used (a test, or one added by
+// mistake), and not one the system makes itself. A unit that holds anything
+// is deactivated instead, so its records stay readable.
+router.delete('/units/:key', wrap(async (req, res) => {
+  const unit = await Unit.findOne({ key: req.params.key });
+  if (!unit) throw new HttpError(404, 'Unit not found.');
+  if (BUILT_IN.includes(unit.type)) throw new HttpError(409, `${unit.name} is part of the system and cannot be deleted. Deactivate it instead.`);
+  const use = await unitUse(unit.key);
+  if (use.used) throw new HttpError(409, `${unit.name} has been used (forms, cases, diary dates or documents), so it cannot be deleted. Deactivate it instead; its records stay readable.`);
+  await User.updateMany({ unitKeys: unit.key }, { $pull: { unitKeys: unit.key } });
+  await Unit.deleteOne({ _id: unit._id });
+  await audit.log(req, 'unit_deleted', { unitKey: unit.key, details: { name: unit.name, type: unit.type, usersRemoved: use.users } });
+  res.json({ deleted: true });
 }));
 
 // ── Signing rules per form ──

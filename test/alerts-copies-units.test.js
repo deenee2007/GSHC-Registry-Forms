@@ -33,7 +33,7 @@ function client() {
     const type = res.headers.get('content-type') || '';
     return { status: res.status, headers: res.headers, body: type.includes('json') ? await res.json() : await res.text() };
   }
-  return { get: (p) => call('GET', p), post: (p, b) => call('POST', p, b || {}), patch: (p, b) => call('PATCH', p, b), put: (p, b) => call('PUT', p, b) };
+  return { get: (p) => call('GET', p), post: (p, b) => call('POST', p, b || {}), patch: (p, b) => call('PATCH', p, b), put: (p, b) => call('PUT', p, b), del: (p) => call('DELETE', p) };
 }
 
 const admin = client();
@@ -176,4 +176,49 @@ test('add a Court Registry or an Other Unit, but not Appeals or Execution', asyn
   units = (await admin.get('/api/catalogue/units')).body.units;
   assert.deepEqual(units.find(x => x.key === 'probate_registry').forms, ['hearing-notice', 'affidavit-of-means']);
   assert.equal(units[units.length - 1].type, 'general', 'other units are listed last');
+});
+
+test('deactivate a unit (not while it has work in progress), activate it again, delete one never used', async () => {
+  const list = async () => (await admin.get('/api/admin/units')).body.units;
+  const one = async (k) => (await list()).find(x => x.key === k);
+  assert.equal((await u.clerk.get('/api/admin/units')).status, 403, 'administrators only');
+  // A unit with a form awaiting signature cannot be switched off.
+  await submitSummons();
+  const hc1 = await one('hc1');
+  assert.ok(hc1.use.awaiting >= 1 && hc1.use.users >= 2 && hc1.use.used);
+  let r = await admin.patch('/api/admin/units/hc1', { active: false });
+  assert.equal(r.status, 409);
+  assert.match(r.body.error, /awaiting signature/);
+  assert.equal((await admin.patch('/api/admin/units/process', { active: false })).status, 409, 'the Process Registry stays on');
+  assert.equal((await one('process')).canDeactivate, false);
+  // A unit with nothing pending: off the menus and closed to new forms; its records stay.
+  const t = await makeUser({ username: 'probclerk', fullName: 'Probate Clerk', unitKeys: ['probate_registry'], privileges: ['view', 'create', 'edit'] });
+  const rec = await t.post('/api/records', { unitKey: 'probate_registry', formType: 'hearing-notice', data: { suitNumber: 'P/1/2026', plaintiff: 'A', defendant: 'B', recipientName: 'C', recipientAddress: 'D', stage: 'Mention', hearingDate: '2026-12-01', hearingTime: '9:00', issuePlace: 'Gombe', issueDate: '2026-11-15' } });
+  assert.equal(rec.status, 201, JSON.stringify(rec.body));
+  r = await admin.patch('/api/admin/units/probate_registry', { active: false });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.ok(!(await t.get('/api/catalogue/units')).body.units.some(x => x.key === 'probate_registry'), 'gone from the menus');
+  assert.equal((await t.post('/api/records', { unitKey: 'probate_registry', formType: 'hearing-notice', data: {} })).status, 404, 'no new forms in it');
+  assert.equal((await admin.get(`/api/records/${rec.body.record.id}`)).status, 200, 'what it holds stays readable');
+  const off = await one('probate_registry');
+  assert.equal(off.active, false);
+  assert.equal(off.canDelete, false, 'used, so it is kept');
+  r = await admin.del('/api/admin/units/probate_registry');
+  assert.equal(r.status, 409);
+  assert.match(r.body.error, /Deactivate it instead/);
+  assert.equal((await admin.patch('/api/admin/units/probate_registry', { active: true })).status, 200);
+  assert.ok((await t.get('/api/catalogue/units')).body.units.some(x => x.key === 'probate_registry'), 'back on the menus');
+  // Never used: deleted for good, and taken off its users.
+  const spare = await one('probate_registry_2');
+  assert.equal(spare.canDelete, true);
+  await admin.patch(`/api/admin/users/${t.id}`, { unitKeys: ['probate_registry', 'probate_registry_2'] });
+  r = await admin.del('/api/admin/units/probate_registry_2');
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(await one('probate_registry_2'), undefined);
+  const { User } = require('../src/models');
+  assert.deepEqual((await User.findById(t.id)).unitKeys, ['probate_registry'], 'taken off the user too');
+  assert.equal((await admin.del('/api/admin/units/marriage')).status, 409, 'units the system makes are never deleted');
+  const { AuditLog } = require('../src/models');
+  const acts = (await AuditLog.find({ action: /^unit_/ })).map(a => a.action);
+  assert.ok(['unit_deactivated', 'unit_activated', 'unit_deleted'].every(a => acts.includes(a)), 'each step is in the audit log');
 });
