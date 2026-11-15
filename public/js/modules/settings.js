@@ -229,25 +229,54 @@
       // ── UNITS ──
       async function renderUnits() {
         ui.clear(panel);
-        const units = await allUnits();
+        let units;
+        try { units = (await api.get('/admin/units')).units; } catch (e) { ui.toast(e.message, 'error'); return; }
+        const holds = (u) => {
+          const x = u.use, parts = [];
+          if (x.records) parts.push(`${x.records} form(s)`);
+          if (x.cases) parts.push(`${x.cases} case(s)${x.pending ? `, ${x.pending} pending` : ''}`);
+          if (x.dates) parts.push(`${x.dates} diary date(s)`);
+          if (x.users) parts.push(`${x.users} user(s)`);
+          return parts.join(' · ') || 'Nothing yet';
+        };
+        const refresh = async () => { await router.buildNav(); renderUnits(); };
         panel.appendChild(el('div', { class: 'toolbar' }, [
           el('button', { class: 'btn btn--primary', onclick: addUnit }, '+ Add Unit')
         ]));
+        panel.appendChild(el('p', { class: 'muted' }, 'Deactivate takes a unit off the menus and stops new work in it; everything it holds stays, readable in the Case File and Reports, and Activate brings it back. Delete permanently is only for a unit never used (one added by mistake).'));
         panel.appendChild(ui.table(
           [
-            { label: 'Unit', key: 'name' },
-            { label: 'Type', value: u => TYPE_LABELS[u.type] || u.type },
-            { label: 'Key', key: 'key' }
+            { label: 'Unit', key: 'name', primary: true },
+            { label: 'Type', value: u => TYPE_LABELS[u.type] || (u.type === 'process' ? 'Process Registry' : u.type === 'marriage' ? 'Marriage Registry' : u.type) },
+            { label: 'Status', node: u => el('span', { class: 'badge ' + (u.active ? 'badge--final' : 'badge--revoked') }, u.active ? 'Active' : 'Inactive') },
+            { label: 'Holds', value: holds }
           ],
           units,
           [{ label: 'Rename', onClick: async u => {
             const name = prompt('New name for ' + u.name, u.name);
             if (!name || name === u.name) return;
-            try { await api.patch('/admin/units/' + u.key, { name }); ui.toast('Renamed.', 'success'); await router.buildNav(); renderUnits(); }
+            try { await api.patch('/admin/units/' + u.key, { name }); ui.toast('Renamed.', 'success'); await refresh(); }
             catch (e) { ui.toast(e.message, 'error'); }
+          } },
+          { label: 'Deactivate', class: 'btn--danger', show: u => u.active && u.canDeactivate, onClick: async u => {
+            const users = u.use.users ? `\n\n${u.use.users} user(s) are in this unit; they keep their accounts but will no longer see it.` : '';
+            if (!confirm(`Deactivate ${u.name}? It leaves the menus and takes no new forms or cases. Everything it holds stays and can be read in the Case File and Reports.${users}`)) return;
+            try { await api.patch('/admin/units/' + u.key, { active: false }); ui.toast(`${u.name} deactivated.`, 'info'); await refresh(); }
+            catch (e) { ui.toast(e.message, 'error', 8000); }
+          } },
+          { label: 'Activate', class: 'btn--ok', show: u => !u.active, onClick: async u => {
+            try { await api.patch('/admin/units/' + u.key, { active: true }); ui.toast(`${u.name} is active again.`, 'success'); await refresh(); }
+            catch (e) { ui.toast(e.message, 'error'); }
+          } },
+          { label: 'Delete permanently', class: 'btn--danger', show: u => u.canDelete, onClick: async u => {
+            const typed = prompt(`Delete ${u.name} for good? It has never been used. This cannot be undone.${u.use.users ? ` It will be taken off ${u.use.users} user(s).` : ''}\n\nType DELETE to confirm.`);
+            if (typed !== 'DELETE') return;
+            try { await api.del('/admin/units/' + u.key); ui.toast(`${u.name} deleted.`, 'info'); await refresh(); }
+            catch (e) { ui.toast(e.message, 'error', 8000); }
           } }]
         ));
       }
+
       async function addUnit() {
         const units = await allUnits();
         const nextCourt = Math.max(0, ...units.filter(u => u.type === 'registry').map(u => u.courtNo || 0)) + 1;
