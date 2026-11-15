@@ -1,3 +1,28 @@
+## Before going live: clearing test data
+Training and testing are done on the live site; then everything is cleared
+once, so the system starts fresh. Until it has been used, Home shows
+administrators a **Before Going Live** section with **🗑 Clear Test Data**,
+listing what it will remove. Typing `CLEAR TEST DATA` removes:
+* every form, saved copy and notification;
+* the Process Registry's cases, scanned documents, later processes and
+  Court Diary dates;
+* the nominal roll, staff folders and leave applications;
+* every user account except the administrator clearing it and the built-in
+  administrator, with their signatures, PINs, sign-in sessions and any
+  invitation or reset link not yet used;
+* the whole audit log (the clearing itself is its first new entry);
+* all numbering (suits, invoices, leave letters) and the court rotation,
+  which start again from 1.
+
+Kept, as configuration: units and their forms, signing rules, Process
+Registry settings (case types, fees), leave and personnel settings and the
+email switches. Check them once after clearing; a starting suit number set
+by hand must be set again. A backup of everything is made first; if the
+backup fails, nothing is cleared. It works **once only**: afterwards the
+section disappears and the server refuses it, so it can never touch real
+court records. Training QR codes then show "Not found". Then create the
+real staff accounts and import the real nominal roll.
+
 # GSHC Registry & Units Forms Automation System
 
 Online forms system for the **Gombe State High Court of Justice**.
@@ -454,7 +479,8 @@ documents); every opening of a record is audited.
 * **Print and Excel** in the columns of the paper roll; a **Summary** by
   station, cadre, grade level and LGA.
 * **Settings, Personnel:** stations, ranks (with cadre and other spellings),
-  cadres and kinds of documents. Clear Test Data leaves the roll alone.
+  cadres and kinds of documents. Clear Test Data clears the roll, staff
+  folders and leave made in training (the settings stay).
 
 **🌴 Leave.** An application starts from the officer's record: by the
 officer when their account is linked to it (**My Leave**), or by the

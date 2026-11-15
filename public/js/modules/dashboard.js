@@ -74,23 +74,30 @@
     const open = () => {
       const word = ui.el('input', { type: 'text', autocomplete: 'off', 'aria-label': 'Confirmation' });
       ui.modal('Clear Test Data', ui.el('div', null, [
-        ui.el('div', { class: 'notice notice--warn' }, `This permanently removes all ${c.records} form(s) in the system (${c.signed} of them signed), their saved copies and notifications, and their entries in Reports. It can be done once only.`),
-        ui.el('p', null, 'Kept: users, units, form access, signing rules, signatures and PINs. A backup of everything is made first; if it fails, nothing is cleared.'),
-        ui.el('p', null, 'QR codes on printed test documents will then show "Not found".'),
+        ui.el('div', { class: 'notice notice--warn' }, `Everything made during training and testing is removed for good, so the system starts fresh. It can be done once only.`),
+        ui.el('ul', null, [
+          ui.el('li', null, `${c.records} form(s) (${c.signed} signed), their saved copies and ${c.notifications} notification(s)`),
+          ui.el('li', null, `${c.cases} Process Registry case(s), with their documents, processes and Court Diary dates`),
+          ui.el('li', null, `${c.users} user account(s): everyone except you and the built-in administrator, with their signatures and PINs`),
+          ui.el('li', null, `The nominal roll (${c.staff} staff), staff folders and ${c.leave} leave application(s)`),
+          ui.el('li', null, 'The audit log, pending invitation and reset emails, and all numbering (suits, invoices, leave letters), which start again from 1')
+        ]),
+        ui.el('p', null, 'Kept: units and their forms, signing rules, Process Registry settings (case types, fees), leave and personnel settings and email switches. A backup of everything is made first; if it fails, nothing is cleared.'),
+        ui.el('p', null, 'QR codes on printed training documents will then show "Not found". Afterwards, create the real staff accounts and import the real nominal roll.'),
         ui.field(`Type ${st.confirmWord} to confirm`, word)
       ]), {
         confirmText: 'Clear Test Data', confirmClass: 'btn--danger',
         onConfirm: async () => {
           if (word.value.trim().toUpperCase() !== st.confirmWord) { ui.toast(`Type ${st.confirmWord} to confirm.`, 'error'); return undefined; }
           const r = await api.post('/admin/test-data/clear', { confirm: word.value });
-          ui.toast(`Test data cleared: ${r.counts.records} form(s) removed. A backup was saved first.`, 'success', 8000);
+          ui.toast(`Cleared: ${r.counts.records} form(s), ${r.counts.cases} case(s) and ${r.counts.users} account(s) removed. A backup was saved first.`, 'success', 8000);
           window.App.router.loadDashboard();
           return true;
         }
       });
     };
     dash.appendChild(section(ui, 'Before Going Live', ui.el('div', null, [
-      ui.el('p', null, `The system holds ${c.records} form(s) (${c.signed} signed). If these were made while testing, clear them once before staff start using the system for real cases, so test documents and their QR codes do not pass as genuine.`),
+      ui.el('p', null, `The system holds ${c.records} form(s), ${c.cases} case(s) and ${c.users} other user account(s). When training and testing are over, clear everything once before staff start using the system for real, so it starts fresh and no training document or account carries over.`),
       ui.el('div', { class: 'dash-links' }, [ui.el('button', { class: 'btn btn--danger', onclick: open }, '🗑 Clear Test Data')])
     ])));
   }

@@ -1,39 +1,55 @@
 /*
- * src/services/testData.js — clearing the documents made while testing,
- * once, just before the system goes into full use.
+ * src/services/testData.js — clearing everything made during training and
+ * testing, once, just before the system goes into full use, so it starts
+ * fresh.
  *
- * It deletes every form, saved copy and notification, and the audit
- * entries about those forms (so Reports start from zero), after a backup
- * has been made of everything. Users, units, signing rules, signatures and
- * PINs stay. It works once only: afterwards it is refused, so it can never
- * be used on real court records.
+ * Removed: every form, saved copy and notification; the Process Registry's
+ * cases, documents, later processes and diary dates; the nominal roll,
+ * staff folders and leave applications; every user account except the
+ * administrator clearing it and the built-in administrator, with their
+ * sign-in sessions and invitation or reset links; the whole audit log; and
+ * all numbering (suits, invoices, leave letters) and the court rotation,
+ * which start again from 1.
+ *
+ * Kept, as the system's configuration: units and their forms, signing
+ * rules, Process Registry settings (case types, fees), leave and personnel
+ * settings, email switches, and the list of backups.
+ *
+ * A backup of everything is made first; no backup, no clearing. It works
+ * once only: afterwards it is refused, so it can never touch real records.
  */
 const mongoose = require('mongoose');
 const backup = require('./backup');
-const { Record, DocumentCopy, Notification, AuditLog, Case, CaseDocument, CaseProcess, DiaryEntry } = require('../models');
+const { Record, DocumentCopy, Notification, AuditLog, Case, CaseDocument, CaseProcess, DiaryEntry, User, PasswordToken, Staff, StaffDocument, Leave } = require('../models');
+const config = require('../config');
 
 const CONFIRM = 'CLEAR TEST DATA';
 const KEY = 'testDataCleared';
 const meta = () => mongoose.connection.collection('appmeta');
 
-async function counts() {
-  const [records, signed, copies, notifications, cases] = await Promise.all([
+// The accounts that stay: the administrator clearing it, and the built-in one.
+const kept = (keepUserId) => ({ $or: [{ _id: keepUserId }, { username: config.adminUsername }] });
+async function counts(keepUserId) {
+  const [records, signed, copies, notifications, cases, users, staff, leave] = await Promise.all([
     Record.countDocuments(), Record.countDocuments({ status: { $in: ['final', 'revoked'] } }),
-    DocumentCopy.countDocuments(), Notification.countDocuments(), Case.countDocuments()
+    DocumentCopy.countDocuments(), Notification.countDocuments(), Case.countDocuments(),
+    keepUserId ? User.countDocuments({ $nor: [kept(keepUserId)] }) : User.countDocuments({ username: { $ne: config.adminUsername } }),
+    Staff.countDocuments(), Leave.countDocuments()
   ]);
-  return { records, signed, copies, notifications, cases };
+  return { records, signed, copies, notifications, cases, users, staff, leave };
 }
 
-async function status() {
+async function status(keepUserId) {
   const done = await meta().findOne({ _id: KEY });
-  return done ? { available: false, done: { at: done.at, by: done.by, counts: done.counts } } : { available: true, counts: await counts() };
+  return done ? { available: false, done: { at: done.at, by: done.by, counts: done.counts } } : { available: true, counts: await counts(keepUserId) };
 }
 
 /** Clear the test documents. Throws with .status 400 (wrong word), 409 (done already) or 503 (no backup). */
-async function clear({ confirm, by }) {
+async function clear({ confirm, by, keepUserId }) {
   if (String(confirm || '').trim().toUpperCase() !== CONFIRM) {
     throw Object.assign(new Error(`Type ${CONFIRM} to confirm.`), { status: 400 });
   }
+  if (!keepUserId) throw Object.assign(new Error('The administrator clearing it must be signed in.'), { status: 400 });
   if (await meta().findOne({ _id: KEY })) {
     throw Object.assign(new Error('The test data was already cleared. This can only be done once.'), { status: 409 });
   }
@@ -42,7 +58,7 @@ async function clear({ confirm, by }) {
   try { saved = await backup.run({ reason: 'manual', by }); }
   catch (e) { throw Object.assign(new Error(`Nothing was cleared, because the backup first failed: ${e.message}`), { status: e.status === 409 ? 409 : 503 }); }
 
-  const before = await counts();
+  const before = await counts(keepUserId);
   // Claimed before deleting, so two administrators cannot both run it.
   try { await meta().insertOne({ _id: KEY, at: new Date(), by, counts: before, backupFile: saved.file }); }
   catch (e) {
@@ -50,14 +66,19 @@ async function clear({ confirm, by }) {
     throw e;
   }
 
+  const stay = (await User.find(kept(keepUserId), '_id').lean()).map(u => String(u._id));
   await Promise.all([
     Record.deleteMany({}), DocumentCopy.deleteMany({}), Notification.deleteMany({}),
-    AuditLog.deleteMany({ record: { $exists: true } }),
-    AuditLog.deleteMany({ action: /^case_/ }),
     // Process Registry test cases: suit numbers start again at 1, and the
     // court rotation starts again from High Court 1.
     Case.deleteMany({}), CaseDocument.deleteMany({}), CaseProcess.deleteMany({}), DiaryEntry.deleteMany({}), // the scanned files stay in the backup's store
-    meta().deleteMany({ _id: { $in: [/^hearingDigest:/, /^caseSeq:/, /^invoiceSeq:/, /^rotation:/] } })
+    // Personnel: the roll, staff folders and leave (a new roll is imported for real use).
+    Staff.deleteMany({}), StaffDocument.deleteMany({}), Leave.deleteMany({}),
+    // Every account but the administrators kept, their links and their sessions.
+    User.deleteMany({ _id: { $nin: stay } }), PasswordToken.deleteMany({ user: { $nin: stay } }),
+    mongoose.connection.collection('sessions').deleteMany({ $nor: stay.map(id => ({ session: { $regex: `"userId":"${id}"` } })) }),
+    AuditLog.deleteMany({}),
+    meta().deleteMany({ _id: { $in: [/^hearingDigest:/, /^caseSeq:/, /^invoiceSeq:/, /^rotation:/, /^leaveSeq:/] } })
   ]);
   return { counts: before, backupFile: saved.file };
 }
