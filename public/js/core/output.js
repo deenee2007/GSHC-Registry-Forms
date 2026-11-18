@@ -104,6 +104,7 @@
   const ROLE_WORDS = {
     judge: /judge|justice|magistrate/i,
     registrar: /registrar/i,
+    marriage_registrar: /registrar/i,
     chief_registrar: /registrar/i,
     chief_bailiff: /bailiff/i,
     deputy_sheriff: /sheriff/i,
@@ -665,7 +666,11 @@
         <tbody>${row("husband")}${row("wife")}</tbody></table>
       <div class="mnotice__foot">
         <div>Witness my hand this ${L(ordinal(nd.day), "short")} day of ${L(nd.month, "medium")} 20${L(nd.year2, "short")}</div>
-        <div class="mnotice__sign"><div class="line long"></div><div>No. ${L(d.noticeNo, "medium")}</div></div>
+        <div class="mnotice__sign">${(() => {
+          const sig = claimSignature("Marriage Registrar");
+          return sig ? `<div class="doc-sign-block">${sigImage(sig)}<div class="doc-sign">Marriage Registrar</div>${sigMeta(sig)}</div>`
+            : `<div class="line long"></div><div class="mnotice__role">Marriage Registrar</div>`;
+        })()}<div>No. ${L(d.noticeNo, "medium")}</div></div>
       </div>
       <div class="mexpiry">
         <div class="mexpiry__item"><span class="mexpiry__label">Caveat period ends</span><span class="mexpiry__date">${when(d.caveatEnds)}</span></div>
@@ -800,6 +805,13 @@
         (sig ? `<div class="doc-sig-meta">Digitally signed ${esc(formatDateTime(sig.signedAt))}</div>` : '') +
         `</div>`;
     }
+    // The Registrar signs below the order, after the Judge: their digital
+    // signature sits above the name and designation typed on the form.
+    function registrarSign() {
+      const sig = claimSignature('Registrar');
+      const line = `<div class="doc-sign">${esc(d.registrarName || (sig ? sig.name : ''))}<br>(${esc(d.registrarDesignation || 'REGISTRAR')})</div>`;
+      return `<div class="doc-sign-wrap">${sig ? `<div class="doc-sign-block">${sigImage(sig)}${line}${sigMeta(sig)}</div>` : line}</div>`;
+    }
     const isPanel = d.judgeType === 'panel';
     let judgeLeft = '';
     let judgeFullLine = '';
@@ -902,7 +914,7 @@
       </table>` +
       `<div class="co-closing">THE ORDER IS GIVEN UNDER THE HAND AND SEAL OF ${closingJudge}<br>
         DATED THE ${closingDate}.</div>` +
-      `<div class="doc-sign-wrap"><div class="doc-sign">${esc(d.registrarName||'')}<br>(${esc(d.registrarDesignation||'')})</div></div>`,
+      registrarSign(),
       r);
   }
 

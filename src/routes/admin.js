@@ -346,9 +346,10 @@ router.delete('/units/:key', wrap(async (req, res) => {
 router.put('/forms/:formType/signers', wrap(async (req, res) => {
   const { formType } = req.params;
   if (!catalogue.forms[formType]) throw new HttpError(404, 'Unknown form.');
-  const signers = (req.body.signers || []).map(s => ({
+  const signers = (req.body.signers || []).map((s, i) => ({
     role: String(s.role || ''),
-    label: String(s.label || SIGNER_ROLES[s.role] || '').trim().slice(0, 80)
+    label: String(s.label || SIGNER_ROLES[s.role] || '').trim().slice(0, 80),
+    after: i > 0 && !!s.after // the first line has nothing above it to wait for
   }));
   if (signers.length > 4) throw new HttpError(400, 'A form can have at most 4 signature lines.');
   if (signers.some(s => !SIGNER_ROLES[s.role] || !s.label)) throw new HttpError(400, 'Each signature line needs a valid role and label.');

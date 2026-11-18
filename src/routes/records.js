@@ -40,6 +40,13 @@ const slotDone = (s) => s.rule === 'all'
   ? s.approvers.length > 0 && s.approvers.every(a => s.signatures.some(g => same(g.user, a._id || a)))
   : s.signatures.length > 0;
 const allDone = (rec) => rec.slots.every(slotDone);
+// A line marked "after" opens only once every line above it is signed
+// (a court order: the Registrar signs after the Judge).
+const slotOpen = (rec, i) => !rec.slots[i].after || rec.slots.slice(0, i).every(slotDone);
+// Once an earlier line is signed on a form with such a line, the form is
+// only signed from then on: no withdrawing, and the later signer cannot
+// return it.
+const lockedForSigning = (rec) => rec.slots.some(s => s.after) && rec.slots.some(s => s.signatures.length);
 const isApprover = (rec, user) => rec.slots.some(s => s.approvers.some(a => same(a._id || a, user._id)));
 
 async function loadRecord(id) {
@@ -105,12 +112,13 @@ function serialize(rec, forms) {
     data: forms === false ? undefined : o.data,
     note: catalogue.listNote(o.formType, o.data, undefined, o.caveats),
     caveats: o.formType === CAVEAT_FORM ? (o.caveats || []).map(c => ({ ...c, id: String(c._id), _id: undefined })) : undefined,
-    slots: o.slots.map(s => ({
+    slots: o.slots.map((s, i) => ({
       role: s.role, label: s.label, rule: s.rule,
       approvers: s.approvers.map(a => (a && a.fullName ? { id: String(a._id), fullName: a.fullName, title: a.title } : { id: String(a) })),
       signatures: s.signatures.map(g => ({ user: String(g.user), name: g.name, title: g.title, signedAt: g.signedAt })),
-      done: slotDone(s)
+      done: slotDone(s), after: !!s.after, open: !s.after || o.slots.slice(0, i).every(slotDone)
     })),
+    lockedForSigning: o.status === 'pending' && o.slots.some(s => s.after) && o.slots.some(s => s.signatures.length),
     createdBy: String(o.createdBy), createdByName: o.createdByName, createdAt: o.createdAt, updatedAt: o.updatedAt,
     submittedBy: o.submittedBy ? String(o.submittedBy) : null, submittedByName: o.submittedByName, submittedAt: o.submittedAt,
     returnComment: o.returnComment, returnedBy: o.returnedBy, returnedAt: o.returnedAt,
@@ -341,9 +349,9 @@ router.post('/:id/submit', signLimiter, wrap(async (req, res) => {
   let selfSign = false;
   for (let i = 0; i < lines.length; i++) {
     const { role, label } = lines[i];
+    const after = i > 0 && !!lines[i].after;
     if (req.user.signerRoles.includes(role)) {
-      slots.push({ role, label, rule: 'any', approvers: [req.user._id], signatures: [] });
-      selfSign = true;
+      slots.push({ role, label, rule: 'any', after, approvers: [req.user._id], signatures: [] });
       continue;
     }
     const ids = [...new Set((approvers[i] || []).map(String))];
@@ -352,16 +360,25 @@ router.post('/:id/submit', signLimiter, wrap(async (req, res) => {
     const users = await User.find({ _id: { $in: ids }, active: true, signerRoles: role });
     if (users.length !== ids.length) throw new HttpError(400, `Everyone chosen to sign as ${label} must hold that signing role.`);
     const rule = rules[i] === 'all' ? 'all' : 'any';
-    slots.push({ role, label, rule, approvers: users.map(u => u._id), signatures: [] });
+    slots.push({ role, label, rule, after, approvers: users.map(u => u._id), signatures: [] });
   }
 
+  // The submitter signs their own lines now, in order: a line that waits for
+  // others above it (the Registrar after the Judge) is signed later.
+  const mine = (s) => s.approvers.length === 1 && same(s.approvers[0], req.user._id) && req.user.signerRoles.includes(s.role);
+  const signNow = [];
+  for (let i = 0; i < slots.length; i++) {
+    const before = slots.slice(0, i).every((s, j) => signNow.includes(j) || slotDone(s));
+    if (mine(slots[i]) && (!slots[i].after || before)) signNow.push(i);
+  }
+  selfSign = signNow.length > 0;
   if (selfSign) {
     requireReadyToSign(req.user);
     await verifyPin(req.user, req.body.pin);
   }
 
   rec.slots = slots;
-  if (selfSign) rec.slots.forEach(s => { if (s.approvers.length === 1 && same(s.approvers[0], req.user._id) && req.user.signerRoles.includes(s.role)) s.signatures.push(signatureFor(req.user)); });
+  signNow.forEach(i => rec.slots[i].signatures.push(signatureFor(req.user)));
   rec.submittedBy = req.user._id;
   rec.submittedByName = req.user.fullName;
   rec.submittedAt = new Date();
@@ -375,7 +392,7 @@ router.post('/:id/submit', signLimiter, wrap(async (req, res) => {
   } else {
     rec.status = 'pending';
     await saveRecord(rec);
-    const waiting = rec.slots.filter(s => !slotDone(s)).flatMap(s => s.approvers);
+    const waiting = rec.slots.filter((s, i) => !slotDone(s) && slotOpen(rec, i)).flatMap(s => s.approvers);
     await notify(waiting, 'submitted', rec, `${catalogue.get(rec.formType).label} ${rec.ref || ''} is waiting for your signature.`.trim(), req);
     await audit.log(req, 'record_submitted', { record: rec, details: { slots: rec.slots.map(s => ({ label: s.label, rule: s.rule, approvers: s.approvers.map(String) })) } });
   }
@@ -386,14 +403,25 @@ router.post('/:id/submit', signLimiter, wrap(async (req, res) => {
 router.post('/:id/approve', signLimiter, wrap(async (req, res) => {
   const rec = await loadRecord(req.params.id);
   if (rec.status !== 'pending') throw new HttpError(409, 'This record is not awaiting signature.');
-  const mySlots = rec.slots.filter(s => !slotDone(s) &&
+  const mineToSign = rec.slots.map((s, i) => ({ s, i })).filter(({ s }) => !slotDone(s) &&
     s.approvers.some(a => same(a, req.user._id)) && !s.signatures.some(g => same(g.user, req.user._id)));
-  if (!mySlots.length) throw new HttpError(403, 'This record is not waiting for your signature.');
+  const mySlots = mineToSign.filter(({ i }) => slotOpen(rec, i)).map(({ s }) => s);
+  if (!mySlots.length) {
+    if (mineToSign.length) {
+      const first = mineToSign[0].i;
+      const waitFor = rec.slots.slice(0, first).filter(s => !slotDone(s)).map(s => s.label).join(' and ');
+      throw new HttpError(409, `This form is signed by the ${waitFor} first. You can sign it once they have.`);
+    }
+    throw new HttpError(403, 'This record is not waiting for your signature.');
+  }
+  const openBefore = rec.slots.map((s, i) => slotOpen(rec, i));
   requireReadyToSign(req.user);
   await verifyPin(req.user, req.body.pin);
 
   mySlots.forEach(s => s.signatures.push(signatureFor(req.user)));
   const complete = allDone(rec);
+  // Lines opened by this signature: their signers are told it is their turn.
+  const nowOpen = complete ? [] : rec.slots.filter((s, i) => !openBefore[i] && slotOpen(rec, i) && !slotDone(s)).flatMap(s => s.approvers);
   if (complete) await finalize(req, rec);
   await saveRecord(rec);
   if (complete) await documentCopy.save(rec);
@@ -404,6 +432,7 @@ router.post('/:id/approve', signLimiter, wrap(async (req, res) => {
     await notify(rec.submittedBy, 'approved', rec, `${label} ${rec.ref || ''} has been approved and signed. It is ready to print.`.trim(), req);
   } else {
     await notify(rec.submittedBy, 'signed', rec, `${req.user.fullName} signed ${label} ${rec.ref || ''}. Waiting for the remaining signatures.`.trim(), req);
+    if (nowOpen.length) await notify(nowOpen, 'submitted', rec, `${req.user.fullName} has signed ${label} ${rec.ref || ''}. It is now waiting for your signature.`.replace(/\s+\./, '.'), req);
   }
   await rec.populate(POPULATE);
   res.json({ record: serialize(rec) });
@@ -413,6 +442,11 @@ router.post('/:id/return', wrap(async (req, res) => {
   const rec = await loadRecord(req.params.id);
   if (rec.status !== 'pending') throw new HttpError(409, 'Only records awaiting signature can be returned.');
   if (!isApprover(rec, req.user) && !isAdmin(req.user)) throw new HttpError(403, 'Only a signer on this record can return it.');
+  // A signer whose line waits for others above it (the Registrar after the
+  // Judge) only signs; the earlier signers or an administrator may return it.
+  if (!isAdmin(req.user) && !rec.slots.some(s => !s.after && s.approvers.some(a => same(a, req.user._id)))) {
+    throw new HttpError(403, 'Your line is signed after the lines above it, so you can only sign this form, not return it.');
+  }
   const comment = String(req.body.comment || '').trim().slice(0, 2000);
   if (!comment) throw new HttpError(400, 'Please say what needs correcting.');
   rec.status = 'returned';
@@ -431,6 +465,7 @@ router.post('/:id/withdraw', wrap(async (req, res) => {
   const rec = await loadRecord(req.params.id);
   if (rec.status !== 'pending') throw new HttpError(409, 'Only records awaiting signature can be withdrawn.');
   if (!same(rec.submittedBy, req.user._id)) assertUnitAction(req.user, rec, 'finalize');
+  if (lockedForSigning(rec)) throw new HttpError(409, 'This form has been signed and now waits only for the remaining signature. It can no longer be withdrawn.');
   rec.status = 'draft';
   rec.slots.forEach(s => { s.signatures = []; });
   await saveRecord(rec);
@@ -468,8 +503,8 @@ router.post('/:id/printed', wrap(async (req, res) => {
 
 // ── Caveats against a notice of marriage ──
 // The registry enters a caveat lodged against the intended marriage; while
-// it is open the marriage is on hold. Only the Registrar (a user of the
-// unit with the Registrar signing role) resolves it, with the signing PIN: withdrawn by the
+// it is open the marriage is on hold. Only the Marriage Registrar (a user
+// of the unit with that signing role) resolves it, with the signing PIN: withdrawn by the
 // caveator, or upheld or removed after inquiry.
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const today = () => new Date().toISOString().slice(0, 10);
@@ -507,8 +542,8 @@ router.post('/:id/caveats', wrap(async (req, res) => {
 
 router.post('/:id/caveats/:cid/resolve', signLimiter, wrap(async (req, res) => {
   const rec = await loadNotice(req.params.id);
-  if (!(canAccessUnit(req.user, rec.unitKey) && req.user.signerRoles.includes('registrar'))) {
-    throw new HttpError(403, 'Only the Registrar resolves a caveat.');
+  if (!(canAccessUnit(req.user, rec.unitKey) && req.user.signerRoles.includes('marriage_registrar'))) {
+    throw new HttpError(403, 'Only the Marriage Registrar resolves a caveat.');
   }
   const c = (rec.caveats || []).find(x => String(x._id) === String(req.params.cid));
   if (!c) throw new HttpError(404, 'Caveat not found.');
