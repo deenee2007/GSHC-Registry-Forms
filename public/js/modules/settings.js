@@ -7,7 +7,7 @@
   window.App = window.App || {};
   window.App.modules = window.App.modules || {};
 
-  const TYPE_LABELS = { registry: 'Court Registry', appeals: 'Appeals', execution: 'Execution / Bailiffs', general: 'Other Unit' };
+  const TYPE_LABELS = { registry: 'Court Registry', appeals: 'Appeals', execution: 'Execution / Bailiffs', marriage: 'Marriage Registry', general: 'Other Unit' };
   const MODULE_OF = { registry: 'Registry', appeals: 'Appeals', execution: 'Execution' };
 
   window.App.modules.settings = {
@@ -366,13 +366,15 @@
         ui.clear(panel);
         const { forms } = await api.get('/catalogue/forms');
         panel.appendChild(el('p', { class: 'muted' }, 'Who signs each form. A form with no signature line is signed by hand outside the system (deponent, surety, counsel); finalising it still locks it and issues a QR code. If the person submitting holds the signing role, they sign it themselves when they finalise.'));
-        ['registry', 'appeals', 'execution'].forEach(type => {
+        ['registry', 'appeals', 'execution', 'marriage'].forEach(type => {
           const list = forms.filter(f => f.unitType === type);
           panel.appendChild(el('h3', { class: 'settings-group' }, TYPE_LABELS[type]));
           panel.appendChild(ui.table(
             [
               { label: 'Form', key: 'label' },
-              { label: 'Signed By', value: f => f.signers.length ? f.signers.map(s => `${s.label} (${meta.signerRoles[s.role]})`).join(' + ') : 'By hand (outside the system)' }
+              { label: 'Signed By', value: f => f.signers.length
+                ? f.signers.map((s, i) => (i ? (s.after ? ', then ' : ' + ') : '') + `${s.label} (${meta.signerRoles[s.role]})`).join('')
+                : 'By hand (outside the system)' }
             ],
             list,
             [{ label: 'Change', onClick: f => editSigners(f) }]
@@ -387,15 +389,21 @@
           role.value = line ? line.role : 'judge';
           label.value = line ? line.label : meta.signerRoles[role.value];
           role.addEventListener('change', () => { if (!label.value || Object.values(meta.signerRoles).includes(label.value)) label.value = meta.signerRoles[role.value]; });
-          const row = el('div', { class: 'signer-row' }, [role, label, el('button', { class: 'btn btn--ghost btn--small', type: 'button', onclick: () => row.remove() }, '✕')]);
-          row.get = () => ({ role: role.value, label: label.value.trim() });
+          const after = el('input', { type: 'checkbox' }); after.checked = !!(line && line.after);
+          const afterBox = el('label', { class: 'check signer-row__after', title: 'This line can be signed only once every line above it is signed; its signer then can only sign, not return or withdraw the form.' }, [after, ' Signs after the lines above']);
+          const row = el('div', { class: 'signer-row' }, [role, label, afterBox, el('button', { class: 'btn btn--ghost btn--small', type: 'button', onclick: () => { row.remove(); syncAfter(); } }, '✕')]);
+          row.get = () => ({ role: role.value, label: label.value.trim(), after: after.checked });
+          row.afterBox = afterBox;
           rows.appendChild(row);
         }
+        // The first line has nothing above it to wait for.
+        function syncAfter() { Array.from(rows.children).forEach((r, i) => { r.afterBox.style.visibility = i ? '' : 'hidden'; }); }
         form.signers.forEach(addRow);
+        syncAfter();
         const body = el('div', null, [
           el('p', { class: 'muted' }, 'Add one line per signature on the printed form. Remove every line if the form is signed by hand.'),
           rows,
-          el('button', { class: 'btn btn--ghost btn--small', type: 'button', onclick: () => (rows.children.length < 4 ? addRow() : ui.toast('At most 4 signature lines.', 'error')) }, '+ Add signature line')
+          el('button', { class: 'btn btn--ghost btn--small', type: 'button', onclick: () => { if (rows.children.length < 4) { addRow(); syncAfter(); } else ui.toast('At most 4 signature lines.', 'error'); } }, '+ Add signature line')
         ]);
         await ui.modal('Signing Rule: ' + form.label, body, {
           confirmText: 'Save',

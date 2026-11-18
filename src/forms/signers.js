@@ -20,7 +20,8 @@ const SIGNER_ROLES = {
   chief_judge:           'Hon. Chief Judge',      // assigns new cases to courts (Process Registry)
   process_registrar:     'Process Registrar',     // registers new cases and gives the suit number
   staff_officer:         'Staff Officer',         // staff matters pass through them (leave applications)
-  director_personnel:    'Director Personnel'     // approves leave (the Chief Registrar for senior officers)
+  director_personnel:    'Director Personnel',    // approves leave (the Chief Registrar for senior officers)
+  marriage_registrar:    'Marriage Registrar'     // signs the notice of marriage; resolves caveats
 };
 
 const judge = [{ role: 'judge', label: 'Judge' }];
@@ -42,7 +43,10 @@ const DEFAULT_SIGNERS = {
   'hearing-notice': registrar,
   'remand-warrant': judge,
   'committal-warrant': judge,
-  'court-order': judge,
+  // Signed by the Judge, then by the Registrar: the Registrar's line opens
+  // only once the Judge has signed ("after"), and the Registrar can then
+  // only sign it.
+  'court-order': [{ role: 'judge', label: 'Judge' }, { role: 'registrar', label: 'Registrar', after: true }],
   'cause-list': registrar,
 
   // Appeals
@@ -61,8 +65,9 @@ const DEFAULT_SIGNERS = {
   'notice-of-attachment': [{ role: 'chief_registrar', label: 'Chief Registrar' }],
   'statutory-notice-auction': chiefBailiff,
 
-  // Marriage Registry: signed by hand by the parties and their witnesses.
-  'notice-of-marriage': [],
+  // Marriage Registry: the notice is signed by the Marriage Registrar; the
+  // other forms by hand by the parties and their witnesses.
+  'notice-of-marriage': [{ role: 'marriage_registrar', label: 'Marriage Registrar' }],
   'marriage-particulars': [],
   'marriage-witnesses': [],
   'marriage-oath-taking': [],
@@ -84,7 +89,9 @@ const DEFAULT_SIGNERS = {
 // if the form still has the rule it replaces; a rule the admin has changed
 // in Settings is left alone.
 const RULE_UPDATES = [
-  { id: 'public-auction-receipt-2026-10', formType: 'public-auction-receipt', from: ['deputy_sheriff', 'chief_bailiff'] }
+  { id: 'public-auction-receipt-2026-10', formType: 'public-auction-receipt', from: ['deputy_sheriff', 'chief_bailiff'] },
+  { id: 'court-order-registrar-2026-11', formType: 'court-order', from: ['judge'] },
+  { id: 'notice-of-marriage-registrar-2026-11', formType: 'notice-of-marriage', from: [] }
 ];
 
 // Roles no longer offered, and the role their holders move to.

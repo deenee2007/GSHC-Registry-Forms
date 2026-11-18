@@ -240,26 +240,30 @@ test('return with comments, correct and resubmit', async () => {
 });
 
 test('panel order: "all" needs every judge, "any" needs one', async () => {
-  const { clerk, judge1, judge2 } = users;
+  const { clerk, judge1, judge2, registrar } = users;
   const data = await fillRequired('court-order', { judgeType: 'panel' });
 
   let r = await clerk.post('/api/records', { unitKey: 'hc1', formType: 'court-order', data });
   assert.equal(r.status, 201, JSON.stringify(r.body));
   let id = r.body.record.id;
-  r = await clerk.post(`/api/records/${id}/submit`, { approvers: [[judge1.id, judge2.id]], rules: ['all'] });
+  r = await clerk.post(`/api/records/${id}/submit`, { approvers: [[judge1.id, judge2.id], [registrar.id]], rules: ['all'] });
   assert.equal(r.body.record.status, 'pending');
   r = await judge1.post(`/api/records/${id}/approve`, { pin: '2468' });
   assert.equal(r.body.record.status, 'pending', 'still waiting for the second judge');
   r = await judge1.post(`/api/records/${id}/approve`, { pin: '2468' });
   assert.equal(r.status, 403, 'cannot sign twice');
   r = await judge2.post(`/api/records/${id}/approve`, { pin: '2468' });
-  assert.equal(r.body.record.status, 'final');
   assert.equal(r.body.record.slots[0].signatures.length, 2);
+  assert.equal(r.body.record.status, 'pending', 'then the Registrar');
+  r = await registrar.post(`/api/records/${id}/approve`, { pin: '2468' });
+  assert.equal(r.body.record.status, 'final');
 
   r = await clerk.post('/api/records', { unitKey: 'hc1', formType: 'court-order', data });
   id = r.body.record.id;
-  await clerk.post(`/api/records/${id}/submit`, { approvers: [[judge1.id, judge2.id]], rules: ['any'] });
+  await clerk.post(`/api/records/${id}/submit`, { approvers: [[judge1.id, judge2.id], [registrar.id]], rules: ['any'] });
   r = await judge2.post(`/api/records/${id}/approve`, { pin: '2468' });
+  assert.equal(r.body.record.slots[0].signatures.length, 1);
+  r = await registrar.post(`/api/records/${id}/approve`, { pin: '2468' });
   assert.equal(r.body.record.status, 'final');
   r = await judge1.get('/api/records/inbox');
   assert.ok(!r.body.records.some(x => x.id === id), 'leaves the other judge\'s inbox');
@@ -355,9 +359,9 @@ test('Marriage Registry: the unit and its six forms; signed by hand, finalised w
   assert.equal((await clerk.post('/api/records', { unitKey: 'hc1', formType: 'marriage-particulars', data: {} })).status, 403, 'only the Marriage Registry\'s staff');
 });
 
-test('Marriage Registry: a caveat entered on a notice holds the marriage until the Registrar resolves it', async () => {
+test('Marriage Registry: a caveat entered on a notice holds the marriage until the Marriage Registrar resolves it', async () => {
   const clerk = await makeUser({ fullName: 'Caveat Clerk', username: 'caveatclerk', unitKeys: ['marriage'], privileges: ['view', 'create', 'edit', 'finalize', 'print'] });
-  const reg = await makeUser({ fullName: 'Marriage Registrar', username: 'marriagereg', unitKeys: ['marriage'], privileges: ['view'], signerRoles: ['registrar'] });
+  const reg = await makeUser({ fullName: 'Marriage Registrar', username: 'marriagereg', unitKeys: ['marriage'], privileges: ['view'], signerRoles: ['marriage_registrar'] });
   await makeSigner(reg);
   const day = (n) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
   const n = await clerk.post('/api/records', { unitKey: 'marriage', formType: 'notice-of-marriage',
@@ -393,4 +397,81 @@ test('Marriage Registry: a caveat entered on a notice holds the marriage until t
   assert.ok(hist.includes('caveat_entered') && hist.includes('caveat_resolved'), 'kept in the history');
   const other = await clerk.post('/api/records', { unitKey: 'marriage', formType: 'marriage-particulars', data: { husbandName: 'A', wifeName: 'B' } });
   assert.equal((await clerk.post(`/api/records/${other.body.record.id}/caveats`, { caveator: 'X', grounds: 'y' })).status, 400, 'only on a notice');
+});
+
+
+test('court order: the Judge signs, then the Registrar, who can then only sign', async () => {
+  const { clerk, judge1, registrar } = users;
+  const rules = (await clerk.get('/api/catalogue/forms')).body.forms.find(f => f.formType === 'court-order').signers;
+  assert.deepEqual(rules.map(l => [l.role, !!l.after]), [['judge', false], ['registrar', true]], 'Judge, then Registrar');
+  const data = await fillRequired('court-order', { judgeType: 'single', judgeName: 'Hon. Justice A. B. Musa', registrarName: 'Registrar One', registrarDesignation: 'REGISTRAR' });
+  // The Registrar prepares and submits it: their own line is not signed yet.
+  let r = await registrar.post('/api/records', { unitKey: 'hc1', formType: 'court-order', data });
+  const id = r.body.record.id;
+  r = await registrar.post(`/api/records/${id}/submit`, { approvers: [[judge1.id]] });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.record.status, 'pending');
+  assert.equal(r.body.record.slots[1].signatures.length, 0, 'the Registrar does not sign before the Judge');
+  assert.equal(r.body.record.slots[1].open, false);
+  r = await registrar.post(`/api/records/${id}/approve`, { pin: '2468' });
+  assert.equal(r.status, 409);
+  assert.match(r.body.error, /signed by the Judge first/);
+  assert.equal((await registrar.post(`/api/records/${id}/return`, { comment: 'x' })).status, 403, 'the Registrar does not return it');
+  // The Judge signs; the Registrar is told, and can now only sign.
+  const before = (await registrar.get('/api/notifications')).body.notifications.length;
+  r = await judge1.post(`/api/records/${id}/approve`, { pin: '2468' });
+  assert.equal(r.body.record.status, 'pending');
+  assert.equal(r.body.record.lockedForSigning, true);
+  const after = (await registrar.get('/api/notifications')).body.notifications;
+  assert.ok(after.length > before && /now waiting for your signature/.test(after[0].message), 'the Registrar is told it is their turn');
+  r = await registrar.post(`/api/records/${id}/withdraw`);
+  assert.equal(r.status, 409, 'no withdrawing once the Judge has signed');
+  assert.equal((await registrar.post(`/api/records/${id}/return`, { comment: 'x' })).status, 403);
+  assert.equal((await clerk.put(`/api/records/${id}`, { data, version: 0 })).status, 409, 'no editing');
+  r = await registrar.post(`/api/records/${id}/approve`, { pin: '2468' });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.record.status, 'final');
+  const doc = (await registrar.get(`/api/records/${id}/document`)).body.document;
+  assert.deepEqual(doc.signatures.map(g => g.role), ['judge', 'registrar']);
+});
+
+test('notice of marriage: signed by the Marriage Registrar, a new signing role', async () => {
+  const { SIGNER_ROLES } = require('../src/forms/signers');
+  assert.equal(SIGNER_ROLES.marriage_registrar, 'Marriage Registrar');
+  const rules = (await users.clerk.get('/api/catalogue/forms')).body.forms.find(f => f.formType === 'notice-of-marriage').signers;
+  assert.deepEqual(rules.map(l => l.role), ['marriage_registrar']);
+  const mr = await makeUser({ fullName: 'Hauwa Registrar', username: 'mreg2', unitKeys: ['marriage'], signerRoles: ['marriage_registrar'], privileges: ['view', 'create', 'edit', 'finalize', 'print'] });
+  await makeSigner(mr);
+  const clerk = await makeUser({ fullName: 'Notice Clerk', username: 'mclerk2', unitKeys: ['marriage'], privileges: ['view', 'create', 'edit', 'finalize', 'print'] });
+  const data = { marriageNo: 'GMR/30/2026', registrarDistrict: 'Gombe', marriagePlace: 'Marriage Registry', noticeDate: '2026-11-10', husbandName: 'Bala Umar', wifeName: 'Zainab Ali' };
+  // A clerk submits it to the Marriage Registrar.
+  let r = await clerk.post('/api/records', { unitKey: 'marriage', formType: 'notice-of-marriage', data });
+  let id = r.body.record.id;
+  r = await clerk.post(`/api/records/${id}/submit`, { approvers: [[mr.id]] });
+  assert.equal(r.body.record.status, 'pending');
+  r = await mr.post(`/api/records/${id}/approve`, { pin: '2468' });
+  assert.equal(r.body.record.status, 'final');
+  // The Marriage Registrar's own notice is signed as they finalise it.
+  r = await mr.post('/api/records', { unitKey: 'marriage', formType: 'notice-of-marriage', data: { ...data, marriageNo: 'GMR/31/2026' } });
+  id = r.body.record.id;
+  r = await mr.post(`/api/records/${id}/submit`, { pin: '2468' });
+  assert.equal(r.body.record.status, 'final');
+  assert.equal(r.body.record.slots[0].signatures[0].name, 'Hauwa Registrar');
+});
+
+test('a database made before: the court order gains the Registrar after the Judge, the notice the Marriage Registrar; a rule changed in Settings is left alone', async () => {
+  const { FormConfig } = require('../src/models');
+  const { updateFormConfigs } = require('../src/services/seed');
+  const meta = mongoose.connection.collection('appmeta');
+  await FormConfig.updateOne({ formType: 'court-order' }, { signers: [{ role: 'judge', label: 'Judge' }] });
+  await FormConfig.updateOne({ formType: 'notice-of-marriage' }, { signers: [{ role: 'registrar', label: 'Registrar' }] }); // changed by the admin
+  await meta.deleteMany({ _id: { $in: ['rule:court-order-registrar-2026-11', 'rule:notice-of-marriage-registrar-2026-11'] } });
+  await updateFormConfigs(() => {});
+  const co = await FormConfig.findOne({ formType: 'court-order' });
+  assert.deepEqual(co.signers.map(s => [s.role, s.after]), [['judge', false], ['registrar', true]]);
+  assert.deepEqual((await FormConfig.findOne({ formType: 'notice-of-marriage' })).signers.map(s => s.role), ['registrar'], 'the admin\'s own rule stays');
+  await FormConfig.updateOne({ formType: 'notice-of-marriage' }, { signers: [] });
+  await meta.deleteOne({ _id: 'rule:notice-of-marriage-registrar-2026-11' });
+  await updateFormConfigs(() => {});
+  assert.deepEqual((await FormConfig.findOne({ formType: 'notice-of-marriage' })).signers.map(s => s.role), ['marriage_registrar'], 'signed by hand before: now the Marriage Registrar');
 });

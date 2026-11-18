@@ -25,7 +25,7 @@
     _meta = { roles: signerRoles, rules: Object.fromEntries(forms.map(f => [f.formType, f.signers])) };
     return _meta;
   }
-  const ROLE_FALLBACK = { chief_judge: 'Hon. Chief Judge', process_registrar: 'Process Registrar', judge: 'Judge', chief_registrar: 'Chief Registrar', registrar: 'Registrar', chief_bailiff: 'Chief Bailiff', deputy_sheriff: 'Deputy Sheriff', director_of_litigation: 'Director of Litigation', commissioner_for_oaths: 'Commissioner for Oaths' };
+  const ROLE_FALLBACK = { marriage_registrar: 'Marriage Registrar', chief_judge: 'Hon. Chief Judge', process_registrar: 'Process Registrar', judge: 'Judge', chief_registrar: 'Chief Registrar', registrar: 'Registrar', chief_bailiff: 'Chief Bailiff', deputy_sheriff: 'Deputy Sheriff', director_of_litigation: 'Director of Litigation', commissioner_for_oaths: 'Commissioner for Oaths' };
   function roleLabel(role) { return (_meta && _meta.roles[role]) || ROLE_FALLBACK[role] || role; }
 
   const formDef = (formType) => (App.allForms || {})[formType];
@@ -41,16 +41,18 @@
     const submittedByMe = same(rec.submittedBy, user.id);
     const slots = rec.slots || [];
     const signedByMe = slots.some(s => s.signatures.some(g => same(g.user, user.id)));
-    const awaitingMe = status === 'pending' && slots.some(s => !s.done &&
-      s.approvers.some(a => same(a.id, user.id)) && !s.signatures.some(g => same(g.user, user.id)));
+    const mineOpen = (s) => !s.done && s.open !== false && s.approvers.some(a => same(a.id, user.id)) && !s.signatures.some(g => same(g.user, user.id));
+    const awaitingMe = status === 'pending' && slots.some(mineOpen);
+    // A signer whose line waits for the lines above only signs; they cannot return it.
+    const firstSigner = slots.some(s => !s.after && s.approvers.some(a => same(a.id, user.id)));
     const editable = status === 'draft' || status === 'returned' || status === 'offline';
     return {
       edit:     editable && inUnit && (p.can('edit') || (mine && p.can('create')) || status === 'offline'),
       submit:   (status === 'draft' || status === 'returned') && inUnit && p.can('finalize'),
       remove:   editable && inUnit && (p.can('delete') || status === 'offline'),
-      withdraw: status === 'pending' && (submittedByMe || (inUnit && p.can('finalize'))),
+      withdraw: status === 'pending' && !rec.lockedForSigning && (submittedByMe || (inUnit && p.can('finalize'))),
       approve:  awaitingMe,
-      giveBack: status === 'pending' && (awaitingMe || p.isAdmin()),
+      giveBack: status === 'pending' && ((awaitingMe && firstSigner) || p.isAdmin()),
       print:    status === 'final' && (p.can('print') || submittedByMe || signedByMe),
       printDraft: editable && status !== 'offline' && p.can('print'),
       revoke:   status === 'final' && (p.isAdmin() || signedByMe),
@@ -358,11 +360,12 @@
     (doc.slots || []).forEach(s => {
       const who = s.approvers.map(a => {
         const sig = s.signatures.find(g => same(g.user, a.id));
-        return (a.title ? a.title + ' ' : '') + (a.fullName || 'Signer') + (sig ? ` ✔ ${ui().fmtDate(sig.signedAt)}` : ' (waiting)');
+        return (a.title ? a.title + ' ' : '') + (a.fullName || 'Signer') + (sig ? ` ✔ ${ui().fmtDate(sig.signedAt)}` : s.open === false ? ' (signs after the lines above)' : ' (waiting)');
       });
       const rule = s.approvers.length > 1 ? (s.rule === 'all' ? ' · all must sign' : ' · any one may sign') : '';
       rows.push(el('div', { class: 'doc-status__line' }, [el('strong', null, s.label + rule + ': '), who.join(', ')]));
     });
+    if (doc.lockedForSigning) rows.push(el('div', { class: 'doc-status__note doc-status__note--warn' }, 'Signed by the lines above. It now waits only for the remaining signature, and can no longer be withdrawn or edited.'));
     if (doc.verifyCode) rows.push(el('div', { class: 'doc-status__line' }, [el('strong', null, 'Verification code: '), doc.verifyCode]));
     if (doc.status === 'final') rows.push(el('div', { class: 'doc-status__line muted' }, doc.printCount ? `Printed ${doc.printCount} time(s)` : 'Not printed yet'));
     if (doc.status === 'revoked') rows.push(el('div', { class: 'doc-status__note doc-status__note--bad' }, [el('strong', null, `Revoked by ${doc.revokedBy}: `), doc.revokeReason || '']));
@@ -371,7 +374,7 @@
 
   // ── Caveats against a notice of marriage ──
   const OUTCOME = { open: 'Open: marriage on hold', withdrawn: 'Withdrawn by the caveator', upheld: 'Upheld after inquiry', removed: 'Removed after inquiry' };
-  const isRegistrar = (doc) => perms().canAccessUnit(doc.unitKey) && me().signerRoles.includes('registrar');
+  const isRegistrar = (doc) => perms().canAccessUnit(doc.unitKey) && me().signerRoles.includes('marriage_registrar');
   const dayText = (iso) => (iso ? new Date(iso + 'T12:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : '');
 
   function caveatPanel(doc, reopen) {
@@ -387,9 +390,9 @@
         ]),
         el('div', { class: 'caveat__meta muted' }, [`Lodged ${dayText(c.lodgedOn)}`, c.phone ? ` · ${c.phone}` : '', c.address ? ` · ${c.address}` : '', ` · entered by ${c.enteredBy}`].join('')),
         el('div', { class: 'caveat__grounds' }, [el('strong', null, 'Grounds: '), c.grounds]),
-        c.status !== 'open' ? el('div', { class: 'caveat__decision' }, [el('strong', null, `Registrar (${c.resolvedBy}), ${dayText(c.decidedOn)}: `), c.decision || OUTCOME[c.status]]) : null,
+        c.status !== 'open' ? el('div', { class: 'caveat__decision' }, [el('strong', null, `Marriage Registrar (${c.resolvedBy}), ${dayText(c.decidedOn)}: `), c.decision || OUTCOME[c.status]]) : null,
         c.status === 'open' && isRegistrar(doc) ? el('button', { class: 'btn btn--small btn--primary', type: 'button', onclick: () => resolveDialog(doc, c, reopen) }, 'Resolve') : null,
-        c.status === 'open' && !isRegistrar(doc) ? el('div', { class: 'muted' }, 'Waiting for the Registrar to resolve it.') : null
+        c.status === 'open' && !isRegistrar(doc) ? el('div', { class: 'muted' }, 'Waiting for the Marriage Registrar to resolve it.') : null
       ]))
     ]);
   }
@@ -403,7 +406,7 @@
     const grounds = el('textarea', { rows: 4, maxlength: '3000', placeholder: 'e.g. the intended husband is already married under the Act' });
     setTimeout(() => name.focus(), 50);
     return ui().modal('Enter a Caveat', el('div', null, [
-      el('p', null, 'A caveat against this intended marriage. While it is open, the notice shows the marriage on hold. The Registrar resolves it.'),
+      el('p', null, 'A caveat against this intended marriage. While it is open, the notice shows the marriage on hold. The Marriage Registrar resolves it.'),
       ui().field('Person entering the caveat', name),
       ui().field('Address', address),
       ui().field('Phone No.', phone),
@@ -485,8 +488,13 @@
       const box = el('div', { class: 'signer-box' }, [el('div', { class: 'signer-box__title' }, `Signature line: ${line.label}`)]);
       body.appendChild(box);
       if (user.signerRoles.includes(line.role)) {
-        needsPin = true;
-        box.appendChild(el('p', { class: 'signer-box__self' }, `✔ You will sign this line yourself as ${roleLabel(line.role)}.`));
+        // A line that waits for the lines above (the Registrar after the
+        // Judge) is signed later, unless every line above is the submitter's own.
+        const now = !line.after || lines.slice(0, i).every(l => user.signerRoles.includes(l.role));
+        if (now) needsPin = true;
+        box.appendChild(el('p', { class: 'signer-box__self' }, now
+          ? `✔ You will sign this line yourself as ${roleLabel(line.role)}.`
+          : `✔ You will sign this line yourself as ${roleLabel(line.role)}, once the ${lines.slice(0, i).map(l => l.label).join(' and ')} ${i > 1 ? 'have' : 'has'} signed. You will be told when it is your turn.`));
         pickers.push(null);
         continue;
       }
@@ -551,7 +559,7 @@
   }
 
   async function approveDialog(rec) {
-    const lines = (rec.slots || []).filter(s => !s.done && s.approvers.some(a => same(a.id, me().id))).map(s => s.label);
+    const lines = (rec.slots || []).filter(s => !s.done && s.open !== false && s.approvers.some(a => same(a.id, me().id))).map(s => s.label);
     const pin = ui().el('input', { type: 'password', inputmode: 'numeric', autocomplete: 'off', maxlength: '8', placeholder: 'Signing PIN' });
     const body = ui().el('div', null, [
       ui().el('p', null, `Your signature will be placed on this document${lines.length ? ' as ' + lines.join(', ') : ''}. Once every signature line is signed, the document is locked and returned to ${rec.submittedByName || 'the submitter'} to print.`),

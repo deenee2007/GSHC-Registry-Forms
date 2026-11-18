@@ -67,7 +67,8 @@ const UnitSchema = new Schema({
 
 const FormConfigSchema = new Schema({
   formType: { type: String, required: true, unique: true },
-  signers:  [{ _id: false, role: { type: String, enum: Object.keys(SIGNER_ROLES), required: true }, label: { type: String, required: true } }]
+  // after: this line opens only once every line above it is signed.
+  signers:  [{ _id: false, role: { type: String, enum: Object.keys(SIGNER_ROLES), required: true }, label: { type: String, required: true }, after: { type: Boolean, default: false } }]
 }, { timestamps: true });
 
 // A signature placed on a record. The image reference is copied at signing
@@ -86,6 +87,7 @@ const SlotSchema = new Schema({
   role:       { type: String, required: true },
   label:      { type: String, required: true },
   rule:       { type: String, enum: ['any', 'all'], default: 'any' },
+  after:      { type: Boolean, default: false },   // signed only once the lines above are
   approvers:  [{ type: Schema.Types.ObjectId, ref: 'User' }],
   signatures: { type: [SignatureSchema], default: [] }
 }, { _id: false });

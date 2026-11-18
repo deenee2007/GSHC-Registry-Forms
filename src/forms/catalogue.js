@@ -144,7 +144,7 @@ function listNote(formType, data, today = new Date().toISOString().slice(0, 10),
   // A caveat upheld stops the marriage on this notice; one still open holds it.
   if (cv.some(c => c.status === 'upheld')) return { text: 'Caveat upheld: the marriage cannot hold on this notice', tone: 'returned' };
   if (today > expires) return { text: `Expired ${longDay(expires)}: a new notice is needed`, tone: 'returned' };
-  if (cv.some(c => c.status === 'open')) return { text: 'Caveat entered: marriage on hold until the Registrar resolves it', tone: 'returned' };
+  if (cv.some(c => c.status === 'open')) return { text: 'Caveat entered: marriage on hold until the Marriage Registrar resolves it', tone: 'returned' };
   if (today <= caveatEnds) return { text: `In caveat period, to ${longDay(caveatEnds)}`, tone: 'pending' };
   if (today <= expires) return { text: `Marriage may hold, ${longDay(from)} to ${longDay(expires)}`, tone: 'final' };
   return { text: `Expired ${longDay(expires)}: a new notice is needed`, tone: 'returned' };

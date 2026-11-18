@@ -82,6 +82,14 @@ the app no longer has.
 5. For appeal panels, the submitter chooses the judges and whether **any one**
    or **all** of them must approve.
 6. A signed document can be **revoked** with a reason; it is never deleted.
+7. A line may be set to **sign after the lines above** (Settings, Signing
+   Rules). It opens only once every line above it is signed, and its signer
+   is then told it is their turn. The **Court Order** is signed this way: the
+   Judge (or the panel), then the Registrar, whose signature goes above the
+   Registrar's name and designation at its foot. A Registrar who submits it
+   does not sign at submission but after the Judge. Once the Judge has
+   signed, the form can only be signed: it cannot be withdrawn, and the
+   Registrar cannot return it (the Judge or an administrator can).
 
 Who signs which form is set per form in Settings. Forms signed by people
 outside the system (deponents, sureties, counsel) have no digital signature
@@ -514,9 +522,12 @@ caveat period, marriage may hold, expired); Particulars of
 Husband and Wife; Particulars of Witnesses (Husband Witness and Wife
 Witness); Oath Taking (Vows); Oath Affirmation and Ring Oaths (one for the
 groom and one for the bride, each with its signature); and the
-declaration on the Prohibited Degrees of Relationship. They are signed by
-hand by the parties and witnesses, so each is finalised (locked, with its
-QR code) and printed for signing. Each form takes a **Marriage File No.**;
+declaration on the Prohibited Degrees of Relationship. The **Notice of
+Marriage** is signed in the system by the **Marriage Registrar** (a signing
+role of its own): a clerk submits it to them, or a Marriage Registrar signs
+it as they finalise it; the signature goes on the line under "Witness my
+hand". The other forms are signed by hand by the parties and witnesses, so
+each is finalised (locked, with its QR code) and printed for signing. Each form takes a **Marriage File No.**;
 typed on a later form, it offers to fill the names and particulars from the
 couple's earlier forms (the groom being the husband, the bride the wife),
 and the Case File shows the couple's forms together. Each form, with its
@@ -526,8 +537,8 @@ QR block, prints on one A4 page.
 lodged it (name, address, phone), the date lodged (not before the notice,
 not after it expired, not in the future) and the grounds. While a caveat is
 open the notice shows **Caveat entered: marriage on hold** on the list,
-even after the 21 days. Only the **Registrar** (a user of the unit with the
-Registrar signing role) resolves it, with the signing
+even after the 21 days. Only the **Marriage Registrar** (a user of the unit
+with the Marriage Registrar signing role) resolves it, with the signing
 PIN: **withdrawn** by the caveator, or **removed** or **upheld** after
 inquiry (reasons required for these two). Withdrawn or removed, the notice
 goes back to its stage by the dates; upheld, it shows **Caveat upheld: the
