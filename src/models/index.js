@@ -270,7 +270,11 @@ const CaseSchema = new Schema({
   dispatchedByName: String,
   receivedAt:    Date,
   receivedByName: String,
-  disposal:      { type: { _id: false, remark: String, date: String, byName: String, at: Date }, default: null },
+  // The remark that disposed of the case (it is then locked); the diary
+  // dates it took out are kept, to return if it is reopened.
+  disposal:      { type: { _id: false, remark: String, date: String, byName: String, byId: Schema.Types.ObjectId, at: Date, removedDates: [Schema.Types.Mixed] }, default: null },
+  // Each disposal undone (by its recorder, the same day) or reopened (by an administrator).
+  reopenLog:     { type: [{ _id: false, kind: String, remark: String, date: String, disposedBy: String, disposedAt: Date, reason: String, byName: String, at: Date }], default: [] },
   caseNos:       { type: [String], index: true }      // for the case file
 }, { timestamps: true });
 CaseSchema.index({ suitNumber: 1 }, { unique: true, partialFilterExpression: { suitNumber: { $type: 'string' } } });

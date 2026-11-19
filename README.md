@@ -330,8 +330,19 @@ New cases are filed, numbered and assigned to a court here.
    received, Date of disposal and Remarks. **File received** when the file
    arrives; **Record Remark** with the date of disposal when the case is
    disposed of (Judgment entered, Struck out, Withdrawn, Dismissed,
-   Transferred, or Other typed in). **+ Add Earlier Case** enters a case
-   filed before the system. A newly assigned case shows on the court's
+   Transferred, or Other typed in). Recording the remark disposes
+   of the case and **locks** it: only View, Reports and Statistics remain; no
+   remark, process, party change, document (by the court or the Process
+   Registry) or diary date, and its dates still fixed in the Court Diary are
+   taken out (kept with the disposal). A remark entered in error is undone
+   with **Undo** by the person who recorded it, the same day; after that an
+   administrator **Reopen**s the case with a reason. Either way the case is
+   pending again, its dates still to come return to the diary, and the
+   disposal stays in the case's history and the audit log. A disposal
+   recorded from the Court Diary takes no next date. **View** has its own
+   column before Remarks; the register fits the screen without sideways
+   scrolling.
+   **+ Add Earlier Case** enters a case filed before the system. A newly assigned case shows on the court's
    Home (**New Cases Assigned**) and as a number beside **📒 Case Register**
    until its file is received. The Chief Judge who assigns a case is not
    sent the court's notice for it, even when they sit in that court.

@@ -630,18 +630,28 @@ button.dash-card:hover { border-color: var(--green-500); }
 .register-table td.c-type { min-width: 6rem; }
 .register-table td.c-remark { min-width: 8rem; }
 .register-table td.c-suit { white-space: nowrap; }
-@media (min-width: 1200px) { .register-table td.c-date { white-space: nowrap; } }
+.register-table .c-view { width: 1%; text-align: center; }
+.register-table td.c-view .btn { white-space: nowrap; }
+.reg-lock { font-size: .8em; }
+/* The register fits the screen without scrolling sideways: its buttons are
+   compact and may wrap ("Record / Remark"), and dates stay on one line only
+   on a wide screen. */
+.register-table td .btn { font-size: .78rem; padding: .28rem .55rem; line-height: 1.2; }
+@media (min-width: 1440px) { .register-table td.c-date { white-space: nowrap; } }
 @media (min-width: 721px) and (max-width: 1199px) {
-  .register-table th, .register-table td { padding-left: .35rem; padding-right: .35rem; }
-  .register-table td { font-size: .82rem; }
-  .register-table td.c-name { min-width: 7rem; }
-  .register-table td.c-type { min-width: 4.5rem; }
-  .register-table td.c-remark { min-width: 6rem; }
+  .register-table th, .register-table td { padding-left: .3rem; padding-right: .3rem; }
+  .register-table th { font-size: .74rem; }
+  .register-table td { font-size: .8rem; }
+  .register-table td.c-name { min-width: 6.5rem; }
+  .register-table td.c-type { min-width: 4rem; }
+  .register-table td.c-remark { min-width: 5rem; overflow-wrap: anywhere; }
+  .register-table td .btn { padding: .25rem .4rem; }
   .register-table .reg-remark .btn { white-space: normal; padding: .25rem .45rem; }
 }
 .reg-pending { color: var(--muted); font-size: .8rem; font-style: italic; }
 .reg-remark { display: flex; flex-direction: column; align-items: flex-start; gap: .3rem; }
-.reg-remark .btn, .register-table td.c-date .btn { white-space: nowrap; }
+.register-table td.c-date .btn { white-space: nowrap; }
+.reg-remark .btn { white-space: normal; text-align: left; }
 @media (max-width: 720px) {
   .data-table.register-table tr { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem .8rem; padding: .8rem .9rem; }
   .data-table.register-table td { padding: 0; width: auto; min-width: 0; text-align: left; background: none; white-space: normal; }

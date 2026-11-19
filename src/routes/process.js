@@ -34,6 +34,7 @@ const audit = require('../services/audit');
 const mail = require('../services/mail');
 const settings = require('../services/settings');
 const caseEmail = require('../services/caseEmail');
+const disposal = require('../services/disposal');
 const partiesSvc = require('../services/parties');
 const registerImport = require('../services/registerImport');
 const { verifyPin } = require('./me');
@@ -95,7 +96,9 @@ function serialize(c, units, extra = {}) {
       orderDate: l.orderDate, note: l.note || '', keepInTitle: l.keepInTitle !== false, stoppedEmails: l.stoppedEmails || [], byName: l.byName, at: l.at })),
     emailLog: (o.emailLog || []).map(e => ({ stage: e.stage, label: caseEmail.LABELS[e.stage] || e.stage, to: e.to, at: e.at, ok: e.ok })),
     dispatchedAt: o.dispatchedAt, dispatchedByName: o.dispatchedByName,
-    receivedAt: o.receivedAt, receivedByName: o.receivedByName, disposal: o.disposal || null,
+    receivedAt: o.receivedAt, receivedByName: o.receivedByName,
+    disposal: o.disposal ? { remark: o.disposal.remark, date: o.disposal.date, byName: o.disposal.byName, byId: o.disposal.byId ? String(o.disposal.byId) : null, at: o.disposal.at } : null,
+    reopenLog: o.reopenLog || [],
     reassignedFrom: court(o.reassignedFrom),
     formerUnits: (o.formerUnits || []).map(f => ({ court: court(f.unitKey), to: court(f.toUnit), assignedAt: f.assignedAt, leftAt: f.leftAt, reason: f.reason, byName: f.byName })),
     ...extra
@@ -269,6 +272,7 @@ router.get('/cases/:id', wrap(async (req, res) => {
   const extra = {};
   if (c.verifyUrl && c.assignment) extra.qrDataUrl = await verification.qrDataUrl(c.verifyUrl);
   if (c.assignment) extra.signatureUrl = `/api/process/cases/${c._id}/signature`;
+  extra.canUndo = disposal.canUndo(c, req.user);
   res.json({ case: serialize(c, await unitNames(), extra) });
 }));
 
@@ -363,8 +367,9 @@ router.post('/cases/:id/invoice', wrap(async (req, res) => {
 // The Process Registry (at filing) and the assigned court's staff upload;
 // everyone who can see the case can open them. The uploader may delete a
 // document on the day it was uploaded; after that, only an administrator.
-const canUploadDoc = (u, c) => (inProcess(u) && (can(u, 'create') || can(u, 'edit') || isRegistrar(u))) ||
-  (inCourt(u, c.assignedUnit) && ['received', 'disposed'].includes(c.status) && (can(u, 'create') || can(u, 'edit')));
+// No document is added to a disposed case (locked), by anyone.
+const canUploadDoc = (u, c) => c.status !== 'disposed' && ((inProcess(u) && (can(u, 'create') || can(u, 'edit') || isRegistrar(u))) ||
+  (inCourt(u, c.assignedUnit) && c.status === 'received' && (can(u, 'create') || can(u, 'edit'))));
 const sameDay = (a, b) => new Date(a).toDateString() === new Date(b).toDateString();
 const canDeleteDoc = (u, d) => isAdmin(u) || (String(d.uploadedBy) === String(u._id) && sameDay(d.createdAt, new Date()));
 const serializeDoc = (d, u) => ({
@@ -633,19 +638,20 @@ router.get('/register', wrap(async (req, res) => {
     const to = units[f.toUnit];
     return { reassignedAway: { to: to ? `High Court No. ${processSvc.roman(to.courtNo)}` : f.toUnit, at: f.leftAt, reason: f.reason, assignedAt: f.assignedAt, receivedAt: f.receivedAt } };
   };
-  res.json({ cases: list.map(c => serialize(c, units, away(c))), remarks: processSvc.REMARKS, reasons: processSvc.REASSIGN_REASONS });
+  res.json({ cases: list.map(c => serialize(c, units, { ...away(c), canUndo: disposal.canUndo(c, req.user) })), remarks: processSvc.REMARKS, reasons: processSvc.REASSIGN_REASONS });
 }));
 
 function assertCourtWork(user, c) {
   if (!inCourt(user, c.assignedUnit) || !(can(user, 'edit') || can(user, 'create'))) throw new HttpError(403, 'Only staff of the assigned court update its register.');
 }
 
-// The court works on a case only once its file has been received there: no
-// remark, process, party change, document or date before that. A case
-// reassigned to another court waits for that court to receive it too.
-const FILE_HERE = ['received', 'disposed'];
-const fileHere = (c) => FILE_HERE.includes(c.status);
+// The court works on a case only while it is pending before it: once its
+// file has been received there (a case reassigned waits for its new court
+// to receive it), and until it is disposed of. A disposed case is locked:
+// only viewed, reported on and counted, unless it is reopened.
+const fileHere = (c) => c.status === 'received';
 function assertFileHere(c) {
+  if (c.status === 'disposed') throw new HttpError(409, `${c.suitNumber} was disposed of${c.disposal ? ` (${c.disposal.remark}, ${c.disposal.date})` : ''} and is locked. If the remark was entered in error, the person who recorded it can undo it the same day; otherwise an administrator can reopen the case.`);
   if (!fileHere(c)) throw new HttpError(409, `The file of ${c.suitNumber} has not been received in this court yet. Mark it received in the Case Register first.`);
 }
 
@@ -666,7 +672,6 @@ router.post('/cases/:id/received', wrap(async (req, res) => {
 router.post('/cases/:id/parties/:kind', wrap(async (req, res) => {
   const c = await load(req.params.id, req.user);
   assertCourtWork(req.user, c);
-  if (c.status === 'disposed') throw new HttpError(409, 'Parties and counsel change only while the case is pending in the court.');
   assertFileHere(c);
   let what;
   try { what = await partiesSvc.apply(c, req.params.kind, req.body, req.user); } catch (e) { throw new HttpError(e.status || 500, e.message); }
@@ -682,11 +687,35 @@ router.post('/cases/:id/disposal', wrap(async (req, res) => {
   if (remark === 'Other') remark = String(req.body.other || '').trim();
   if (!remark) throw new HttpError(400, 'Choose the remark, or type it under Other.');
   const date = DAY.test(req.body.date || '') ? req.body.date : today();
-  c.disposal = { remark: remark.slice(0, 300), date, byName: req.user.fullName, at: new Date() };
-  c.status = 'disposed';
-  await c.save();
-  await audit.log(req, 'case_disposed', { unitKey: c.assignedUnit, details: { caseId: String(c._id), suitNumber: c.suitNumber, remark } });
-  res.json({ case: serialize(c, await unitNames()) });
+  if (date > today()) throw new HttpError(400, 'The date of disposal cannot be in the future.');
+  const removed = await disposal.dispose(c, { remark, date, user: req.user });
+  await audit.log(req, 'case_disposed', { unitKey: c.assignedUnit, details: { caseId: String(c._id), suitNumber: c.suitNumber, remark, datesRemoved: removed } });
+  res.json({ case: serialize(c, await unitNames(), { canUndo: disposal.canUndo(c, req.user) }), datesRemoved: removed });
+}));
+
+// A remark entered in error: undone by the person who recorded it, the same day.
+router.post('/cases/:id/disposal/undo', wrap(async (req, res) => {
+  const c = await load(req.params.id, req.user);
+  assertCourtWork(req.user, c);
+  if (c.status !== 'disposed') throw new HttpError(409, `${c.suitNumber} is not disposed of.`);
+  if (!disposal.canUndo(c, req.user)) throw new HttpError(403, `Only ${c.disposal && c.disposal.byName ? c.disposal.byName : 'the person who recorded the remark'} can undo it, and only on the day it was recorded. Ask an administrator to reopen the case.`);
+  const was = c.disposal.remark;
+  const back = await disposal.reopen(c, { user: req.user, reason: 'Remark entered in error', kind: 'undone' });
+  await audit.log(req, 'case_disposal_undone', { unitKey: c.assignedUnit, details: { caseId: String(c._id), suitNumber: c.suitNumber, remark: was, datesReturned: back } });
+  res.json({ case: serialize(c, await unitNames()), datesReturned: back });
+}));
+
+// After that day, an administrator reopens a disposed case, giving the reason.
+router.post('/cases/:id/reopen', wrap(async (req, res) => {
+  if (!isAdmin(req.user)) throw new HttpError(403, 'Only an administrator can reopen a disposed case.');
+  const c = await load(req.params.id, req.user);
+  if (c.status !== 'disposed') throw new HttpError(409, `${c.suitNumber} is not disposed of.`);
+  const reason = String(req.body.reason || '').trim();
+  if (!reason) throw new HttpError(400, 'Give the reason for reopening the case.');
+  const was = c.disposal ? c.disposal.remark : '';
+  const back = await disposal.reopen(c, { user: req.user, reason, kind: 'reopened' });
+  await audit.log(req, 'case_reopened', { unitKey: c.assignedUnit, details: { caseId: String(c._id), suitNumber: c.suitNumber, remark: was, reason, datesReturned: back } });
+  res.json({ case: serialize(c, await unitNames()), datesReturned: back });
 }));
 
 // A case filed before the system, entered by the court registry.
