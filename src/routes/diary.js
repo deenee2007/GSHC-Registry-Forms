@@ -23,6 +23,7 @@ const TIME = /^([01]?\d|2[0-3]):[0-5]\d$/;
 const canView = (u, key) => !!key && canAccessUnit(u, key) && (can(u, 'view') || u.signerRoles.length > 0);
 // Who writes in it: staff who create or edit, and the court's judges.
 const canWrite = (u, key) => canView(u, key) && (can(u, 'create') || can(u, 'edit') || u.signerRoles.length > 0);
+const disposalSvc = require('../services/disposal');
 const partiesSvc = require('../services/parties');
 const partiesOf = (c) => [c.firstParty, c.secondParty].map(p => String(p || '').trim().replace(/\s*\n+\s*/g, ', ')).filter(Boolean).join(' v. ');
 
@@ -77,7 +78,8 @@ async function makeEntry(req, src) {
     if (!mongoose.isValidObjectId(src.caseId)) throw new HttpError(404, 'Case not found.');
     const c = await Case.findById(src.caseId);
     if (!c || c.assignedUnit !== unit.key || !['assigned', 'dispatched', 'received', 'disposed'].includes(c.status)) throw new HttpError(400, 'That case is not in this court\'s register.');
-    if (!['received', 'disposed'].includes(c.status)) throw new HttpError(409, `The file of ${c.suitNumber} has not been received in this court yet. Mark it received in the Case Register before fixing a date.`);
+    if (c.status === 'disposed') throw new HttpError(409, `${c.suitNumber} was disposed of and is locked: no date can be fixed for it.`);
+    if (c.status !== 'received') throw new HttpError(409, `The file of ${c.suitNumber} has not been received in this court yet. Mark it received in the Case Register before fixing a date.`);
     Object.assign(fields, { case: c._id, suitNumber: c.suitNumber, parties: partiesOf(c), nature: c.nature || '', counsel: partiesSvc.sideCounsel(c, 'first'), counselSecond: partiesSvc.sideCounsel(c, 'second') });
   } else {
     const suitNumber = String(src.suitNumber || '').trim().slice(0, 60);
@@ -185,18 +187,17 @@ router.post('/:id/outcome', wrap(async (req, res) => {
   if (disposal === 'Other') disposal = String(b.disposalOther || '').trim();
   const c = disposal && e.case ? await Case.findById(e.case) : null;
   if (disposal && !c) throw new HttpError(400, 'Only a case in the Case Register can be marked disposed here.');
-  if (c && (c.assignedUnit !== e.unitKey || !['received', 'disposed'].includes(c.status))) throw new HttpError(409, `The file of ${c.suitNumber} has not been received in this court, so it cannot be marked disposed here.`);
+  if (c && c.status === 'disposed') throw new HttpError(409, `${c.suitNumber} was already disposed of and is locked.`);
+  if (c && (c.assignedUnit !== e.unitKey || c.status !== 'received')) throw new HttpError(409, `The file of ${c.suitNumber} has not been received in this court, so it cannot be marked disposed here.`);
+  if (c && next) throw new HttpError(400, 'A case disposed of has no next date. Leave the next date empty, or leave the case continuing.');
   e.status = 'done';
   e.outcome = { text, nextDate: next ? next.date : '', at: new Date(), byName: req.user.fullName };
   e.updatedByName = req.user.fullName;
   await e.save();
   if (next) { await next.save(); await tellParties(next, false); }
   if (c) {
-    c.disposal = { remark: disposal.slice(0, 300), date: e.date, byName: req.user.fullName, at: new Date() };
-    c.status = 'disposed';
-    if (!c.receivedAt) Object.assign(c, { receivedAt: new Date(), receivedByName: req.user.fullName });
-    await c.save();
-    await audit.log(req, 'case_disposed', { unitKey: c.assignedUnit, details: { caseId: String(c._id), suitNumber: c.suitNumber, remark: disposal, from: 'diary' } });
+    const removed = await disposalSvc.dispose(c, { remark: disposal, date: e.date, user: req.user });
+    await audit.log(req, 'case_disposed', { unitKey: c.assignedUnit, details: { caseId: String(c._id), suitNumber: c.suitNumber, remark: disposal, from: 'diary', datesRemoved: removed } });
   }
   await audit.log(req, 'diary_outcome', { unitKey: e.unitKey, details: { entryId: String(e._id), suitNumber: e.suitNumber, outcome: text, nextDate: next ? next.date : null } });
   res.json({ entry: serialize(e, req.user), next: next ? serialize(next, req.user) : null });

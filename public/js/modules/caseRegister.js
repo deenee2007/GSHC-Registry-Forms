@@ -111,15 +111,20 @@
           if (c.status !== 'dispatched') { b.disabled = true; b.title = 'Waiting for the Process Registry to dispatch the file'; }
           return el('div', { class: 'reg-remark' }, [b, note]);
         };
+        // A disposed case is locked: its remark only, with Undo for the person
+        // who recorded it (the same day) and Reopen for an administrator.
         const remarks = (c) => c.reassignedAway ? el('span', null, remarkText(c)) : el('div', { class: 'reg-remark' }, [
-          c.disposal ? el('span', null, c.disposal.remark) : null,
+          c.disposal ? el('span', null, [c.disposal.remark, ' ', el('span', { class: 'reg-lock', title: 'Disposed of: the case is locked' }, '🔒')]) : null,
           !c.disposal && c.reassignedFrom ? el('span', { class: 'muted' }, `Reassigned from High Court No. ${c.reassignedFrom.roman}`) : null,
-          canWork && fileHere(c) ? btn(c.disposal ? 'Change' : 'Record Remark', 'btn--ghost', () => remark(c)) : null
+          canWork && fileHere(c) ? btn('Record Remark', 'btn--ghost', () => remark(c)) : null,
+          c.disposal && c.canUndo ? btn('Undo', 'btn--ghost', () => undo(c)) : null,
+          c.disposal && isAdmin ? btn('Reopen', 'btn--ghost', () => reopen(c)) : null
         ]);
         const COLS = [
-          ['S/No', 'c-sn', c => String(c.sn)], ['Name of case', 'c-name', c => P.parties(c)], ['Suit number', 'c-suit', c => el('div', { class: 'reg-remark' }, [P.caseNo(ui, c.suitNumber), btn('View', 'btn--ghost', () => view(c))])],
+          ['S/No', 'c-sn', c => String(c.sn)], ['Name of case', 'c-name', c => P.parties(c)], ['Suit number', 'c-suit', c => P.caseNo(ui, c.suitNumber)],
           ['Date of filing', 'c-date', c => P.day(c.filedOn)], ['Date of assignment', 'c-date', c => P.day(assignedOn(c))], ['Type of case', 'c-type', c => c.nature || ''],
-          ['Date received', 'c-date', received], ['Date of disposal', 'c-date', c => c.disposal ? P.day(c.disposal.date) : ''], ['Remarks', 'c-remark', remarks]
+          ['Date received', 'c-date', received], ['Date of disposal', 'c-date', c => c.disposal ? P.day(c.disposal.date) : ''],
+          ['View', 'c-view', c => btn('View', 'btn--ghost', () => view(c))], ['Remarks', 'c-remark', remarks]
         ];
         list.replaceChildren(el('div', { class: 'table-scroll' }, [el('table', { class: 'data-table register-table' }, [
           el('thead', null, el('tr', null, COLS.map(([label, cls]) => el('th', { class: cls }, label)))),
@@ -130,8 +135,10 @@
         ])]));
       }
 
-      // Nothing is done on a case here until its file is received in this court.
-      const fileHere = (c) => !c.reassignedAway && ['received', 'disposed'].includes(c.status);
+      // A case is worked on here only while pending before this court: from
+      // the receipt of its file until it is disposed of (then it is locked).
+      const fileHere = (c) => !c.reassignedAway && c.status === 'received';
+      const isAdmin = window.App.permissions.isAdmin();
 
       // A case reassigned away: its first assignment here, and the remark.
       const assignedOn = (c) => c.reassignedAway ? c.reassignedAway.assignedAt : c.assignedAt;
@@ -145,9 +152,16 @@
         const close = el('button', { class: 'btn btn--ghost', onclick: () => dialog.close() }, '✕  Close');
         if (c.reassignedAway) full.reassignedAway = c.reassignedAway;
         const here = fileHere(full);
-        const waiting = !c.reassignedAway && !here ? el('div', { class: 'doc-status__note doc-status__note--warn' }, [el('strong', null, 'File not yet received in this court. '),
-          full.status === 'dispatched' ? 'Mark it received in the Case Register (File received) to work on the case: remarks, processes, parties, documents and court dates.'
-            : 'The file is still at the Process Registry. Once it is dispatched and marked received here, the case can be worked on.']) : null;
+        const reopened = (full.reopenLog || []).length ? el('div', { class: 'doc-status__note' }, [el('strong', null, 'Disposal history: '),
+          ...full.reopenLog.map(l => el('div', null, `${l.remark} (${P.day(l.date)}, by ${l.disposedBy}): ${l.kind === 'undone' ? 'undone the same day' : 'reopened'} by ${l.byName}, ${P.day(l.at)}${l.kind === 'reopened' ? `. Reason: ${l.reason}` : ''}`))]) : null;
+        const waiting = c.reassignedAway ? null
+          : full.status === 'disposed' ? el('div', { class: 'doc-status__note doc-status__note--bad' }, [el('strong', null, `Disposed of: ${full.disposal ? full.disposal.remark : ''}${full.disposal ? `, ${P.day(full.disposal.date)}` : ''}. `),
+            'The case is locked: it can be viewed and appears in reports, but nothing more can be done on it. ',
+            c.canUndo ? 'You recorded the remark today, so you can still Undo it in the register. ' : '',
+            isAdmin ? 'As an administrator you can Reopen it from the register, giving the reason.' : 'If the remark was entered in error, ask an administrator to reopen it.'])
+          : !here ? el('div', { class: 'doc-status__note doc-status__note--warn' }, [el('strong', null, 'File not yet received in this court. '),
+            full.status === 'dispatched' ? 'Mark it received in the Case Register (File received) to work on the case: remarks, processes, parties, documents and court dates.'
+              : 'The file is still at the Process Registry. Once it is dispatched and marked received here, the case can be worked on.']) : null;
         const formBtn = canWork && here ? el('button', { class: 'btn btn--ghost', onclick: () => { dialog.close(); ctx.workflow.fillFromCase({ caseId: full.id, unitKey: unit.key }); } }, '📝 Fill a Form') : null;
         const fixBtn = canWork && here && window.App.diaryUi ? el('button', { class: 'btn btn--primary', onclick: async () => { dialog.close(); await window.App.diaryUi.fix(ctx, unit, { caseId: full.id }); } }, '📅 Fix a Date') : null;
         const dates = el('div', { class: 'case-docs' });
@@ -159,7 +173,7 @@
             { label: 'Outcome', value: e => e.status === 'done' ? e.outcome.text : 'To come' }
           ], r.entries) : el('p', { class: 'muted' }, 'No date in the Court Diary yet.'));
         }).catch(() => dates.remove());
-        ui.modal(`Case ${full.suitNumber}`, el('div', null, [el('div', { class: 'doc-preview__actions' }, [close, formBtn, fixBtn]), waiting, P.details(ui, full, settings), dates, partiesPanel(full, () => { dialog.close(); view(c); load(); }), P.processesPanel(ctx, full, settings, unit), P.documentsPanel(ui, api, full.id)]),
+        ui.modal(`Case ${full.suitNumber}`, el('div', null, [el('div', { class: 'doc-preview__actions' }, [close, formBtn, fixBtn]), waiting, reopened, P.details(ui, full, settings), dates, partiesPanel(full, () => { dialog.close(); view(c); load(); }), P.processesPanel(ctx, full, settings, unit), P.documentsPanel(ui, api, full.id)]),
           { noFooter: true, wide: true, onOpen: (o) => { dialog = o; } });
       }
 
@@ -266,16 +280,41 @@
       function remark(c) {
         const pick = el('select', null, [...data.remarks, 'Other'].map(r => el('option', { value: r }, r === 'Other' ? 'Other (type it)' : r)));
         const other = el('input', { type: 'text', placeholder: 'Type the remark' });
-        const date = el('input', { type: 'date', value: (c.disposal && c.disposal.date) || new Date().toISOString().slice(0, 10) });
-        if (c.disposal) { if (data.remarks.includes(c.disposal.remark)) pick.value = c.disposal.remark; else { pick.value = 'Other'; other.value = c.disposal.remark; } }
+        const date = el('input', { type: 'date', value: new Date().toISOString().slice(0, 10), max: new Date().toISOString().slice(0, 10) });
         const otherRow = ui.field('Other remark', other);
         const sync = () => { otherRow.hidden = pick.value !== 'Other'; };
         pick.addEventListener('change', sync); sync();
-        ui.modal(`Disposal · ${c.suitNumber}`, el('div', null, [ui.field('Remarks', pick), otherRow, ui.field('Date of disposal', date)]), {
-          confirmText: 'Save',
+        ui.modal(`Disposal · ${c.suitNumber}`, el('div', null, [
+          el('div', { class: 'notice notice--warn' }, 'Recording the remark disposes of the case and locks it: no more remarks, processes, parties, documents or court dates. Its dates still fixed in the Court Diary are taken out. If it is entered in error, you can Undo it today; after today only an administrator can reopen the case.'),
+          ui.field('Remarks', pick), otherRow, ui.field('Date of disposal', date)]), {
+          confirmText: 'Dispose of the Case', confirmClass: 'btn--danger',
           onConfirm: async () => {
-            await api.post(`/process/cases/${c.id}/disposal`, { remark: pick.value, other: other.value, date: date.value });
-            ui.toast('Saved in the register.', 'success'); load(); return true;
+            const r = await api.post(`/process/cases/${c.id}/disposal`, { remark: pick.value, other: other.value, date: date.value });
+            ui.toast(`${c.suitNumber} disposed of and locked.${r.datesRemoved ? ` ${r.datesRemoved} court date(s) taken out of the diary.` : ''}`, 'success', 6000); load(); return true;
+          }
+        });
+      }
+
+      // A remark entered in error, undone the same day by the person who recorded it.
+      async function undo(c) {
+        if (!confirm(`Undo the remark "${c.disposal.remark}" on ${c.suitNumber}? The case becomes pending again. Court dates taken out when it was disposed of, and still to come, return to the diary.`)) return;
+        try {
+          const r = await api.post(`/process/cases/${c.id}/disposal/undo`);
+          ui.toast(`${c.suitNumber} is pending again.${r.datesReturned ? ` ${r.datesReturned} court date(s) back in the diary.` : ''}`, 'success', 6000); load();
+        } catch (e) { ui.toast(e.message, 'error', 8000); }
+      }
+
+      // An administrator reopens a disposed case, giving the reason.
+      function reopen(c) {
+        const reason = el('textarea', { rows: 3, maxlength: '500', placeholder: 'e.g. Remark entered in error; the case was adjourned, not struck out' });
+        ui.modal(`Reopen · ${c.suitNumber}`, el('div', null, [
+          el('p', null, `Disposed of: ${c.disposal.remark}, ${P.day(c.disposal.date)}, recorded by ${c.disposal.byName}. Reopening makes the case pending again in this court; the disposal is kept in its history with your reason.`),
+          ui.field('Reason for reopening', reason)]), {
+          confirmText: 'Reopen the Case',
+          onConfirm: async () => {
+            if (!reason.value.trim()) { ui.toast('Give the reason for reopening.', 'error'); return undefined; }
+            const r = await api.post(`/process/cases/${c.id}/reopen`, { reason: reason.value.trim() });
+            ui.toast(`${c.suitNumber} reopened.${r.datesReturned ? ` ${r.datesReturned} court date(s) back in the diary.` : ''}`, 'success', 6000); load(); return true;
           }
         });
       }

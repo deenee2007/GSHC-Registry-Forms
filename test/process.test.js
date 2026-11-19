@@ -203,11 +203,16 @@ test('the court sees its new case, marks the file received and records the dispo
   assert.equal((await u.court3.post(`/api/process/cases/${c.id}/received`)).body.case.status, 'received');
   const d1 = await u.court3.post(`/api/process/cases/${c.id}/disposal`, { remark: 'Other', other: '' });
   assert.equal(d1.status, 400, 'Other needs words');
-  const d = await u.court3.post(`/api/process/cases/${c.id}/disposal`, { remark: 'Judgment entered', date: '2026-12-01' });
+  const future = new Date(Date.now() + 5 * 864e5).toISOString().slice(0, 10);
+  assert.equal((await u.court3.post(`/api/process/cases/${c.id}/disposal`, { remark: 'Judgment entered', date: future })).status, 400, 'not a date to come');
+  const d = await u.court3.post(`/api/process/cases/${c.id}/disposal`, { remark: 'Judgment entered' });
   assert.equal(d.body.case.status, 'disposed');
   assert.equal(d.body.case.disposal.remark, 'Judgment entered');
+  assert.equal((await u.court3.post(`/api/process/cases/${c.id}/disposal`, { remark: 'Other', other: 'Settled out of court' })).status, 409, 'locked once disposed');
+  // Entered in error: undone the same day by its recorder, then recorded again.
+  assert.equal((await u.court3.post(`/api/process/cases/${c.id}/disposal/undo`)).body.case.status, 'received');
   const o = await u.court3.post(`/api/process/cases/${c.id}/disposal`, { remark: 'Other', other: 'Settled out of court' });
-  assert.equal(o.body.case.disposal.remark, 'Settled out of court', 'a remark can be corrected');
+  assert.equal(o.body.case.disposal.remark, 'Settled out of court', 'a remark entered in error is undone, then recorded again');
 
   const e = await u.court3.post('/api/process/register/earlier', { unitKey: 'hc3', suitNumber: 'GM/77/2024', nature: 'Contract', firstParty: 'A', secondParty: 'B', filedOn: '2024-03-01', assignedOn: '2024-03-05' });
   assert.equal(e.status, 201, JSON.stringify(e.body));
@@ -986,4 +991,53 @@ test('the court does nothing on a case until it has received the file: remark, p
   assert.equal((await u.court3.post('/api/diary', { unitKey: 'hc3', caseId: c.id, date: day, business: 'Mention' })).status, 201);
   assert.equal((await u.court3.get(`/api/cases/fill?formType=hearing-notice&caseId=${c.id}`)).status, 200);
   assert.equal((await u.court3.post(`/api/process/cases/${c.id}/disposal`, { remark: 'Struck out' })).status, 200, 'and the remark, once received');
+});
+
+test('a disposed case is locked; its recorder can undo the remark the same day, after that only an administrator reopens it', async () => {
+  const { Case, DiaryEntry } = require('../src/models');
+  const c = await fileAndRegister({ firstParty: 'Locked Party' });
+  await u.cj.post(`/api/process/cases/${c.id}/assign`, { unitKey: 'hc3', pin: '1357' });
+  await receiveAtHc3(c.id);
+  const inDays = (n) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
+  assert.equal((await u.court3.post('/api/diary', { unitKey: 'hc3', caseId: c.id, date: inDays(10), business: 'Mention' })).status, 201);
+  // Disposed: its date still to come leaves the diary, and nothing more can be done.
+  const d = await u.court3.post(`/api/process/cases/${c.id}/disposal`, { remark: 'Struck out' });
+  assert.equal(d.body.datesRemoved, 1);
+  assert.equal(await DiaryEntry.countDocuments({ case: c.id, status: 'fixed' }), 0);
+  const tries = {
+    remark: (await u.court3.post(`/api/process/cases/${c.id}/disposal`, { remark: 'Withdrawn' })).status,
+    process: (await u.court3.post(`/api/process/cases/${c.id}/processes`, { processType: 'Motion on notice' })).status,
+    party: (await u.court3.post(`/api/process/cases/${c.id}/parties/join`, { side: 'second', name: 'Too Late' })).status,
+    date: (await u.court3.post('/api/diary', { unitKey: 'hc3', caseId: c.id, date: inDays(12), business: 'Mention' })).status
+  };
+  assert.deepEqual(tries, { remark: 409, process: 409, party: 409, date: 409 }, 'locked');
+  assert.equal((await u.court3.get(`/api/process/cases/${c.id}/documents`)).body.canUpload, false, 'no document by the court');
+  assert.equal((await u.clerk.get(`/api/process/cases/${c.id}/documents`)).body.canUpload, false, 'nor by the Process Registry');
+  assert.equal((await u.court3.get(`/api/process/cases/${c.id}/processes`)).body.canFile, false);
+  assert.equal((await u.court3.get(`/api/process/cases/${c.id}`)).status, 200, 'it can still be viewed');
+  // Undo: only its recorder, only the same day.
+  const other = await makeUser({ fullName: 'Court Three Second', email: 'hc3b@example.com', unitKeys: ['hc3'], privileges: ['view', 'create', 'edit'] });
+  assert.equal((await other.post(`/api/process/cases/${c.id}/disposal/undo`)).status, 403, 'not someone else');
+  assert.equal((await u.court3.get('/api/process/register?unitKey=hc3')).body.cases.find(x => x.id === c.id).canUndo, true);
+  await Case.updateOne({ _id: c.id }, { 'disposal.at': new Date(Date.now() - 864e5) });
+  const late = await u.court3.post(`/api/process/cases/${c.id}/disposal/undo`);
+  assert.equal(late.status, 403, 'not the next day');
+  assert.match(late.body.error, /administrator to reopen/);
+  // Reopen: administrators only, with the reason.
+  assert.equal((await u.court3.post(`/api/process/cases/${c.id}/reopen`, { reason: 'x' })).status, 403);
+  assert.equal((await admin.post(`/api/process/cases/${c.id}/reopen`, {})).status, 400, 'the reason is needed');
+  const r = await admin.post(`/api/process/cases/${c.id}/reopen`, { reason: 'Remark entered in error: the case was adjourned' });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.case.status, 'received');
+  assert.equal(r.body.case.disposal, null);
+  assert.equal(r.body.datesReturned, 1, 'its date still to come is back in the diary');
+  assert.equal(await DiaryEntry.countDocuments({ case: c.id, status: 'fixed', date: inDays(10) }), 1);
+  assert.deepEqual(r.body.case.reopenLog.map(l => [l.kind, l.remark]), [['reopened', 'Struck out']]);
+  assert.equal((await u.court3.post(`/api/process/cases/${c.id}/processes`, { processType: 'Motion on notice' })).status, 201, 'pending again: work goes on');
+  const { AuditLog } = require('../src/models');
+  assert.ok(await AuditLog.exists({ action: 'case_reopened' }));
+  // From the diary: a disposal takes no next date.
+  const e = await u.court3.post('/api/diary', { unitKey: 'hc3', caseId: c.id, date: inDays(-1), business: 'Hearing' });
+  const bad = await u.court3.post(`/api/diary/${e.body.entry.id}/outcome`, { outcome: 'Judgment.', disposal: 'Judgment entered', nextDate: inDays(5), nextBusiness: 'Mention' });
+  assert.equal(bad.status, 400);
 });
