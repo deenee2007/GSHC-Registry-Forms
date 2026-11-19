@@ -14,6 +14,7 @@
 const { Case, DiaryEntry } = require('../models');
 const catalogue = require('../forms/catalogue');
 const processSvc = require('./process');
+const { BOOKS } = processSvc;
 const sheetReader = require('./sheetReader');
 
 const MAX_ROWS = 5000;
@@ -21,7 +22,7 @@ const MAX_ROWS = 5000;
 const COLUMNS = [
   ['remarks', /remark/], ['disposal', /dispos/], ['received', /receiv/], ['assigned', /assign/], ['filed', /fil(ing|ed)/],
   ['nextDate', /next/], ['business', /coming up|business|purpose|stage/], ['nature', /type of case|nature/],
-  ['register', /register|book|case type|civil|criminal/], ['parties', /name of case|parties|case name|title/],
+  ['register', /register|book|case type|civil|criminal|motion|fundamental/], ['parties', /name of case|parties|case name|title/],
   ['sn', /^s ?no$|^serial|^no$/], ['suit', /suit|case no|number/]
 ];
 const DATE_COLS = ['filed', 'assigned', 'received', 'disposal', 'nextDate'];
@@ -84,7 +85,8 @@ function caseTypeFor(regText, suitNumber, types) {
   if (byLabel) return { type: byLabel };
   const letter = (/\/\d+([a-z]+)\//i.exec(suitNumber || '') || [])[1];
   const bySuffix = letter && types.find(t => t.suffix === letter.toLowerCase());
-  const book = /crim/.test(r) ? 'criminal' : /civ/.test(r) ? 'civil' : null;
+  const book = /fundamental|human right|\bfhr\b|\bfr\b/.test(r) ? 'fhr' : /motion/.test(r) ? 'motions'
+    : /crim/.test(r) ? 'criminal' : /civ/.test(r) ? 'civil' : null;
   if (bySuffix && (!book || bySuffix.book === book)) return { type: bySuffix };
   if (book) return { type: types.find(t => t.book === book && !t.suffix) || types.find(t => t.book === book) || types[0] };
   return { type: bySuffix || types.find(t => t.book === 'civil' && !t.suffix) || types[0], guessed: !bySuffix };
@@ -126,7 +128,7 @@ async function analyse(buffer, fileName, unit) {
     else if (existing.has(suitNumber.toLowerCase())) problems.push('Already in a Case Register');
     if (suitNumber) seen.add(suitNumber.toLowerCase());
     const { type, guessed } = caseTypeFor(cell(r, 'register'), suitNumber, settings.caseTypes);
-    if (guessed) notes.push(`Register not given: put in the ${type.book === 'criminal' ? 'Criminal' : 'Civil'} Register`);
+    if (guessed) notes.push(`Register not given: put in the ${(BOOKS.find(b => b.key === type.book) || BOOKS[0]).label}`);
     const [firstParty, secondParty] = splitParties(cell(r, 'parties'));
     const remark = text(r, 'remarks');
     let disposed = !!dates.disposal;

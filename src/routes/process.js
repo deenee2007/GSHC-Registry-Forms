@@ -191,7 +191,7 @@ async function cleanCase(body) {
 // ── Settings (read by everyone who works with cases; changed by admins) ──
 router.get('/settings', wrap(async (req, res) => {
   const [s, courts, rot] = await Promise.all([processSvc.getSettings(), processSvc.courts(), processSvc.rotationState()]);
-  res.json({ ...s, remarks: processSvc.REMARKS, reassignReasons: processSvc.REASSIGN_REASONS, docTypes: DOC_TYPES, rotation: rot,
+  res.json({ ...s, books: processSvc.BOOKS, remarks: processSvc.REMARKS, reassignReasons: processSvc.REASSIGN_REASONS, docTypes: DOC_TYPES, rotation: rot,
     courts: courts.map(c => ({ key: c.key, name: c.name, courtNo: c.courtNo, roman: processSvc.roman(c.courtNo) })),
     me: { inProcess: inProcess(req.user), registrar: isRegistrar(req.user), chiefJudge: isCJ(req.user) } });
 }));

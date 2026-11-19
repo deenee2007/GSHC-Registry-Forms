@@ -153,6 +153,12 @@ h1 { font-size: 1.35rem; margin: 0; }
 .tab { background: none; border: none; padding: .6rem 1rem; cursor: pointer; font-size: .9rem; color: var(--muted);
   border-bottom: 2px solid transparent; margin-bottom: -2px; font-weight: 600; }
 .tab.is-active { color: var(--green-700); border-bottom-color: var(--green-700); }
+/* Many tabs on a phone (the four register books): the bar scrolls by
+   itself rather than pushing the page sideways. */
+@media (max-width: 720px) {
+  .tabs { overflow-x: auto; scrollbar-width: thin; -webkit-overflow-scrolling: touch; }
+  .tab { white-space: nowrap; flex: 0 0 auto; padding: .55rem .7rem; font-size: .85rem; }
+}
 .tab-panel > .btn { margin-bottom: 1rem; }
 
 /* ---------- Toast ---------- */

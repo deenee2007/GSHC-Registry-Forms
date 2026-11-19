@@ -183,6 +183,7 @@ async function seedAll(log = console.log) {
   await usernamesToEmail(log);
   await fillReceiptKeys(log);
   await require('./process').undoOfficialFeesOnce(log);
+  await require('./process').addRegisterTypesOnce(log);
   const created = await seedAdmin(log);
   if (config.adminReset) await resetAdmin({ log });
   return created;

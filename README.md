@@ -324,8 +324,14 @@ New cases are filed, numbered and assigned to a court here.
    mark a file received only after it is dispatched.
 5. **Case Register** (court registry): **📒 Case Register** in the menu
    (and on the court's page; someone in several courts chooses the court)
-   keeps two books, **Civil Register** and **Criminal Register**, as
-   on paper. Each is numbered from 1 and has the columns S/No, Name of case,
+   keeps four books, **Civil Register**, **Criminal Register**, **Motions
+   Register** and **Fundamental Human Rights Register**, as on paper. The
+   book follows the case type: Motion (GM/12<sup>m</sup>/2026) and
+   Fundamental Human Rights (GM/12<sup>fr</sup>/2026) each have their own
+   letter, count and book; Petition (p) stays in the Civil book. A Motion
+   case is one filed on its own for a particular prayer (civil or criminal,
+   bail among them); a motion with a writ or in a pending case is a process
+   filed in that case. Each is numbered from 1 and has the columns S/No, Name of case,
    Suit number, Date of filing, Date of assignment, Type of case, Date
    received, Date of disposal and Remarks. **File received** when the file
    arrives; **Record Remark** with the date of disposal when the case is
@@ -463,7 +469,8 @@ Roles: give the **Process Registrar** and **Hon. Chief Judge** signing roles
 in Settings → Users; Process Registry staff need the Process Registry unit
 (the Process Registrar role alone is enough to see it).
 Settings → **Process Registry**: the number prefix (GM), case types with their
-letters and register book (Civil or Criminal), the payment details on
+letters and register book (Civil, Criminal, Motions or Fundamental Human
+Rights), the payment details on
 the invoice, whether the receipt upload is required, the fee schedule, and the courts that hear EFCC matters. The Process
 Registry's **Summary** tab gives cases registered by type, official cases,
 fees recorded and cases assigned per court for any period. Cases are in the
