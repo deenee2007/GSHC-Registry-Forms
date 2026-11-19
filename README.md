@@ -96,7 +96,13 @@ outside the system (deponents, sureties, counsel) have no digital signature
 line; finalising them still locks them and issues a verification code.
 
 ## Screens
-* **Home:** what needs your attention, quick links to each form, notifications.
+* **The bar at the top** (every screen, phones too): the **🔔** bell with the
+  number unread in red; clicked, it opens the notifications (newest first,
+  unread marked, scrolling), each opening what it is about, with **Mark all
+  as read**, **✕** to clear one and **Clear all**. On the right, the user's
+  name, role and initials; clicked, **My Account**, **My Signature**
+  (signers), **Help** and **Sign Out**.
+* **Home:** what needs your attention and quick links to each form.
 * **Awaiting My Signature** (signers): forms sent to you; review, approve
   with your PIN, or return with comments.
 * **My Submissions:** forms you submitted, under Approved (ready to print),

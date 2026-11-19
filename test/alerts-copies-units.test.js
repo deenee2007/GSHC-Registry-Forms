@@ -222,3 +222,25 @@ test('deactivate a unit (not while it has work in progress), activate it again, 
   const acts = (await AuditLog.find({ action: /^unit_/ })).map(a => a.action);
   assert.ok(['unit_deactivated', 'unit_activated', 'unit_deleted'].every(a => acts.includes(a)), 'each step is in the audit log');
 });
+
+test('the bell: notifications are marked read and cleared, one or all, each person only their own', async () => {
+  await submitSummons();
+  await submitSummons();
+  let r = await u.judge.get('/api/notifications');
+  assert.ok(r.body.notifications.length >= 2 && r.body.unread >= 2);
+  const [first, second] = r.body.notifications;
+  // Someone else cannot touch them.
+  assert.equal((await u.clerk.post('/api/notifications/clear', { ids: [first.id] })).body.cleared, 0);
+  r = await u.judge.post('/api/notifications/clear', { ids: [first.id] });
+  assert.equal(r.body.cleared, 1);
+  r = await u.judge.get('/api/notifications');
+  assert.ok(!r.body.notifications.some(n => n.id === first.id), 'one cleared');
+  assert.ok(r.body.notifications.some(n => n.id === second.id));
+  assert.equal((await u.judge.post('/api/notifications/clear', {})).body.cleared, 0, 'nothing named, nothing cleared');
+  await u.judge.post('/api/notifications/read', { all: true });
+  assert.equal((await u.judge.get('/api/notifications')).body.unread, 0);
+  r = await u.judge.post('/api/notifications/clear', { all: true });
+  assert.ok(r.body.cleared >= 1);
+  r = await u.judge.get('/api/notifications');
+  assert.deepEqual([r.body.notifications.length, r.body.unread], [0, 0], 'all cleared');
+});

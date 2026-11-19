@@ -37,7 +37,7 @@
     const list = await units(true);
     const group = (title) => _nav.appendChild(ui.el('div', { class: 'nav-group' }, title));
 
-    _nav.appendChild(navItem('🏠  Home', loadDashboard, { 'data-nav': 'home' }, 'notifications'));
+    _nav.appendChild(navItem('🏠  Home', loadDashboard, { 'data-nav': 'home' }));
     if ((user.signerRoles || []).includes('chief_judge')) _nav.appendChild(navItem('⚖  Awaiting Assignment', () => loadModule('assign'), { 'data-nav': 'assign' }, 'assign'));
     if (permissions.isSigner(user)) _nav.appendChild(navItem('✍  Awaiting My Signature', () => loadModule('inbox'), { 'data-nav': 'inbox' }, 'inbox'));
     if (permissions.isAdmin(user) || permissions.can('finalize', user)) {
@@ -101,7 +101,7 @@
       const [stats, notes] = await Promise.all([api.get('/records/stats'), api.get('/notifications?unread=1')]);
       setBadge('inbox', stats.inbox);
       setBadge('approved', stats.approvedUnprinted);
-      setBadge('notifications', notes.unread);
+      if (window.App.notices) window.App.notices.setCount(notes.unread); // the bell in the header
       // Cases for the Chief Judge to assign, and filings for the Process Registrar to register.
       let cases = { awaitingAssignment: 0, toRegister: 0, newCases: 0 };
       if (badges.assign || badges.process || badges.newcases) { try { cases = await api.get('/process/counts'); } catch (e) { /* keep zero */ } }
@@ -114,7 +114,7 @@
       setBadge('leave', leave);
       // Phones: the menu button shows whether anything waits inside the menu.
       const menu = document.getElementById('menu-badge');
-      const waiting = stats.inbox + stats.approvedUnprinted + notes.unread + cases.awaitingAssignment + cases.toRegister + (cases.newCases || 0) + leave;
+      const waiting = stats.inbox + stats.approvedUnprinted + cases.awaitingAssignment + cases.toRegister + (cases.newCases || 0) + leave;
       if (menu) { menu.textContent = waiting > 99 ? '99+' : String(waiting); menu.hidden = !waiting; }
     } catch (e) { /* offline: keep the last numbers */ }
   }

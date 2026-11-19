@@ -172,13 +172,37 @@
     const roleText = user.role === 'admin' ? 'Administrator'
       : (user.signerRoles || []).length ? user.signerRoles.map(r => App.workflow.roleLabel(r)).join(', ') : 'Unit User';
 
-    // Phones: the sidebar becomes a drawer opened from a top bar.
+    // The header, on every screen: the notifications bell and the user's
+    // menu on the right. On phones it also has the menu button, and the
+    // sidebar becomes a drawer opened from it.
     const menuBadge = ui.el('span', { class: 'topbar__badge', id: 'menu-badge', hidden: 'hidden' }, '');
     const menuBtn = ui.el('button', { class: 'topbar__menu', type: 'button', 'aria-label': 'Open menu', 'aria-expanded': 'false', onclick: () => toggleMenu() }, ['☰', menuBadge]);
+    const name = [user.title, user.fullName].filter(Boolean).join(' ');
+    const initials = String(user.fullName || user.username || '?').split(/\s+/).filter(w => /^[A-Za-z]/.test(w)).slice(0, 2).map(w => w[0].toUpperCase()).join('') || '?';
+    const go = (fn) => () => { closeUserMenu(); fn(); };
+    const userMenu = ui.el('div', { class: 'user-menu', hidden: 'hidden', onclick: (e) => e.stopPropagation() }, [
+      ui.el('div', { class: 'user-menu__who' }, [ui.el('strong', null, name), ui.el('span', null, roleText)]),
+      ui.el('button', { class: 'user-menu__item', type: 'button', onclick: go(() => App.router.loadModule('account')) }, '🔑  My Account'),
+      App.permissions.isSigner(user) ? ui.el('button', { class: 'user-menu__item', type: 'button', onclick: go(() => App.router.loadModule('signature')) }, '🖊  My Signature') : null,
+      ui.el('button', { class: 'user-menu__item', type: 'button', onclick: go(() => window.open('/guide', '_blank', 'noopener')) }, '❓  Help'),
+      ui.el('button', { class: 'user-menu__item user-menu__item--out', type: 'button', onclick: go(signOut) }, '⏻  Sign Out')
+    ]);
+    const userBtn = ui.el('button', { class: 'appbar__user', type: 'button', 'aria-haspopup': 'true', 'aria-expanded': 'false', title: name,
+      onclick: (e) => { e.stopPropagation(); App.notices.close(); const opening = userMenu.hidden; userMenu.hidden = !opening; userBtn.setAttribute('aria-expanded', String(opening)); } }, [
+      ui.el('span', { class: 'appbar__who' }, [ui.el('span', { class: 'appbar__name' }, name), ui.el('span', { class: 'appbar__role' }, roleText)]),
+      ui.el('span', { class: 'appbar__avatar', 'aria-hidden': 'true' }, initials)
+    ]);
+    function closeUserMenu() { userMenu.hidden = true; userBtn.setAttribute('aria-expanded', 'false'); }
+    App.notices.closeMenus = closeUserMenu;
+    document.addEventListener('click', closeUserMenu);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeUserMenu(); });
     const topbar = ui.el('header', { class: 'topbar' }, [
       menuBtn,
-      ui.el('img', { class: 'sidebar__emblem', src: '/assets/highcourt.png', alt: '' }),
-      ui.el('span', { class: 'topbar__title' }, 'GSHC Registry')
+      ui.el('img', { class: 'sidebar__emblem topbar__emblem', src: '/assets/highcourt.png', alt: '' }),
+      ui.el('span', { class: 'topbar__title' }, 'GSHC Registry'),
+      ui.el('span', { class: 'appbar__spacer' }),
+      App.notices.mount(),
+      ui.el('div', { class: 'appbar__usermenu' }, [userBtn, userMenu])
     ]);
     const backdrop = ui.el('div', { class: 'menu-backdrop', onclick: () => toggleMenu(false) });
     function toggleMenu(open) {
@@ -198,12 +222,7 @@
       ui.el('aside', { class: 'sidebar' }, [
         ui.el('div', { class: 'sidebar__brand' }, [ui.el('img', { class: 'sidebar__emblem', src: '/assets/highcourt.png', alt: '' }), ui.el('span', null, 'GSHC Registry')]),
         nav,
-        status,
-        ui.el('div', { class: 'sidebar__user' }, [
-          ui.el('div', { class: 'sidebar__name' }, [user.title, user.fullName].filter(Boolean).join(' ')),
-          ui.el('div', { class: 'sidebar__role muted' }, roleText),
-          ui.el('button', { class: 'btn btn--ghost btn--small', onclick: signOut }, 'Sign Out')
-        ])
+        status
       ]),
       content,
       footer

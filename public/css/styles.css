@@ -557,12 +557,69 @@ button.dash-card:hover { border-color: var(--green-500); }
 .table-scroll .data-table { box-shadow: none; }
 .row-actions { flex-wrap: wrap; }
 .filter-btns { flex-wrap: wrap; }
-/* Phones: top bar with a menu button; the sidebar slides in as a drawer */
-.topbar, .menu-backdrop { display: none; }
+/* The header: on wide screens a bar above the page, beside the sidebar,
+   with the notifications bell and the user's menu on the right. */
+.menu-backdrop { display: none; }
+.topbar { display: flex; align-items: center; gap: .6rem; position: sticky; top: 0; z-index: 30;
+  background: var(--green-700); color: #fff; padding: .45rem 1.4rem; min-height: 56px; box-shadow: 0 1px 4px rgba(0,0,0,.12); }
+.topbar__menu, .topbar__emblem, .topbar__title { display: none; }
+.appbar__spacer { flex: 1; }
+@media (min-width: 721px) {
+  .shell { grid-template-rows: auto 1fr auto; }
+  .topbar { grid-column: 2; grid-row: 1; }
+  .sidebar { grid-column: 1; grid-row: 1 / span 2; }
+  .content { grid-column: 2; grid-row: 2; }
+}
+.appbar__bell, .appbar__usermenu { position: relative; }
+.appbar__icon { position: relative; background: none; border: 0; color: #fff; font-size: 1.25rem; line-height: 1; cursor: pointer;
+  padding: .45rem .5rem; border-radius: 999px; }
+.appbar__icon:hover, .appbar__icon:focus-visible, .appbar__user:hover, .appbar__user:focus-visible { background: rgba(255,255,255,.14); }
+.appbar__count { position: absolute; top: 0; right: -2px; background: #d93025; color: #fff; font-size: .66rem; font-weight: 700;
+  min-width: 1.15rem; height: 1.15rem; line-height: 1.15rem; text-align: center; border-radius: 999px; padding: 0 .25rem; box-shadow: 0 0 0 2px var(--green-700); }
+.appbar__count[hidden] { display: none; }
+.appbar__user { display: flex; align-items: center; gap: .6rem; background: none; border: 0; color: #fff; cursor: pointer;
+  padding: .3rem .4rem .3rem .7rem; border-radius: 999px; text-align: right; font: inherit; }
+.appbar__who { display: flex; flex-direction: column; line-height: 1.2; max-width: 16rem; }
+.appbar__name { font-weight: 700; font-size: .9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.appbar__role { font-size: .74rem; opacity: .85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.appbar__avatar { width: 2.2rem; height: 2.2rem; border-radius: 50%; background: #fff; color: var(--green-700); display: grid; place-items: center;
+  font-weight: 700; font-size: .85rem; flex: none; box-shadow: 0 0 0 2px rgba(255,255,255,.5); }
+/* The notifications panel and the user's menu drop down from the header. */
+.notice-panel, .user-menu { position: absolute; right: 0; top: calc(100% + .5rem); background: #fff; color: var(--ink);
+  border-radius: 12px; box-shadow: 0 16px 40px rgba(0,0,0,.22); z-index: 60; border: 1px solid var(--line); font-weight: 400; text-align: left; }
+.notice-panel[hidden], .user-menu[hidden] { display: none; }
+.notice-panel { width: min(380px, calc(100vw - 1.5rem)); display: flex; flex-direction: column; max-height: min(70vh, 560px); }
+.notice-panel__head { display: flex; align-items: center; justify-content: space-between; padding: .85rem 1rem; border-bottom: 1px solid var(--line); font-size: 1rem; }
+.notice-panel__new { background: #fdeceb; color: #c5221f; font-size: .72rem; font-weight: 700; border-radius: 999px; padding: .15rem .55rem; }
+.notice-panel__list { overflow-y: auto; overscroll-behavior: contain; flex: 1; }
+.notice-panel__empty { padding: 1.4rem 1rem; text-align: center; color: var(--muted); font-size: .9rem; }
+.notice-panel__foot { display: flex; justify-content: space-between; gap: .5rem; padding: .6rem .8rem; border-top: 1px solid var(--line); }
+.notice-item { padding: .7rem 1rem; border-bottom: 1px solid var(--line); cursor: pointer; }
+.notice-item:hover, .notice-item:focus-visible { background: var(--green-50); outline: none; }
+.notice-item--unread { background: #fff8ec; }
+.notice-item__head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.notice-item__kind { font-weight: 700; font-size: .85rem; color: #d2691e; }
+.notice-item--unread .notice-item__kind::before { content: "● "; color: #d93025; }
+.notice-item__msg { font-size: .85rem; margin-top: .2rem; line-height: 1.35; overflow-wrap: anywhere; }
+.notice-item__time { font-size: .74rem; color: var(--muted); margin-top: .25rem; }
+.notice-item__clear { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: .8rem; padding: .15rem .35rem; border-radius: 6px; }
+.notice-item__clear:hover { background: #fdeceb; color: #c5221f; }
+.user-menu { min-width: 220px; padding: .35rem 0; }
+.user-menu__who { padding: .6rem 1rem .7rem; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: .15rem; }
+.user-menu__who span { font-size: .78rem; color: var(--muted); }
+.user-menu__item { display: block; width: 100%; text-align: left; background: none; border: 0; padding: .6rem 1rem; font: inherit; font-size: .9rem; cursor: pointer; color: var(--ink); }
+.user-menu__item:hover, .user-menu__item:focus-visible { background: var(--green-50); }
+.user-menu__item--out { color: #c5221f; border-top: 1px solid var(--line); }
+/* Phones: the header also has the menu button and the title; the sidebar slides in as a drawer. */
 @media (max-width: 720px) {
   .shell { grid-template-rows: auto 1fr auto; }
-  .topbar { display: flex; align-items: center; gap: .6rem; position: sticky; top: 0; z-index: 30;
-    background: var(--green-900); color: #fff; padding: .55rem .9rem; font-weight: 700; }
+  .topbar { background: var(--green-900); padding: .4rem .6rem; font-weight: 700; min-height: 52px; gap: .4rem; }
+  .topbar__menu, .topbar__emblem, .topbar__title { display: inline-flex; }
+  .topbar__title { white-space: nowrap; }
+  .appbar__who { display: none; }
+  .appbar__user { padding: .2rem; }
+  .appbar__count { box-shadow: 0 0 0 2px var(--green-900); }
+  .notice-panel, .user-menu { position: fixed; top: 56px; right: .6rem; }
   .topbar__menu { position: relative; background: none; border: 0; color: #fff; font-size: 1.5rem; line-height: 1;
     padding: .25rem .45rem; border-radius: 8px; cursor: pointer; }
   .topbar__menu:focus-visible, .topbar__menu:hover { background: rgba(255,255,255,.12); }

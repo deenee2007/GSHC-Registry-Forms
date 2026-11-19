@@ -1,5 +1,6 @@
 /*
- * src/routes/notifications.js — the signed in user's notifications.
+ * src/routes/notifications.js — the signed in user's notifications: the
+ * bell in the header lists them, marks them read and clears them.
  */
 const express = require('express');
 const mongoose = require('mongoose');
@@ -29,6 +30,18 @@ router.post('/read', wrap(async (req, res) => {
   if (!req.body.all) q._id = { $in: (req.body.ids || []).filter(id => mongoose.isValidObjectId(id)) };
   const r = await Notification.updateMany(q, { read: true });
   res.json({ updated: r.modifiedCount });
+}));
+
+// Cleared for good from the list: body { ids: [...] } or { all: true }.
+router.post('/clear', wrap(async (req, res) => {
+  const q = { user: req.user._id };
+  if (!req.body.all) {
+    const ids = (req.body.ids || []).filter(id => mongoose.isValidObjectId(id));
+    if (!ids.length) return res.json({ cleared: 0 });
+    q._id = { $in: ids };
+  }
+  const r = await Notification.deleteMany(q);
+  res.json({ cleared: r.deletedCount });
 }));
 
 module.exports = router;
