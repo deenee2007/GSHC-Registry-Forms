@@ -24,11 +24,16 @@ const { Unit } = require('../models');
 const KEY = 'processSettings';
 const DEFAULTS = {
   prefix: 'GM',
-  // book: which of the court's two register books the case goes in.
+  // book: which of the court's register books the case goes in (BOOKS).
+  // A motion here is one filed on its own for a particular prayer (civil or
+  // criminal, bail among them), not one in an existing case or with a writ,
+  // which is a process filed in that case.
   caseTypes: [
     { key: 'civil', label: 'Civil', suffix: '', book: 'civil' },
     { key: 'criminal', label: 'Criminal', suffix: 'c', book: 'criminal' },
-    { key: 'petition', label: 'Petition', suffix: 'p', book: 'civil' }
+    { key: 'petition', label: 'Petition', suffix: 'p', book: 'civil' },
+    { key: 'motion', label: 'Motion', suffix: 'm', book: 'motions' },
+    { key: 'fundamental_rights', label: 'Fundamental Human Rights', suffix: 'fr', book: 'fhr' }
   ],
   fees: [],          // [{ item: 'Writ of summons', amount: 2000 }]
   efccCourts: [],    // unit keys of the courts that hear EFCC matters
@@ -46,9 +51,34 @@ const REASSIGN_REASONS = ['Request by a party', 'Case file returned by the Judge
 
 const meta = () => mongoose.connection.collection('appmeta');
 
+// A court's register books, as kept on paper.
+const BOOKS = [
+  { key: 'civil', label: 'Civil Register' },
+  { key: 'criminal', label: 'Criminal Register' },
+  { key: 'motions', label: 'Motions Register' },
+  { key: 'fhr', label: 'Fundamental Human Rights Register' }
+];
 // A type saved before books existed: criminal ones (letter c) go in the
 // Criminal book, the rest in the Civil book.
-const bookOf = (t) => (t.book === 'criminal' || t.book === 'civil') ? t.book : (t.suffix === 'c' || t.key === 'criminal' ? 'criminal' : 'civil');
+const bookOf = (t) => BOOKS.some(b => b.key === t.book) ? t.book : (t.suffix === 'c' || t.key === 'criminal' ? 'criminal' : 'civil');
+
+// Settings saved before the Motions and Fundamental Human Rights registers
+// get their case types once (unless a type already uses the letter); the
+// administrator may remove or rename them afterwards.
+async function addRegisterTypesOnce(log = console.log) {
+  const FLAG = 'caseTypes:motions-fhr-2026-11';
+  if (await meta().findOne({ _id: FLAG })) return;
+  const doc = await meta().findOne({ _id: KEY });
+  if (doc && Array.isArray(doc.caseTypes)) {
+    const add = DEFAULTS.caseTypes.filter(t => ['motions', 'fhr'].includes(t.book) &&
+      !doc.caseTypes.some(x => x.suffix === t.suffix || x.key === t.key));
+    if (add.length) {
+      await meta().updateOne({ _id: KEY }, { $push: { caseTypes: { $each: add } } });
+      log(`  Case types added: ${add.map(t => t.label).join(', ')}.`);
+    }
+  }
+  await meta().updateOne({ _id: FLAG }, { $set: { at: new Date() } }, { upsert: true });
+}
 
 async function getSettings() {
   const doc = await meta().findOne({ _id: KEY });
@@ -262,4 +292,4 @@ function roman(n) {
   return s;
 }
 
-module.exports = { getSettings, setSettings, undoOfficialFeesOnce, nextNumber, numbering, setLastNumber, nextInvoice, proposeCourt, rotationState, courts: courts_, formatHtml, roman, REMARKS, REASSIGN_REASONS, DEFAULTS };
+module.exports = { BOOKS, addRegisterTypesOnce, getSettings, setSettings, undoOfficialFeesOnce, nextNumber, numbering, setLastNumber, nextInvoice, proposeCourt, rotationState, courts: courts_, formatHtml, roman, REMARKS, REASSIGN_REASONS, DEFAULTS };

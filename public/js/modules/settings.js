@@ -473,7 +473,8 @@
         const prefix = el('input', { type: 'text', value: s.prefix, maxlength: '6', class: 'narrow', 'aria-label': 'Number prefix' });
         const rowsOf = (items, make) => { const box = el('div', { class: 'settings-rows' }); items.forEach(x => box.appendChild(make(x))); return box; };
         const removable = (cells) => { const row = el('div', { class: 'settings-row' }, cells); row.appendChild(el('button', { class: 'btn btn--small btn--ghost', type: 'button', onclick: () => row.remove() }, '✕')); return row; };
-        const bookPick = (b) => { const sel = el('select', { 'data-f': 'book', 'aria-label': 'Register book' }, [el('option', { value: 'civil' }, 'Civil Register'), el('option', { value: 'criminal' }, 'Criminal Register')]); sel.value = b === 'criminal' ? 'criminal' : 'civil'; return sel; };
+        const BOOKS = s.books || [{ key: 'civil', label: 'Civil Register' }, { key: 'criminal', label: 'Criminal Register' }];
+        const bookPick = (b) => { const sel = el('select', { 'data-f': 'book', 'aria-label': 'Register book' }, BOOKS.map(x => el('option', { value: x.key }, x.label))); sel.value = BOOKS.some(x => x.key === b) ? b : 'civil'; return sel; };
         const typeRow = (t) => { const r = removable([el('input', { type: 'text', value: t.label, placeholder: 'Case type, e.g. Motion', 'data-f': 'label' }),
           el('input', { type: 'text', value: t.suffix, placeholder: 'Letter', maxlength: '3', class: 'narrow', 'data-f': 'suffix' }),
           bookPick(t.book)]); r.dataset.key = t.key || ''; return r; };

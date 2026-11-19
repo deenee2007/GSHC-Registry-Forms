@@ -1,6 +1,6 @@
 /*
  * modules/caseRegister.js — a court's register books, kept as on paper:
- * one book for civil matters and one for criminal matters, each numbered
+ * Civil, Criminal, Motions and Fundamental Human Rights books, each numbered
  * from 1 (S/No) in order of assignment, with the name of the case, suit
  * number, date of filing, date of assignment, type of case, date
  * received, date of disposal and remarks. File received when the file
@@ -14,7 +14,7 @@
   window.App = window.App || {};
   window.App.modules = window.App.modules || {};
   const esc = (v) => String(v == null ? '' : v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  const BOOKS = [['civil', 'Civil Register'], ['criminal', 'Criminal Register']];
+  const DEFAULT_BOOKS = [['civil', 'Civil Register'], ['criminal', 'Criminal Register']];
 
   // From the menu, for someone in more than one court: which court's register.
   async function chooseCourt(container, ctx) {
@@ -42,12 +42,14 @@
       const P = window.App.processUi;
       const canWork = permissions.can('edit') || permissions.can('create');
       const settings = await api.get('/process/settings');
+      // The court's register books: Civil, Criminal, Motions and Fundamental Human Rights.
+      const BOOKS = settings.books ? settings.books.map(b => [b.key, b.label]) : DEFAULT_BOOKS;
       const bookOf = (c) => (settings.caseTypes.find(t => t.key === c.caseType) || { book: 'civil' }).book;
       let book = 'civil';
 
       container.appendChild(el('div', { class: 'page-head' }, [
         el('h1', null, `📒 Case Register · ${unit.name}`),
-        el('p', { class: 'muted' }, 'The civil and criminal register books of this court. New cases assigned by the Hon. Chief Judge appear by themselves.')
+        el('p', { class: 'muted' }, 'The register books of this court: Civil, Criminal, Motions and Fundamental Human Rights. New cases assigned by the Hon. Chief Judge appear by themselves.')
       ]));
       const tabsBar = el('div', { class: 'tabs', role: 'tablist' });
       const search = el('input', { type: 'search', class: 'search-input', placeholder: '🔍  Search name of case, suit number, type of case' });
@@ -321,7 +323,7 @@
 
       // The court's existing book from Excel or CSV: the template, a check of
       // every row (nothing saved), then the import of the rows that passed.
-      const TEMPLATE = ['S/No', 'Register (Civil or Criminal)', 'Name of case', 'Suit number', 'Date of filing', 'Date of assignment', 'Type of case', 'Date received', 'Date of disposal', 'Remarks', 'Next date', 'Coming up for'];
+      const TEMPLATE = ['S/No', 'Register (Civil, Criminal, Motions or Fundamental Human Rights)', 'Name of case', 'Suit number', 'Date of filing', 'Date of assignment', 'Type of case', 'Date received', 'Date of disposal', 'Remarks', 'Next date', 'Coming up for'];
       function downloadTemplate() {
         const blob = new Blob(['\ufeff' + TEMPLATE.join(',') + '\r\n'], { type: 'text/csv;charset=utf-8' });
         const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `register-template-${unit.key}.csv` });
@@ -380,7 +382,7 @@
           el('div', { class: 'doc-preview__actions' }, [el('button', { class: 'btn btn--ghost', onclick: () => dialog.close() }, '✕  Close')]),
           el('ol', { class: 'import-steps' }, [
             el('li', null, ['Download the template and open it in Excel. ', el('button', { class: 'btn btn--small btn--ghost', type: 'button', onclick: downloadTemplate }, '⬇ Download the template')]),
-            el('li', null, 'Copy in the cases from the register book, one case per row: both the civil and the criminal book can go in the same sheet; write Civil or Criminal in the Register column. Write dates day first (12/03/2024 or 12 March 2024). For a case disposed of, give the date of disposal and the remark. Next date and Coming up for are optional: a next date still to come goes into the Court Diary.'),
+            el('li', null, 'Copy in the cases from the register book, one case per row: all the books can go in the same sheet; write Civil, Criminal, Motions or Fundamental Human Rights in the Register column. Write dates day first (12/03/2024 or 12 March 2024). For a case disposed of, give the date of disposal and the remark. Next date and Coming up for are optional: a next date still to come goes into the Court Diary.'),
             el('li', null, 'Save it (as Excel .xlsx or as CSV) and choose it below. Click Check the File: nothing is saved yet, you see every row and any problem first.')
           ]),
           ui.field('The register file', file), el('div', { class: 'card__actions' }, [check]),

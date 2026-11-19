@@ -96,7 +96,7 @@ after(async () => { server.close(); await mongoose.connection.dropDatabase(); aw
 test('the Process Registry unit exists and settings have the three case types', async () => {
   assert.ok(await Unit.exists({ key: 'process', type: 'process' }));
   const s = await u.clerk.get('/api/process/settings');
-  assert.deepEqual(s.body.caseTypes.map(t => `${t.label}:${t.suffix}`), ['Civil:', 'Criminal:c', 'Petition:p']);
+  assert.deepEqual(s.body.caseTypes.map(t => `${t.label}:${t.suffix}`), ['Civil:', 'Criminal:c', 'Petition:p', 'Motion:m', 'Fundamental Human Rights:fr']);
   assert.equal(s.body.courts.length, 9);
   assert.equal(s.body.courts[8].roman, 'IX');
   assert.equal((await u.clerk.put('/api/process/settings', { prefix: 'XX' })).status, 403, 'administrators only');
@@ -241,7 +241,8 @@ test('summary and counts for the Process Registry and the Chief Judge', async ()
 
 test('two register books: each case type goes in the Civil or the Criminal book', async () => {
   const s = await u.clerk.get('/api/process/settings');
-  assert.deepEqual(s.body.caseTypes.map(t => `${t.key}:${t.book}`), ['civil:civil', 'criminal:criminal', 'petition:civil']);
+  assert.deepEqual(s.body.caseTypes.map(t => `${t.key}:${t.book}`), ['civil:civil', 'criminal:criminal', 'petition:civil', 'motion:motions', 'fundamental_rights:fhr']);
+  assert.deepEqual(s.body.books.map(b => b.label), ['Civil Register', 'Criminal Register', 'Motions Register', 'Fundamental Human Rights Register']);
   const types = s.body.caseTypes.map(t => t.key === 'petition' ? { ...t, book: 'criminal' } : t);
   const saved = await admin.put('/api/process/settings', { caseTypes: types });
   assert.equal(saved.status, 200, JSON.stringify(saved.body));
@@ -1040,4 +1041,45 @@ test('a disposed case is locked; its recorder can undo the remark the same day, 
   const e = await u.court3.post('/api/diary', { unitKey: 'hc3', caseId: c.id, date: inDays(-1), business: 'Hearing' });
   const bad = await u.court3.post(`/api/diary/${e.body.entry.id}/outcome`, { outcome: 'Judgment.', disposal: 'Judgment entered', nextDate: inDays(5), nextBusiness: 'Mention' });
   assert.equal(bad.status, 400);
+});
+
+
+test('motions and fundamental human rights: their own letters (m, fr), counts and register books', async () => {
+  const year = new Date().getFullYear();
+  const m1 = await fileAndRegister({ caseType: 'motion', firstParty: 'Sani Bello', secondParty: 'Commissioner of Police', nature: 'Bail application', process: 'Motion on notice' });
+  const f1 = await fileAndRegister({ caseType: 'fundamental_rights', firstParty: 'Aisha Umar', secondParty: 'Inspector General of Police', nature: 'Enforcement of the right to personal liberty', process: 'Originating application' });
+  const m2 = await fileAndRegister({ caseType: 'motion', firstParty: 'Musa Ali', secondParty: 'Hauwa Ali', nature: 'Interim custody', process: 'Motion ex parte' });
+  assert.equal(m1.suitNumber, `GM/1m/${year}`, 'motions count from 1');
+  assert.equal(f1.suitNumber, `GM/1fr/${year}`, 'fundamental rights count separately');
+  assert.equal(m2.suitNumber, `GM/2m/${year}`);
+  // Assigned by the Hon. Chief Judge like any case, then in the court's own books.
+  for (const c of [m1, f1]) {
+    assert.equal((await u.cj.post(`/api/process/cases/${c.id}/assign`, { unitKey: 'hc3', pin: '1357' })).status, 200);
+  }
+  const reg = (await u.court3.get('/api/process/register?unitKey=hc3')).body.cases;
+  const types = (await u.court3.get('/api/process/settings')).body.caseTypes;
+  const bookOf = (c) => types.find(t => t.key === c.caseType).book;
+  assert.equal(bookOf(reg.find(x => x.id === m1.id)), 'motions');
+  assert.equal(bookOf(reg.find(x => x.id === f1.id)), 'fhr');
+  // An existing register book brought in: the Register column names the book.
+  const { caseTypeFor } = require('../src/services/registerImport');
+  assert.equal(caseTypeFor('Motions', 'GM/40/2025', types).type.book, 'motions');
+  assert.equal(caseTypeFor('Fundamental Human Rights', 'GM/41/2025', types).type.book, 'fhr');
+  assert.equal(caseTypeFor('', 'GM/42fr/2025', types).type.book, 'fhr', 'from the letter in the number');
+  assert.equal(caseTypeFor('', 'GM/43m/2025', types).type.key, 'motion');
+});
+
+test('settings saved before: the Motion and Fundamental Human Rights types are added once, not over a letter in use', async () => {
+  const processSvc = require('../src/services/process');
+  const meta = mongoose.connection.collection('appmeta');
+  const keep = await meta.findOne({ _id: 'processSettings' });
+  await meta.updateOne({ _id: 'processSettings' }, { $set: { caseTypes: [{ key: 'civil', label: 'Civil', suffix: '' }, { key: 'criminal', label: 'Criminal', suffix: 'c' }, { key: 'misc', label: 'Miscellaneous', suffix: 'm' }] } }, { upsert: true });
+  await meta.deleteOne({ _id: 'caseTypes:motions-fhr-2026-11' });
+  await processSvc.addRegisterTypesOnce(() => {});
+  let t = (await processSvc.getSettings()).caseTypes;
+  assert.deepEqual(t.map(x => x.suffix), ['', 'c', 'm', 'fr'], 'fr added; m was already in use, so Motion is not');
+  await processSvc.addRegisterTypesOnce(() => {});
+  t = (await processSvc.getSettings()).caseTypes;
+  assert.equal(t.length, 4, 'once only');
+  if (keep) await meta.replaceOne({ _id: 'processSettings' }, keep); else await meta.deleteOne({ _id: 'processSettings' });
 });
