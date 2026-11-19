@@ -1,6 +1,7 @@
 /*
  * modules/dashboard.js — Home.
- * Everyone: greeting, what needs their attention, latest notifications.
+ * Everyone: greeting and what needs their attention (notifications are
+ * under the bell in the header).
  * Unit staff: their unit's numbers and quick links to each form.
  * Administrators: system overview, per unit numbers and the backups.
  */
@@ -297,34 +298,7 @@
         renderTestData(dash, ctx);
       }
 
-      // ── Notifications ──
-      let notes = null;
-      try { notes = await api.get('/notifications'); } catch (e) { /* offline */ }
-      if (notes) {
-        const list = ui.el('div', { class: 'notes' });
-        if (!notes.notifications.length) list.appendChild(ui.empty('No notifications.'));
-        notes.notifications.slice(0, 15).forEach(n => {
-          list.appendChild(ui.el('button', { class: 'note' + (n.read ? '' : ' note--unread'), onclick: async () => {
-            if (!n.read) { await api.post('/notifications/read', { ids: [n.id] }).catch(() => {}); router.refreshBadges(); }
-            if (n.record) wf.openDocument(n.record);
-            else if (n.kind === 'leave') router.loadModule('leave');
-            else if (n.kind === 'case' && n.link) {
-              // A case notice opens its screen: assignment, the Process Registry or a court's register.
-              if (n.link === 'assign' || n.link.startsWith('assign:')) router.loadModule('assign', n.link === 'assign' ? {} : { tab: n.link.slice(7) });
-              else if (n.link.startsWith('register:')) { const u = units.find(x => x.key === n.link.slice(9)); if (u) router.loadModule('caseRegister', { unit: u }); }
-              else { const u = units.find(x => x.type === 'process'); if (u) router.loadUnit(u); }
-            }
-          } }, [
-            ui.el('span', { class: 'note__kind note__kind--' + n.kind }, { submitted: 'For signature', approved: 'Approved', signed: 'Signed', returned: 'Returned', revoked: 'Revoked', case: 'Case', leave: 'Leave' }[n.kind] || n.kind),
-            ui.el('span', { class: 'note__msg' }, n.message),
-            ui.el('span', { class: 'note__time muted' }, ui.fmtDate(n.createdAt))
-          ]));
-        });
-        const head = ui.el('div', { class: 'notes__head' }, notes.unread ? [
-          ui.el('button', { class: 'btn btn--ghost btn--small', onclick: async () => { await api.post('/notifications/read', { all: true }); router.refreshBadges(); router.loadDashboard(); } }, 'Mark all as read')
-        ] : []);
-        dash.appendChild(section(ui, `Notifications${notes.unread ? ` (${notes.unread} new)` : ''}`, ui.el('div', null, [head, list])));
-      }
+      // Notifications are under the bell in the header (core/notices.js).
     }
   };
 })();
