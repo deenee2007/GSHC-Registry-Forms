@@ -27,8 +27,10 @@ const docMulter = multer({ storage: multer.memoryStorage(), limits: { fileSize: 
 const docUpload = (req, res, next) => docMulter(req, res, (err) => next(err && err.code === 'LIMIT_FILE_SIZE'
   ? new HttpError(400, 'The file must be under 10 MB. Scan at 200 dpi in greyscale, or upload a long document in parts.') : err));
 
-const canEdit = (u) => isAdmin(u) || u.privileges.includes('personnel_edit');
-const canView = (u) => canEdit(u) || u.privileges.includes('personnel_view');
+// In the Directorate of Personnel unit, with the privilege to view or edit the roll.
+const inDirectorate = (u) => isAdmin(u) || u.unitKeys.includes('personnel');
+const canEdit = (u) => isAdmin(u) || (inDirectorate(u) && u.privileges.includes('personnel_edit'));
+const canView = (u) => canEdit(u) || (inDirectorate(u) && u.privileges.includes('personnel_view'));
 const mustView = (req) => { if (!canView(req.user)) throw new HttpError(403, 'The Nominal Roll is for the Directorate of Personnel and those the administrator allows.'); };
 const mustEdit = (req) => { if (!canEdit(req.user)) throw new HttpError(403, 'Only those allowed to edit the Nominal Roll (Secret Registry staff) can change it.'); };
 const DAY = /^\d{4}-\d{2}-\d{2}$/;

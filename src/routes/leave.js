@@ -29,8 +29,10 @@ const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).cat
 router.use(requireLogin);
 
 const ROLES = ['staff_officer', 'director_personnel', 'chief_registrar', 'chief_judge'];
-const canEditRoll = (u) => isAdmin(u) || u.privileges.includes('personnel_edit');
-const canViewRoll = (u) => canEditRoll(u) || u.privileges.includes('personnel_view');
+// The Directorate of Personnel (the unit, with the privilege) sees every application.
+const inDirectorate = (u) => isAdmin(u) || u.unitKeys.includes('personnel');
+const canEditRoll = (u) => isAdmin(u) || (inDirectorate(u) && u.privileges.includes('personnel_edit'));
+const canViewRoll = (u) => canEditRoll(u) || (inDirectorate(u) && u.privileges.includes('personnel_view'));
 const myRoles = (u) => u.signerRoles.filter(r => ROLES.includes(r));
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const today = () => new Date().toISOString().slice(0, 10);

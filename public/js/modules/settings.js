@@ -7,7 +7,7 @@
   window.App = window.App || {};
   window.App.modules = window.App.modules || {};
 
-  const TYPE_LABELS = { registry: 'Court Registry', appeals: 'Appeals', execution: 'Execution / Bailiffs', marriage: 'Marriage Registry', general: 'Other Unit' };
+  const TYPE_LABELS = { registry: 'Court Registry', appeals: 'Appeals', execution: 'Execution / Bailiffs', marriage: 'Marriage Registry', process: 'Process Registry', personnel: 'Directorate of Personnel', general: 'Other Unit' };
   const MODULE_OF = { registry: 'Registry', appeals: 'Appeals', execution: 'Execution' };
 
   window.App.modules.settings = {
@@ -177,8 +177,8 @@
         const privBox = checkboxes(meta.privileges.map(p => [p, PRIV[p] || p]), v.privileges);
         const signBox = checkboxes(Object.entries(meta.signerRoles), v.signerRoles);
 
-        const unitRow = ui.field('Units', unitBox.node, 'Leave all unticked for a signer who serves every unit (for example the Chief Registrar).');
-        const privRow = ui.field('Privileges', privBox.node, '"finalize" lets the user submit forms for signature or finalise them. "reports" shows the Reports page for their own unit. "Nominal Roll: view" shows the staff records of the Directorate of Personnel; "Nominal Roll: edit" (Secret Registry staff) also changes them and opens confidential documents.');
+        const unitRow = ui.field('Units', unitBox.node, 'Leave all unticked for a signer who serves every unit (for example the Chief Registrar). The Directorate of Personnel is never included that way: tick it for those who work on the staff records.');
+        const privRow = ui.field('Privileges', privBox.node, '"finalize" lets the user submit forms for signature or finalise them. "reports" shows the Reports page for their own unit. "Nominal Roll: view" and "Nominal Roll: edit" work with the Directorate of Personnel unit ticked above: view shows the staff records; edit (Secret Registry staff) also changes them and opens confidential documents. Leave is for everyone and needs neither.');
         const signRow = ui.field('Signs as', signBox.node, 'The signing roles this person holds. Each judge should be ticked to their own court.');
         const sync = () => { const user = role.value === 'user'; unitRow.hidden = !user; privRow.hidden = !user; };
         role.addEventListener('change', sync);

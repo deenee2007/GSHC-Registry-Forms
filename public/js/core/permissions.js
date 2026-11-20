@@ -17,6 +17,8 @@
     user = user || auth().current();
     if (!user) return false;
     if (isAdmin(user)) return true;
+    // The Directorate of Personnel: only those given it.
+    if (unitKey === 'personnel') return user.unitKeys.includes(unitKey);
     if (!user.unitKeys.length) return user.signerRoles.length > 0;
     return user.unitKeys.includes(unitKey);
   }
