@@ -144,7 +144,7 @@ async function clean(body, s) {
   if (body.sex !== undefined) { out.sex = ['M', 'F'].includes(body.sex) ? body.sex : ''; }
   if (body.gl !== undefined) {
     out.gl = body.gl ? personnel.readGl(body.gl) : '';
-    if (out.gl === null) throw new HttpError(400, 'Choose the grade level (01 to 17, or Cons.).');
+    if (out.gl === null) throw new HttpError(400, 'Choose the grade level (01 to 17, or Cons.; there is no GL 11).');
   }
   if (body.step !== undefined) {
     out.step = body.step === '' || body.step === null ? null : Number(body.step);

@@ -283,3 +283,18 @@ test('records linked to a work account before personal accounts: the link is kep
   assert.equal(String(after.workUser), u.viewer.id);
   assert.equal(after.user, null);
 });
+
+
+test('grade levels: there is no GL 11 (GL 10 is followed by GL 12)', async () => {
+  const personnel = require('../src/services/personnel');
+  assert.ok(!personnel.GLS.includes('11') && personnel.GLS.includes('10') && personnel.GLS.includes('12'));
+  assert.equal(personnel.readGl('GL 11'), null);
+  assert.equal(personnel.readGl('11'), null);
+  assert.equal(personnel.readGl('12'), '12');
+  const r = await u.secret.post('/api/personnel/staff', { psn: '7790', name: 'No Such Grade', gl: '11' });
+  assert.equal(r.status, 400);
+  assert.match(r.body.error, /no GL 11/);
+  assert.equal((await u.secret.post('/api/personnel/staff', { psn: '7791', name: 'Grade Twelve', gl: '12' })).status, 201);
+  const leaveSvc = require('../src/services/leave');
+  await assert.rejects(leaveSvc.setSettings({ seniorFromGl: '11' }), /no GL 11/);
+});

@@ -568,7 +568,7 @@
       // approves senior officers, relief officer, public holidays.
       async function renderLeaveSettings() {
         const s = await api.get('/leave/settings');
-        const GLS = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12', '13', '14', '15', '16', '17'];
+        const GLS = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '12', '13', '14', '15', '16', '17']; // no GL 11
         const glSel = (v) => { const x = el('select', null, GLS.map(g => el('option', { value: g }, `GL ${g}`))); x.value = v; return x; };
         const num = (v) => el('input', { type: 'number', min: '1', max: '90', value: String(v), class: 'narrow' });
         const junior = num(s.annualJunior), senior = num(s.annualSenior), seniorFrom = glSel(s.annualSeniorFromGl), crFrom = glSel(s.seniorFromGl);
