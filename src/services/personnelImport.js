@@ -96,7 +96,7 @@ async function analyse(buffer, fileName) {
     if (rankText && !rank) notes.push(`Rank "${rankText}" is not in the list of ranks (Settings): kept as written.`);
     const glText = text(r, 'gl');
     doc.gl = glText ? personnel.readGl(glText) || '' : '';
-    if (glText && !doc.gl) notes.push(`GL "${glText}" not read.`);
+    if (glText && !doc.gl) notes.push(/^\s*(gl\s*)?0?11\s*$/i.test(glText) ? 'GL 11 does not exist (GL 10 is followed by GL 12): check this officer\'s grade level.' : `GL "${glText}" not read.`);
     const step = text(r, 'step');
     doc.step = step && Number.isInteger(Number(step)) ? Number(step) : null;
     doc.qualification = text(r, 'qualification');

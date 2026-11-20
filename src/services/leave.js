@@ -40,7 +40,7 @@ async function getSettings() {
   return out;
 }
 
-const GL = /^(0[1-9]|1[0-7])$/;
+const GL = /^(0[1-9]|10|1[2-7])$/; // no GL 11
 async function setSettings(input) {
   const next = await getSettings();
   if (input.types !== undefined) {
@@ -64,7 +64,7 @@ async function setSettings(input) {
   }
   for (const k of ['annualSeniorFromGl', 'seniorFromGl']) if (input[k] !== undefined) {
     const g = String(input[k]).padStart(2, '0');
-    if (!GL.test(g)) throw bad('Choose a grade level from 01 to 17.');
+    if (!GL.test(g)) throw bad('Choose a grade level from 01 to 17 (there is no GL 11).');
     next[k] = g;
   }
   if (input.reliefRequired !== undefined) next.reliefRequired = !!input.reliefRequired;

@@ -16,7 +16,8 @@ const LGAS = [
   ['Akko'], ['Balanga'], ['Billiri'], ['Dukku'], ['Funakaye', 'F/Kaye', 'Funa kaye'], ['Gombe'], ['Kaltungo'], ['Kwami'],
   ['Nafada'], ['Shongom', 'Shongum'], ['Yamaltu/Deba', 'Y/Deba', 'Yamaltu Deba', 'Yamaltu']
 ];
-const GLS = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12', '13', '14', '15', '16', '17', 'Cons.'];
+// The grade levels in use: there is no GL 11 (GL 10 is followed by GL 12).
+const GLS = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '12', '13', '14', '15', '16', '17', 'Cons.'];
 const STATUS_LABELS = { in_service: 'In service', on_leave: 'On leave', suspended: 'Suspended', retired: 'Retired', resigned: 'Resigned',
   deceased: 'Deceased', transferred_out: 'Transferred out', dismissed: 'Dismissed' };
 
@@ -107,7 +108,7 @@ function readGl(v) {
   const s = String(v == null ? '' : v).trim();
   if (/^cons/i.test(s)) return 'Cons.';
   const n = Number(s.replace(/^gl\s*/i, ''));
-  return Number.isInteger(n) && n >= 1 && n <= 17 ? String(n).padStart(2, '0') : null;
+  return Number.isInteger(n) && n >= 1 && n <= 17 && n !== 11 ? String(n).padStart(2, '0') : null; // no GL 11
 }
 
 module.exports = { getSettings, setSettings, rankFinder, findLga, readGl, key, LGAS: LGAS.map(x => x[0]), GLS, STATUS_LABELS, DEFAULTS };
