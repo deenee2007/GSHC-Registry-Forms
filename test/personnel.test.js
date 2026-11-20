@@ -34,7 +34,7 @@ function client() {
     const type = res.headers.get('content-type') || '';
     return { status: res.status, body: type.includes('json') ? await res.json() : Buffer.from(await res.arrayBuffer()) };
   }
-  return { get: (p) => call('GET', p), post: (p, b) => call('POST', p, b || {}), put: (p, b) => call('PUT', p, b), del: (p) => call('DELETE', p), upload: (p, form) => call('POST', p, null, form) };
+  return { get: (p) => call('GET', p), post: (p, b) => call('POST', p, b || {}), put: (p, b) => call('PUT', p, b), patch: (p, b) => call('PATCH', p, b), del: (p) => call('DELETE', p), upload: (p, form) => call('POST', p, null, form) };
 }
 const admin = client();
 const u = {};
@@ -215,4 +215,71 @@ test('the Directorate of Personnel is a unit: only those given it open it, with 
   assert.deepEqual((await User.findById(before._id)).unitKeys, ['hc2', 'personnel']);
   const all = (await User.findById(everywhere._id)).unitKeys;
   assert.ok(all.includes('personnel') && all.includes('hc1') && all.includes('marriage'), 'one who reached every unit keeps every unit, with the Directorate');
+});
+
+test('personal staff accounts: activated from the record by the Director Personnel, PSN sign in, own matters only', async () => {
+  const add = async (x) => (await u.secret.post('/api/personnel/staff', x)).body.staff;
+  const s = await add({ psn: '7701', name: 'Hauwa Personal', gl: '08', rank: 'Executive Officer', station: 'High Court No. II', dob: '1985-05-05', dofa: '2010-02-01' });
+  const dp = await makeUser({ fullName: 'Director Personnel', email: 'dirp@example.com', signerRoles: ['director_personnel'], unitKeys: ['personnel'], privileges: ['personnel_view'] });
+  // Only the Director Personnel or the administrator activates.
+  assert.equal((await u.secret.post(`/api/personnel/staff/${s.id}/account`, {})).status, 403, 'not the Secret Registry');
+  let r = await dp.post(`/api/personnel/staff/${s.id}/account`, {});
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.slip.username, '7701', 'the PSN is the sign in name');
+  assert.match(r.body.slip.code, /^[A-Z]{4}-[A-Z0-9]{6}$/);
+  assert.equal(r.body.account.status, 'active');
+  assert.equal((await dp.post(`/api/personnel/staff/${s.id}/account`, {})).status, 409, 'once');
+  const rec = (await dp.get(`/api/personnel/staff/${s.id}`)).body.staff;
+  assert.equal(rec.account.status, 'active');
+  assert.ok(rec.history.some(h => /Personal account activated/.test(h.text)), 'in the record of service');
+  // First sign in with the PSN and the code, then their own password.
+  const me = client();
+  r = await me.post('/api/auth/login', { username: '7701', password: r.body.slip.code });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.user.kind, 'personal');
+  assert.equal(r.body.user.mustChangePassword, true);
+  const code = (await dp.post(`/api/personnel/staff/${s.id}/account/code`, {})).body.slip.code;
+  const me2 = client();
+  await me2.post('/api/auth/login', { username: '7701', password: code });
+  assert.equal((await me2.post('/api/auth/change-password', { currentPassword: code, newPassword: 'MyOwnPass123' })).status, 200);
+  // Their own matters, and nothing else.
+  const mine = await me2.get('/api/mystaff');
+  assert.equal(mine.status, 200);
+  assert.equal(mine.body.staff.psn, '7701');
+  assert.ok(!mine.body.staff.history.some(h => h.kind === 'account'));
+  assert.equal((await me2.get('/api/leave/settings')).body.me.hasRecord, true);
+  assert.equal((await me2.get('/api/notifications')).status, 200);
+  for (const path of ['/api/records', '/api/cases?q=GM/1/2026', '/api/personnel/staff', '/api/catalogue/units', '/api/process/settings', '/api/diary?unitKey=hc1', '/api/admin/users']) {
+    assert.equal((await me2.get(path)).status, 403, `${path} is not for a personal account`);
+  }
+  // They add their own email (with the password).
+  assert.equal((await me2.patch('/api/me/email', { email: 'hauwa@example.com', password: 'wrong' })).status, 400);
+  assert.equal((await me2.patch('/api/me/email', { email: 'hauwa@example.com', password: 'MyOwnPass123' })).body.user.email, 'hauwa@example.com');
+  assert.equal((await u.viewer.patch('/api/me/email', { email: 'x@example.com', password: 'Passw0rd123' })).status, 403, 'a work account email is set by the administrator');
+  // Not in Settings, Users; not changed there.
+  const users = (await admin.get('/api/admin/users')).body.users;
+  assert.ok(!users.some(x => x.username === '7701'), 'managed from the Nominal Roll');
+  // Deactivated: signed out and cannot sign in; activated again with a new code.
+  assert.equal((await dp.post(`/api/personnel/staff/${s.id}/account/deactivate`, {})).body.account.status, 'inactive');
+  assert.equal((await me2.get('/api/mystaff')).status, 401, 'signed out');
+  assert.equal((await client().post('/api/auth/login', { username: '7701', password: 'MyOwnPass123' })).status, 401);
+  r = await dp.post(`/api/personnel/staff/${s.id}/account`, {});
+  assert.equal(r.body.account.status, 'active');
+  assert.equal((await client().post('/api/auth/login', { username: '7701', password: r.body.slip.code })).status, 200);
+  // Not for an officer out of service.
+  const gone = await add({ psn: '7702', name: 'Retired Officer', gl: '07' });
+  await u.secret.post(`/api/personnel/staff/${gone.id}/events`, { kind: 'status', date: '2026-01-01', status: 'retired' });
+  assert.equal((await admin.post(`/api/personnel/staff/${gone.id}/account`, {})).status, 409);
+});
+
+test('records linked to a work account before personal accounts: the link is kept as the work account', async () => {
+  const { Staff } = require('../src/models');
+  const { workLinksOnce } = require('../src/services/seed');
+  const s = await Staff.create({ psn: '7703', name: 'Old Link' });
+  await Staff.updateOne({ _id: s._id }, { user: u.viewer.id });
+  await mongoose.connection.collection('appmeta').deleteOne({ _id: 'staffWorkLinks-2026-11' });
+  await workLinksOnce(() => {});
+  const after = await Staff.findById(s._id);
+  assert.equal(String(after.workUser), u.viewer.id);
+  assert.equal(after.user, null);
 });

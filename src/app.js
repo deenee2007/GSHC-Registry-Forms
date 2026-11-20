@@ -43,6 +43,14 @@ function createApp() {
   }));
   api.use(requireAppHeader);
   api.use(loadUser);
+  // A personal staff account reaches only the officer's own matters.
+  const PERSONAL = ['/auth', '/me', '/notifications', '/leave', '/mystaff'];
+  api.use((req, res, next) => {
+    if (req.user && req.user.kind === 'personal' && !PERSONAL.some(p => req.path === p || req.path.startsWith(p + '/'))) {
+      return next(new HttpError(403, 'A personal staff account is for your own matters only. Unit and registry work is done in a work account.'));
+    }
+    next();
+  });
 
   api.use('/auth', require('./routes/auth'));
   api.use('/me', require('./routes/me'));
@@ -58,6 +66,7 @@ function createApp() {
   api.use('/statistics', require('./routes/statistics'));
   api.use('/personnel', require('./routes/personnel'));
   api.use('/leave', require('./routes/leave'));
+  api.use('/mystaff', require('./routes/mystaff'));
   api.use((req, res, next) => next(new HttpError(404, 'Not found.')));
 
   // Public verification needs no session.

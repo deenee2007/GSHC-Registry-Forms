@@ -174,6 +174,7 @@
             el('span', { class: 'badge badge--' + (s.status === 'in_service' ? 'final' : 'pending') }, s.statusLabel + (s.statusDate && s.status !== 'in_service' ? ` since ${long(s.statusDate)}` : ''))
           ])]),
           ret,
+          accountPanel(s, reopen),
           s.checkDates ? el('div', { class: 'notice notice--warn' }, [
             'The import could not be sure of a date on this record (see the record of service). Check the dates against the documents. ',
             canEdit ? el('button', { class: 'btn btn--small btn--ghost', onclick: async () => { try { await api.post(`/personnel/staff/${s.id}/dates-checked`); reopen(); } catch (e) { ui.toast(e.message, 'error'); } } }, 'Dates are right') : null
@@ -193,6 +194,60 @@
           docsPanel(s)
         ]);
         ui.modal(`${s.name} · PSN ${s.psn}`, body, { noFooter: true, wide: true, onOpen: (o) => { dialog = o; } });
+      }
+
+      // The officer's personal staff account: signed in with their PSN, for
+      // their own leave and the like. The Director Personnel (or the
+      // administrator) activates it for those who need it.
+      function accountPanel(s, reopen) {
+        const a = s.account || { status: 'none' };
+        const btn = (label, fn, cls = 'btn--ghost') => el('button', { class: 'btn btn--small ' + cls, type: 'button', onclick: fn }, label);
+        const text = a.status === 'active'
+          ? `Active. Signs in with PSN ${a.username}. ${a.firstSignIn ? 'Has not yet chosen a password (first sign in waiting).' : a.lastLoginAt ? `Last signed in ${P.day(a.lastLoginAt)}.` : ''}${a.email ? ` Email: ${a.email}.` : ''}`
+          : a.status === 'inactive' ? 'Deactivated: cannot sign in.' : 'No personal account. Activate one only if the officer needs it (to apply for leave and the like).';
+        return el('div', { class: 'staff-account staff-account--' + a.status }, [
+          el('div', null, [el('strong', null, '👤 Personal Account: '), text]),
+          s.canManageAccount ? el('div', { class: 'staff-account__actions' }, [
+            a.status !== 'active' ? btn(a.status === 'inactive' ? 'Activate Again' : 'Activate Account', () => activate(s, reopen), 'btn--primary') : null,
+            a.status === 'active' ? btn('New Code', async () => {
+              if (!confirm(`Give ${s.name} a new activation code? Their present password stops working, and they choose a new one at their next sign in.`)) return;
+              try { const r = await api.post(`/personnel/staff/${s.id}/account/code`); printSlip(r.slip); reopen(); } catch (e) { ui.toast(e.message, 'error'); }
+            }) : null,
+            a.status === 'active' ? btn('Deactivate', async () => {
+              if (!confirm(`Deactivate the personal account of ${s.name}? They are signed out and cannot sign in until it is activated again.`)) return;
+              try { await api.post(`/personnel/staff/${s.id}/account/deactivate`); ui.toast('Account deactivated.', 'info'); reopen(); } catch (e) { ui.toast(e.message, 'error'); }
+            }, 'btn--danger') : null
+          ]) : null
+        ]);
+      }
+      function activate(s, reopen) {
+        const email = el('input', { type: 'email', value: s.email || '', placeholder: 'Optional' });
+        ui.modal(`Personal Account · ${s.name}`, el('div', null, [
+          el('p', null, `The officer signs in with their PSN (${s.psn}). You get a slip to print with a one time activation code; at the first sign in they choose their own password.`),
+          ui.field('Email (optional)', email, 'If the officer has an email, they also get a link to choose their password, and can receive notifications and password reset links. They can add one themselves later.')
+        ]), {
+          confirmText: 'Activate and Print Slip',
+          onConfirm: async () => {
+            const r = await api.post(`/personnel/staff/${s.id}/account`, { email: email.value.trim() });
+            ui.toast(`Account activated for ${s.name}.${r.slip.emailed ? ' A link was also emailed.' : ''}`, 'success', 6000);
+            printSlip(r.slip); setTimeout(reopen, 0); return true;
+          }
+        });
+      }
+      // The slip handed to the officer: their sign in name and one time code.
+      function printSlip(slip) {
+        const box = (k, v, big) => `<tr><th style="text-align:left;padding:6px 10px;border:1px solid #000;width:38%">${esc(k)}</th><td style="padding:6px 10px;border:1px solid #000;${big ? 'font-size:18pt;font-weight:700;letter-spacing:2px;font-family:monospace' : ''}">${esc(v)}</td></tr>`;
+        P.printPage(`<article class="court-doc report-print">${masthead('PERSONAL STAFF ACCOUNT')}
+          <p>Your personal account on the GSHC Registry System is ready. Use it for your own matters: leave applications and approvals, and, later, appraisal forms and notices about your service.</p>
+          <table style="border-collapse:collapse;width:100%;margin:12px 0">${box('Name', slip.name)}${box('Rank / Station', [slip.rank, slip.station].filter(Boolean).join(', '))}
+          ${box('Sign in with (PSN)', slip.username, true)}${box('Activation code (one time)', slip.code, true)}${box('Web address', location.origin)}</table>
+          <ol><li>Open the web address above and sign in with your PSN and the activation code.</li>
+          <li>Choose your own password (at least 8 characters, with letters and numbers). The code then stops working.</li>
+          <li>Under My Account you may add your email, to receive notifications and reset a forgotten password.</li>
+          <li>Keep your password to yourself. If you forget it, or lose this slip, ask the Directorate of Personnel for a new code.</li></ol>
+          ${slip.emailed ? `<p>A link to choose your password was also sent to ${esc(slip.email)}.</p>` : ''}
+          <p style="margin-top:28px">Issued by: ______________________ &nbsp; Date: ______________ &nbsp; Received by the officer: ______________________</p>${footer()}</article>`,
+          '@page { size: A4; margin: 14mm; }');
       }
 
       function docsPanel(s) {
@@ -332,7 +387,7 @@
         let account = null;
         if (S.me.admin && s) {
           account = el('select', null, [opt('', 'None')]);
-          api.get('/admin/users').then(r => { account.append(...r.users.map(u => opt(u.id, `${u.fullName} (${u.username})`))); account.value = v.user || ''; }).catch(() => {});
+          api.get('/admin/users').then(r => { account.append(...r.users.map(u => opt(u.id, `${u.fullName} (${u.username})`))); account.value = v.workUser || ''; }).catch(() => {});
         }
         const body = el('div', { class: 'form-grid' }, [
           s ? el('p', { class: 'muted form-field--full' }, 'For a promotion, posting, confirmation or change of status, use those buttons on the record instead, so the record of service keeps the history. Corrections made here are written into the record of service too.') : null,
@@ -344,7 +399,7 @@
           f('Next of kin', x.kinName), f('Relationship', x.kinRel), f('Next of kin phone', x.kinPhone),
           el('div', { class: 'form-field form-field--full' }, [el('span', { class: 'form-field__label' }, 'Qualifications'), quals,
             el('button', { class: 'btn btn--small btn--ghost', type: 'button', onclick: () => quals.appendChild(qRow({})) }, '+ Add qualification')]),
-          account ? f('Sign in account (links the officer to their login)', account, true) : null,
+          account ? f('Work account (their login for a unit\'s work, if any; so they never act on their own leave). Their personal account is made under Personal Account on the record.', account, true) : null,
           rankList()
         ]);
         ui.modal(s ? `Edit · ${s.name}` : 'Add Staff', body, {
@@ -358,7 +413,7 @@
               nextOfKin: { name: x.kinName.value, relationship: x.kinRel.value, phone: x.kinPhone.value },
               qualifications: [...quals.children].map(r => Object.fromEntries([...r.querySelectorAll('input')].map(i => [i.dataset.k, i.value])))
             };
-            if (account) payload.user = account.value;
+            if (account) payload.workUser = account.value;
             const r = s ? await api.put(`/personnel/staff/${s.id}`, payload) : await api.post('/personnel/staff', payload);
             ui.toast(s ? 'Saved.' : 'Added to the Nominal Roll.', 'success');
             loadRoll(); openRecord(r.staff.id); return true;

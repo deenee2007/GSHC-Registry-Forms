@@ -27,6 +27,10 @@ const UserSchema = new Schema({
   emailAlertsBlocked: { type: Boolean, default: false }, // switched off by an administrator
   passwordHash: { type: String, required: true },
   role:         { type: String, enum: ['admin', 'user'], default: 'user' },
+  // work: for a unit's or registry's work. personal: one officer's own
+  // account (leave, appraisal and the like), signed in with their PSN,
+  // made from their record on the Nominal Roll, and reaching nothing else.
+  kind:         { type: String, enum: ['work', 'personal'], default: 'work' },
   unitKeys:     { type: [String], default: [] },               // empty = every unit (admins, Chief Registrar)
   privileges:   { type: [String], enum: PRIVILEGES, default: [] },
   signerRoles:  { type: [String], enum: Object.keys(SIGNER_ROLES), default: [] },
@@ -48,7 +52,7 @@ UserSchema.index({ email: 1 }, { unique: true, partialFilterExpression: { email:
 UserSchema.methods.toSafeJSON = function () {
   return {
     id: String(this._id), username: this.username, fullName: this.fullName, title: this.title, email: this.email || '',
-    role: this.role, unitKeys: this.unitKeys, privileges: this.privileges, signerRoles: this.signerRoles,
+    role: this.role, kind: this.kind || 'work', unitKeys: this.unitKeys, privileges: this.privileges, signerRoles: this.signerRoles,
     emailAlerts: this.emailAlerts !== false, emailAlertsBlocked: !!this.emailAlertsBlocked,
     hasSignature: !!this.signature, hasSigningPin: !!this.signingPinHash,
     mustChangePassword: this.mustChangePassword, active: this.active,
@@ -377,7 +381,10 @@ const StaffSchema = new Schema({
   status:        { type: String, enum: STAFF_STATUSES, default: 'in_service', index: true },
   statusDate:    { type: String, default: '' },
   photo:         { type: FileRef, default: null },
-  user:          { type: Schema.Types.ObjectId, ref: 'User', default: null },  // their sign in account, if any
+  user:          { type: Schema.Types.ObjectId, ref: 'User', default: null },  // their personal account (PSN), if activated
+  workUser:      { type: Schema.Types.ObjectId, ref: 'User', default: null },  // their work account, if any: they never act on their own leave
+  accountActivatedBy: String,
+  accountActivatedAt: Date,
   retiresOn:     { type: String, default: '', index: true },    // worked out on save
   retiresBy:     { type: String, default: '' },                 // age, service or contract
   checkDates:    { type: Boolean, default: false },             // the import could not be sure of a date

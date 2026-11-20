@@ -60,6 +60,22 @@ router.patch('/preferences', wrap(async (req, res) => {
   res.json({ user: req.user.toSafeJSON() });
 }));
 
+// A personal staff account adds or changes its own email (with the
+// password), to receive notifications and password reset links. Work
+// accounts' emails are set by the administrator.
+router.patch('/email', wrap(async (req, res) => {
+  if (req.user.kind !== 'personal') throw new HttpError(403, 'The administrator sets the email of a work account.');
+  if (!(await pw.compare(req.body.password, req.user.passwordHash))) throw new HttpError(400, 'Password is incorrect.');
+  const email = String(req.body.email || '').trim().toLowerCase();
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, 'Enter a valid email address.');
+  const { User } = require('../models');
+  if (email && await User.exists({ $or: [{ email }, { username: email }], _id: { $ne: req.user._id } })) throw new HttpError(409, 'Another account already uses that email address.');
+  req.user.email = email || undefined;
+  await req.user.save();
+  await audit.log(req, 'own_email_changed', { details: { removed: !email } });
+  res.json({ user: req.user.toSafeJSON() });
+}));
+
 // Used by the workflow before any signature is placed.
 async function verifyPin(user, pin) {
   if (!user.signingPinHash) throw new HttpError(400, 'Set your signing PIN first (My Signature).');
