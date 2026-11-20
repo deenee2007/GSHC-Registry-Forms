@@ -73,6 +73,7 @@ const DEFAULT_SIGNERS = {
   'marriage-oath-taking': [],
   'marriage-oath-affirmation': [],
   'prohibited-degrees': [],
+  'marriage-registrar-certificate': [{ role: 'marriage_registrar', label: 'Registrar of Marriage' }],
   'request-nscdc-personnel': chiefBailiff,
   // The Deputy Sheriff is the Director of Litigation.
   'public-auction-receipt': [

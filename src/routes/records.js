@@ -282,6 +282,7 @@ router.post('/', wrap(async (req, res) => {
   if (!unit) throw new HttpError(404, 'Unit not found.');
   if (!canAccessUnit(req.user, unitKey) || !can(req.user, 'create')) throw new HttpError(403, 'You do not have permission to create records here.');
   if (!catalogue.formsForUnit(unit).includes(formType)) throw new HttpError(400, 'This form is not available to this unit.');
+  if (formType === CERT_FORM) throw new HttpError(400, "The Registrar's Certificate is made from the couple's Notice of Marriage: open the notice and click Registrar's Certificate.");
   // A court registry's form names its court where the form asks for the
   // court to appear before (or where it was issued) and the box is empty.
   const input = { ...(req.body.data && typeof req.body.data === 'object' ? req.body.data : {}) };
@@ -311,7 +312,10 @@ router.put('/:id', wrap(async (req, res) => {
     throw new HttpError(409, 'This record was changed by someone else. Reload it before saving.');
   }
   // A box left out of the update keeps what was saved (a box cleared is sent empty).
-  const { data, error } = catalogue.cleanData(rec.formType, { ...(rec.data || {}), ...(req.body.data && typeof req.body.data === 'object' ? req.body.data : {}) });
+  const merged = { ...(rec.data || {}), ...(req.body.data && typeof req.body.data === 'object' ? req.body.data : {}) };
+  // A certificate stays tied to its notice, and its caveat line is the system's.
+  if (rec.formType === CERT_FORM) Object.assign(merged, { noticeId: rec.data.noticeId, caveatNote: rec.data.caveatNote });
+  const { data, error } = catalogue.cleanData(rec.formType, merged);
   if (error) throw new HttpError(400, error);
   rec.data = data;
   Object.assign(rec, catalogue.describe(rec.formType, data));
@@ -339,6 +343,7 @@ router.post('/:id/submit', signLimiter, wrap(async (req, res) => {
   const rec = await loadRecord(req.params.id);
   assertUnitAction(req.user, rec, 'finalize');
   assertEditable(rec);
+  if (rec.formType === CERT_FORM) await certificateCheck(rec.data.noticeId, rec._id); // still due, no caveat since
 
   const cfg = await FormConfig.findOne({ formType: rec.formType });
   const lines = cfg ? cfg.signers : [];
@@ -499,6 +504,55 @@ router.post('/:id/printed', wrap(async (req, res) => {
   await saveRecord(rec);
   await audit.log(req, 'record_printed', { record: rec, details: { copy: rec.printCount } });
   res.json({ record: serialize(rec, false) });
+}));
+
+// ── The Registrar's Certificate, made from a notice of marriage ──
+// Only once the 21 days have lapsed (from the day after) and while the
+// notice is still valid (three months from its date), with no caveat open
+// or upheld, one for each notice. Filled from the notice; the length of
+// residence is added; the Marriage Registrar signs it.
+const CERT_FORM = 'marriage-registrar-certificate';
+const longDay = (iso) => new Date(iso + 'T12:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+async function certificateCheck(noticeId, exceptId) {
+  if (!mongoose.isValidObjectId(String(noticeId || ''))) throw new HttpError(400, "This certificate is not tied to a notice of marriage.");
+  const n = await Record.findById(noticeId);
+  if (!n || n.formType !== CAVEAT_FORM) throw new HttpError(404, 'Notice of marriage not found.');
+  if (n.status !== 'final') throw new HttpError(409, 'The notice must first be signed by the Marriage Registrar.');
+  const nd = n.data && n.data.noticeDate;
+  if (!DAY.test(nd || '')) throw new HttpError(409, 'The notice has no date.');
+  const from = catalogue.addDays(nd, 22), expires = catalogue.addMonths(nd, 3), now = today();
+  if (now < from) throw new HttpError(409, `The 21 days of the notice run to ${longDay(catalogue.addDays(nd, 21))}: the certificate can be given from ${longDay(from)}.`);
+  if (now > expires) throw new HttpError(409, `The notice expired on ${longDay(expires)}: a new notice is needed.`);
+  const cv = n.caveats || [];
+  if (cv.some(c => c.status === 'upheld')) throw new HttpError(409, 'A caveat against this marriage was upheld: no certificate can be given on this notice.');
+  if (cv.some(c => c.status === 'open')) throw new HttpError(409, 'A caveat against this marriage is open: the Marriage Registrar must resolve it first.');
+  const dup = await Record.findOne({ formType: CERT_FORM, 'data.noticeId': String(n._id), status: { $ne: 'revoked' }, ...(exceptId ? { _id: { $ne: exceptId } } : {}) }, 'ref status');
+  if (dup) throw new HttpError(409, `A Registrar's Certificate was already made for this notice${dup.ref ? ` (${dup.ref})` : ''}. Open it from the Marriage Registry list.`);
+  return n;
+}
+// The certificate's caveat line: any caveat entered and then withdrawn or removed.
+function caveatLine(n) {
+  const done = (n.caveats || []).filter(c => ['withdrawn', 'removed'].includes(c.status));
+  if (!done.length) return '';
+  return done.map(c => `${c.lodgedOn}|${c.decidedOn || ''}|${c.status}`).join(';');
+}
+
+router.post('/:id/certificate', wrap(async (req, res) => {
+  const n = await loadRecord(req.params.id);
+  if (n.formType !== CAVEAT_FORM) throw new HttpError(400, "A Registrar's Certificate is made from a notice of marriage.");
+  assertUnitAction(req.user, n, 'create');
+  await certificateCheck(n._id);
+  const d = n.data || {};
+  const input = { marriageNo: d.marriageNo, noticeId: String(n._id), caveatNote: caveatLine(n), registrationNo: d.noticeNo || '',
+    registrarDistrict: d.registrarDistrict || 'Gombe', noticeDate: d.noticeDate, certificateDate: today(), validUntil: catalogue.addMonths(d.noticeDate, 3) };
+  for (const p of ['husband', 'wife']) for (const k of ['Name', 'Condition', 'Occupation', 'Age', 'Consent', 'Address']) input[p + k] = d[p + k] || '';
+  const { data, error } = catalogue.cleanData(CERT_FORM, input);
+  if (error) throw new HttpError(400, error);
+  const rec = new Record({ unitKey: n.unitKey, formType: CERT_FORM, data, ...catalogue.describe(CERT_FORM, data),
+    createdBy: req.user._id, createdByName: req.user.fullName, updatedBy: req.user._id });
+  await saveRecord(rec);
+  await audit.log(req, 'record_created', { record: rec, details: { fromNotice: String(n._id) } });
+  res.status(201).json({ record: serialize(rec) });
 }));
 
 // ── Caveats against a notice of marriage ──

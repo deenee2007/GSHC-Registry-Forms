@@ -580,6 +580,19 @@ couple's earlier forms (the groom being the husband, the bride the wife),
 and the Case File shows the couple's forms together. Each form, with its
 QR block, prints on one A4 page.
 
+**Registrar's Certificate.** Made only from a signed Notice of Marriage
+(its **📜 Registrar's Certificate** button; it is not under New Entry),
+once the 21 days have lapsed, while the notice is still valid, with no
+caveat open or upheld, and once for each notice (the server checks each,
+again at submission). It is filled from the notice (registration number,
+district, dates, both parties); the length of residence is added; the
+Marriage Registrar signs it. It prints on a landscape A4 page under the
+coat of arms alone (it is a national form, without the High Court's
+masthead), with its QR block; the caveat line states either that no caveat
+was entered, or that one was entered and later withdrawn or removed, with
+the dates; it is valid only if the marriage is solemnized by the notice's
+expiry date.
+
 **Caveats.** On a notice of marriage, **⚠ Enter a Caveat** records who
 lodged it (name, address, phone), the date lodged (not before the notice,
 not after it expired, not in the future) and the grounds. While a caveat is

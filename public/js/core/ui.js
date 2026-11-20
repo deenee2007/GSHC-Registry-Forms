@@ -171,6 +171,16 @@
         return;
       }
 
+      // ── Kept with the form but not shown (e.g. the notice a certificate comes from) ──
+      if (f.type === 'hidden') {
+        const input = el('input', { type: 'hidden' });
+        input.name = f.name;
+        if (initial && initial[f.name] !== undefined) input.value = initial[f.name];
+        fields[f.name] = input;
+        wrap.appendChild(input);
+        return;
+      }
+
       // ── A box worked out from another (e.g. an expiry date): shown, not typed ──
       if (f.type === 'computed') {
         const input = el('input', { type: 'text', readonly: 'readonly', class: 'form-computed', tabindex: '-1' });

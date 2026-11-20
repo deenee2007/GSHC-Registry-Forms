@@ -326,7 +326,7 @@ test('Marriage Registry: the unit and its six forms; signed by hand, finalised w
   const { Unit } = require('../src/models');
   const catalogue = require('../src/forms/catalogue');
   assert.ok(await Unit.exists({ key: 'marriage', type: 'marriage', name: 'Marriage Registry' }));
-  assert.deepEqual(catalogue.byUnitType.marriage, ['notice-of-marriage', 'marriage-particulars', 'marriage-witnesses', 'marriage-oath-taking', 'marriage-oath-affirmation', 'prohibited-degrees']);
+  assert.deepEqual(catalogue.byUnitType.marriage, ['notice-of-marriage', 'marriage-particulars', 'marriage-witnesses', 'marriage-oath-taking', 'marriage-oath-affirmation', 'marriage-registrar-certificate', 'prohibited-degrees']);
   const witnesses = catalogue.get('marriage-witnesses').schema.filter(s => s.section).map(s => s.section);
   assert.deepEqual(witnesses, ['Marriage File', 'The Marriage', 'Husband Witness', 'Wife Witness'], 'husband witness and wife witness, not "witness" only');
   const clerk = await makeUser({ fullName: 'Marriage Clerk', username: 'marriageclerk', unitKeys: ['marriage'], privileges: ['view', 'create', 'edit', 'finalize', 'print'] });
@@ -474,4 +474,56 @@ test('a database made before: the court order gains the Registrar after the Judg
   await meta.deleteOne({ _id: 'rule:notice-of-marriage-registrar-2026-11' });
   await updateFormConfigs(() => {});
   assert.deepEqual((await FormConfig.findOne({ formType: 'notice-of-marriage' })).signers.map(s => s.role), ['marriage_registrar'], 'signed by hand before: now the Marriage Registrar');
+});
+
+
+test("Registrar's Certificate: made only from a signed notice, after the 21 days and before it expires, with no caveat open or upheld; once", async () => {
+  const mr = await makeUser({ fullName: 'Cert Registrar', username: 'certreg', unitKeys: ['marriage'], signerRoles: ['marriage_registrar'], privileges: ['view', 'create', 'edit', 'finalize', 'print'] });
+  await makeSigner(mr);
+  const clerk = await makeUser({ fullName: 'Cert Clerk', username: 'certclerk', unitKeys: ['marriage'], privileges: ['view', 'create', 'edit', 'finalize', 'print'] });
+  const ago = (n) => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
+  const notice = async (no, date) => {
+    const r = await mr.post('/api/records', { unitKey: 'marriage', formType: 'notice-of-marriage', data: { marriageNo: `GMR/${no}/2026`, noticeNo: `${no}/2026`, registrarDistrict: 'Gombe', marriagePlace: 'Marriage Registry', noticeDate: date,
+      husbandName: 'Idris Musa', husbandCondition: 'Bachelor', husbandOccupation: 'Teacher', husbandAge: '31', husbandAddress: 'Pantami, Gombe', wifeName: 'Fatima Sani', wifeCondition: 'Spinster', wifeOccupation: 'Nurse', wifeAge: '26', wifeAddress: 'Tumfure, Gombe' } });
+    return r.body.record.id;
+  };
+  const sign = async (id) => (await mr.post(`/api/records/${id}/submit`, { pin: '2468' })).body.record;
+  assert.equal((await clerk.post('/api/records', { unitKey: 'marriage', formType: 'marriage-registrar-certificate', data: {} })).status, 400, 'not from New Entry');
+  // Due: 30 days after the notice, signed, no caveat.
+  const due = await notice(60, ago(30));
+  assert.equal((await clerk.post(`/api/records/${due}/certificate`)).status, 409, 'the notice must be signed first');
+  await sign(due);
+  let r = await clerk.post(`/api/records/${due}/certificate`);
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  const cert = r.body.record;
+  assert.equal(cert.formType, 'marriage-registrar-certificate');
+  assert.equal(cert.data.husbandName, 'Idris Musa');
+  assert.equal(cert.data.wifeAddress, 'Tumfure, Gombe');
+  assert.equal(cert.data.registrationNo, '60/2026');
+  assert.equal(cert.data.validUntil, require('../src/forms/catalogue').addMonths(ago(30), 3), 'valid to the notice expiry');
+  assert.equal(cert.data.caveatNote, '');
+  assert.equal((await clerk.post(`/api/records/${due}/certificate`)).status, 409, 'one certificate for a notice');
+  // Its notice link cannot be changed; the length of residence is added; the Marriage Registrar signs.
+  r = await clerk.put(`/api/records/${cert.id}`, { data: { noticeId: due.replace(/.$/, '0'), husbandResidence: '6 years', wifeResidence: '3 years' } });
+  assert.equal(r.body.record.data.noticeId, due);
+  assert.equal(r.body.record.data.husbandResidence, '6 years');
+  r = await clerk.post(`/api/records/${cert.id}/submit`, { approvers: [[mr.id]] });
+  assert.equal(r.body.record.status, 'pending');
+  r = await mr.post(`/api/records/${cert.id}/approve`, { pin: '2468' });
+  assert.equal(r.body.record.status, 'final');
+  // Too early, expired, and caveats.
+  const early = await notice(61, ago(10)); await sign(early);
+  r = await clerk.post(`/api/records/${early}/certificate`);
+  assert.equal(r.status, 409); assert.match(r.body.error, /can be given from/);
+  const old = await notice(62, ago(100)); await sign(old);
+  r = await clerk.post(`/api/records/${old}/certificate`);
+  assert.equal(r.status, 409); assert.match(r.body.error, /expired/);
+  const held = await notice(63, ago(25)); await sign(held);
+  const cav = await clerk.post(`/api/records/${held}/caveats`, { caveator: 'Objector', grounds: 'Already married', lodgedOn: ago(20) });
+  r = await clerk.post(`/api/records/${held}/certificate`);
+  assert.equal(r.status, 409); assert.match(r.body.error, /caveat .* is open/);
+  await mr.post(`/api/records/${held}/caveats/${cav.body.record.caveats[0].id}/resolve`, { outcome: 'withdrawn', decidedOn: ago(15), pin: '2468' });
+  r = await clerk.post(`/api/records/${held}/certificate`);
+  assert.equal(r.status, 201, 'once the caveat is withdrawn');
+  assert.equal(r.body.record.data.caveatNote, `${ago(20)}|${ago(15)}|withdrawn`, 'the certificate records the caveat and its withdrawal');
 });
