@@ -58,7 +58,10 @@
       revoke:   status === 'final' && (p.isAdmin() || signedByMe),
       history:  status !== 'offline',
       caveat:   rec.formType === 'notice-of-marriage' && status !== 'offline' && status !== 'revoked' && inUnit && p.can('create') &&
-                !(rec.caveats || []).some(c => c.status === 'upheld')
+                !(rec.caveats || []).some(c => c.status === 'upheld'),
+      // The Registrar's Certificate, made from a signed notice with no caveat open or upheld (the server checks the dates).
+      certificate: rec.formType === 'notice-of-marriage' && status === 'final' && inUnit && p.can('create') &&
+                !(rec.caveats || []).some(c => ['open', 'upheld'].includes(c.status))
     };
   }
 
@@ -290,7 +293,8 @@
       B('🖨  Print', 'btn--primary', () => print(doc, def), can.print),
       B(submitLabel(doc), 'btn--primary', done(() => submitDialog(doc)), can.submit),
       B('✔  Approve & Sign', 'btn--ok', done(() => approveDialog(doc)), can.approve),
-      B('⚠  Enter a Caveat', 'btn--danger', () => caveatDialog(doc, reopen), can.caveat)
+      B('⚠  Enter a Caveat', 'btn--danger', () => caveatDialog(doc, reopen), can.caveat),
+      B("📜  Registrar's Certificate", 'btn--primary', () => makeCertificate(doc), can.certificate)
     ]);
     // After a caveat is entered or resolved, the notice opens again as it now is.
     function reopen(record) { overlay && overlay.close(); changed(); if (opts.onDone) opts.onDone(record); openDocument(record.id, opts); }
@@ -370,6 +374,19 @@
     if (doc.status === 'final') rows.push(el('div', { class: 'doc-status__line muted' }, doc.printCount ? `Printed ${doc.printCount} time(s)` : 'Not printed yet'));
     if (doc.status === 'revoked') rows.push(el('div', { class: 'doc-status__note doc-status__note--bad' }, [el('strong', null, `Revoked by ${doc.revokedBy}: `), doc.revokeReason || '']));
     return el('div', { class: 'doc-status' }, rows);
+  }
+
+  // The Registrar's Certificate, filled from the notice: opened to add the
+  // length of residence, then submitted to the Marriage Registrar to sign.
+  async function makeCertificate(doc) {
+    if (!confirm(`Make the Registrar's Certificate for ${doc.summary || 'this couple'} from this notice? It opens filled from the notice; add the length of residence, then submit it to the Marriage Registrar.`)) return;
+    let record;
+    try { record = (await api().post(`/records/${doc.id}/certificate`)).record; }
+    catch (e) { ui().toast(e.message, 'error', 9000); return; }
+    document.querySelectorAll('.modal-overlay').forEach(o => o.close && o.close());
+    changed();
+    ui().toast("Registrar's Certificate made from the notice. Add the length of residence and save.", 'success', 6000);
+    openForm({ unitKey: record.unitKey, formType: record.formType, record });
   }
 
   // ── Caveats against a notice of marriage ──

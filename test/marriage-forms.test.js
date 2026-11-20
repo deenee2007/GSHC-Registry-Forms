@@ -76,3 +76,24 @@ test('a notice saved before the caveat dates were kept still prints them, from i
   assert.match(t, /Marriage may hold from 3rd December 2026/);
   assert.match(t, /Notice expires on 11th February 2027/);
 });
+
+
+test("Registrar's Certificate prints landscape, under the coat of arms alone, with its parties, dates and caveat line", () => {
+  const data = { registrationNo: '60/2026', registrarDistrict: 'Gombe', noticeDate: '2026-10-01', certificateDate: '2026-10-28', validUntil: '2027-01-01',
+    husbandName: 'Idris Musa', husbandCondition: 'Bachelor', husbandResidence: '6 years', wifeName: 'Fatima Sani', wifeCondition: 'Spinster', caveatNote: '' };
+  const html = render('marriage-registrar-certificate', data);
+  assert.match(html, /court-doc--landscape/);
+  assert.match(html, /\/assets\/coat\.png/);
+  assert.doesNotMatch(html, /highcourt\.png/, 'no High Court logo');
+  assert.doesNotMatch(html, /GOMBE STATE HIGH COURT OF JUSTICE/);
+  const t = text(html);
+  assert.match(t, /NIGERIA · REGISTRAR'S CERTIFICATE/);
+  assert.match(t, /REGISTRATION NO\. 60\/2026/);
+  assert.match(t, /Idris Musa Bachelor/);
+  assert.match(t, /6 years/);
+  assert.match(t, /No caveat has been entered against the issue of this certificate/);
+  assert.match(t, /solemnized on or before the 1st day of January 2027/);
+  assert.match(t, /Registrar of Marriage/);
+  const withCaveat = text(render('marriage-registrar-certificate', { ...data, caveatNote: '2026-10-05|2026-10-12|withdrawn' }));
+  assert.match(withCaveat, /A caveat was entered against the issue of this certificate on the 5th day of October 2026 in this District, but it has been withdrawn on the 12th day of October 2026/);
+});

@@ -118,6 +118,37 @@
       ]
     },
 
+    // Issued by the Marriage Registrar once the notice's 21 days have lapsed,
+    // with no caveat open or upheld, while the notice is still valid. Made
+    // only from the Notice of Marriage (its button fills it); not from New Entry.
+    'marriage-registrar-certificate': {
+      label: "Registrar's Certificate",
+      fromNotice: true,
+      landscape: true,
+      schema: [
+        ...fileNo,
+        { name: 'noticeId', type: 'hidden' },
+        { name: 'caveatNote', type: 'hidden' },
+        { section: 'The Certificate' },
+        { name: 'registrationNo', label: 'Registration No.', required: true, help: 'The number of the notice in the Marriage Notice Book' },
+        { name: 'registrarDistrict', label: 'Registrar of Marriage in the', defaultValue: 'Gombe', required: true, help: '… District of Nigeria' },
+        { name: 'noticeDate', label: 'Date the notice was entered', type: 'date', required: true },
+        { name: 'certificateDate', label: 'Date of certificate given', type: 'date', required: true },
+        { name: 'validUntil', label: 'Valid only if the marriage is solemnized on or before', type: 'date', required: true,
+          help: 'The day the notice expires (three months from its date)' },
+        ...['husband', 'wife'].flatMap(p => [
+          { section: p === 'husband' ? 'The Husband' : 'The Wife' },
+          { name: `${p}Name`, label: 'Name', required: true, full: true, summary: p === 'husband' },
+          { name: `${p}Condition`, label: 'Condition' },
+          { name: `${p}Occupation`, label: 'Occupation' },
+          { name: `${p}Age`, label: 'Age' },
+          { name: `${p}Consent`, label: 'Consent', help: 'If any, and by whom given' },
+          { name: `${p}Address`, label: 'Dwelling place', type: 'textarea', full: true },
+          { name: `${p}Residence`, label: 'Length of residence', help: 'e.g. 5 years' }
+        ])
+      ]
+    },
+
     'prohibited-degrees': {
       label: 'Prohibited Degrees of Relationship (Declaration)',
       schema: [

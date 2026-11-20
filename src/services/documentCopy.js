@@ -59,7 +59,7 @@ async function build(rec) {
 <style>
   body { background: #e9edea; margin: 0; padding: 16px; }
   .copy-note { max-width: 210mm; margin: 12px auto 0; font: 13px/1.5 system-ui, sans-serif; color: #44524a; }
-  @page { size: A4; margin: 0; }
+  @page { size: A4${body.includes('court-doc--landscape') ? ' landscape' : ''}; margin: 0; }
   @media print { body { background: #fff; padding: 0; } .court-doc { box-shadow: none; width: auto; margin: 0; } .copy-note, .copy-revoked { display: none; } }
 </style></head>
 <body>
@@ -85,17 +85,19 @@ async function save(rec) {
 // Added as the file is sent, so the stored copy stays as it was signed.
 const FIT_SCRIPT = `<style>@media print { .doc-sign-wrap, .doc-twosign { margin-top: 30px; } .doc-footer { margin-top: 14px; } }</style>
 <script>(function () {
-  var TARGET = 1070, MIN = 0.8;
+  var MIN = 0.8;
   function page() { return document.querySelector('.court-doc'); }
+  function wide() { var p = page(); return !!p && p.classList.contains('court-doc--landscape'); }
   function undo() { var p = page(); if (p) { p.style.zoom = ''; p.style.width = ''; p.style.maxWidth = ''; } }
   function fit() {
     var p = page(); if (!p) return; undo();
-    p.style.width = '794px'; p.style.maxWidth = 'none';
+    var W = wide() ? 1123 : 794, TARGET = wide() ? 755 : 1070;
+    p.style.width = W + 'px'; p.style.maxWidth = 'none';
     var h = p.getBoundingClientRect().height, z = 1;
     if (h <= TARGET) return;
     z = Math.max(MIN, TARGET / h);
     for (var i = 0; i < 8; i++) {
-      p.style.zoom = String(z); p.style.width = Math.round(794 / z) + 'px';
+      p.style.zoom = String(z); p.style.width = Math.round(W / z) + 'px';
       if (p.getBoundingClientRect().height <= TARGET || z <= MIN) break;
       z = Math.max(MIN, z - 0.02);
     }

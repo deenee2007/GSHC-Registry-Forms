@@ -32,7 +32,7 @@
 
     // ── New entry toolbar ──
     const formPicker = ui.el('select', { class: 'form-picker', 'aria-label': 'Form' },
-      formKeys.map(k => ui.el('option', { value: k }, defOf(k).label)));
+      formKeys.filter(k => !defOf(k).fromNotice).map(k => ui.el('option', { value: k }, defOf(k).label)));
     const newBtn = ui.el('button', {
       class: 'btn btn--primary', disabled: can('create') && formKeys.length ? null : 'disabled',
       onclick: () => wf.openForm({ unitKey: unit.key, formType: formPicker.value })

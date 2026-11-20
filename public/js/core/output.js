@@ -194,6 +194,14 @@
   // never pass for the official document.
   const WATERMARK = { draft: 'DRAFT · NOT VALID', pending: 'AWAITING SIGNATURE · NOT VALID', returned: 'DRAFT · NOT VALID', offline: 'DRAFT · NOT VALID', revoked: 'REVOKED' };
 
+  // A national form (the Registrar's Certificate of marriage): the coat of
+  // arms alone, centred, without the High Court's masthead; landscape.
+  function nationalShell(inner, record) {
+    const mark = WATERMARK[record.status];
+    return `<article class="court-doc court-doc--landscape court-doc--national${mark ? ' court-doc--marked' : ''}"${mark ? ` data-watermark="${esc(mark)}"` : ''}>` +
+      `<header class="doc-arms"><img class="doc-arms__img" src="/assets/coat.png" alt="Coat of arms of Nigeria"></header>${inner}${leftoverSignatures()}${verificationBlock(record)}${footer(record)}</article>`;
+  }
+
   function shell(unitName, inner, record) {
     const mark = WATERMARK[record.status];
     return `<article class="court-doc${mark ? ' court-doc--marked' : ''}"${mark ? ` data-watermark="${esc(mark)}"` : ''}>` +
@@ -584,7 +592,8 @@
     "marriage-witnesses":        marriageWitnesses,
     "marriage-oath-taking":      marriageOathTaking,
     "marriage-oath-affirmation": marriageOathAffirmation,
-    "prohibited-degrees":        prohibitedDegrees
+    "prohibited-degrees":        prohibitedDegrees,
+    "marriage-registrar-certificate": registrarCertificate
   };
 
   /* ── Marriage Registry forms: signed by hand by the parties and witnesses ── */
@@ -688,6 +697,36 @@
     "Mother's Husband", "Daughter's Husband", "Mother's mother's Husband", "Father's mother's Husband", "Husband's father's father", "Husband's daughter's son",
     "Husband's son's son", "Daughter's Daughter's husband", "Son's Daughter's Husband", "Husband's mother's father", "Mother's brother",
     "Father's brother", "Sister's son", "Brother's son"];
+  // The Registrar's Certificate, as on the registry's form (its slips
+  // corrected: "said", "delivered to the hand of the Registrar").
+  function registrarCertificate(d, u, r) {
+    const cd = splitDate(d.certificateDate), nd = splitDate(d.noticeDate), vu = splitDate(d.validUntil);
+    // The Registrar's name, from their signature once signed (left for the
+    // signature line below to place).
+    const signed = ((_doc && _doc.signatures) || []).find(g => g.role === "marriage_registrar");
+    const registrar = signed ? [signed.title, signed.name].filter(Boolean).join(" ") : "";
+    const row = (p) => `<tr><td>${fmt(d[p + "Name"])}</td><td>${esc(d[p + "Condition"] || "")}</td><td>${fmt(d[p + "Occupation"])}</td><td>${esc(d[p + "Age"] || "")}</td><td>${fmt(d[p + "Consent"])}</td><td>${fmt(d[p + "Address"])}</td><td>${esc(d[p + "Residence"] || "")}</td></tr>`;
+    const dayMonth = (x) => `${L(ordinal(x.day), "short")} day of ${L(x.month ? `${x.month} ${x.year4}` : "", "medium")}`;
+    // A caveat entered and later withdrawn or removed is stated, as the form provides.
+    const cav = String(d.caveatNote || "").split(";").filter(Boolean).map(x => { const [lodged, decided, how] = x.split("|"); return { lodged: splitDate(lodged), decided: splitDate(decided), how }; });
+    const caveat = cav.length
+      ? cav.map(c => `<p>A caveat was entered against the issue of this certificate on the ${dayMonth(c.lodged)} in this District, but it has been ${c.how === "withdrawn" ? "withdrawn" : "removed"}${c.decided.day ? ` on the ${dayMonth(c.decided)}` : ""}.</p>`).join("")
+      : `<p>No caveat has been entered against the issue of this certificate.</p>`;
+    return nationalShell(
+      `<div class="rcert__regno">REGISTRATION NO. ${L(d.registrationNo, "medium")}</div>
+      <div class="rcert__title">NIGERIA · REGISTRAR'S CERTIFICATE</div>
+      <p>I, ${L(registrar, "long")}, Registrar of Marriage in the ${L(d.registrarDistrict, "medium")} District of Nigeria, certify that on the
+      ${dayMonth(nd)}, Notice was duly entered in the Marriage Notice Book of this District of the Marriage intended between the parties
+      herein named and described, such notice being delivered to the hand of the Registrar on behalf of the parties, that is to say:</p>
+      <table class="rcert__table"><thead><tr><th>Name</th><th>Condition</th><th>Occupation</th><th>Age</th><th>Consent</th><th>Dwelling Place</th><th>Length of Residence</th></tr></thead>
+        <tbody>${row("husband")}${row("wife")}</tbody></table>
+      <div class="rcert__dates"><span>Date of Notice entered: ${L(longDate(d.noticeDate), "medium")}</span><span>Date of Certificate given: ${L(longDate(d.certificateDate), "medium")}</span></div>
+      ${caveat}
+      <p>Witness my hand this ${dayMonth(cd)}.</p>
+      <p class="rcert__note"><strong>NOTE:</strong> This certificate will not be valid unless the marriage is solemnized on or before the ${dayMonth(vu)}.</p>
+      ${sign("Registrar of Marriage")}`, r);
+  }
+
   function prohibitedDegrees(d, u, r) {
     const rows = PROHIBITED_MAN.map((m, i) => `<tr><td>${esc(m)}</td><td>${esc(PROHIBITED_WOMAN[i] || "")}</td></tr>`).join("");
     const dd = splitDate(d.declarationDate);
@@ -1406,14 +1445,18 @@
     root.style.cssText = "display:block;position:absolute;left:-10000px;top:0;visibility:hidden";
     page.style.zoom = ""; page.style.width = "";
     page.style.maxWidth = "none";
+    // A landscape form (the Registrar's Certificate) on a sideways A4 sheet.
+    const wide = page.classList.contains("court-doc--landscape");
+    const W = wide ? 1123 : 794, TARGET = wide ? 755 : FIT_TARGET;
+    if (wide) page.style.width = `${W}px`;
     const height = () => page.getBoundingClientRect().height;
     let h = height(), z = 1;
-    if (h > FIT_TARGET) {
-      z = Math.max(MIN_ZOOM, FIT_TARGET / h);
+    if (h > TARGET) {
+      z = Math.max(MIN_ZOOM, TARGET / h);
       for (let i = 0; i < 8; i++) {
         page.style.zoom = String(z);
-        page.style.width = `${Math.round(794 / z)}px`; // still the full width of the sheet
-        if (height() <= FIT_TARGET || z <= MIN_ZOOM) break;
+        page.style.width = `${Math.round(W / z)}px`; // still the full width of the sheet
+        if (height() <= TARGET || z <= MIN_ZOOM) break;
         z = Math.max(MIN_ZOOM, z - 0.02);
       }
     }
@@ -1432,8 +1475,11 @@
       throw new Error("A signature image could not be loaded. Check the connection and try again.");
     }
     fitToPage(root);
+    // A landscape form prints on a sideways sheet.
+    const sideways = root.querySelector(".court-doc--landscape") ? Object.assign(document.createElement("style"), { textContent: "@page { size: A4 landscape; margin: 0; }" }) : null;
+    if (sideways) document.head.appendChild(sideways);
     document.body.classList.add("is-printing");
-    const cleanup = () => { document.body.classList.remove("is-printing"); root.innerHTML = ""; window.removeEventListener("afterprint", cleanup); };
+    const cleanup = () => { document.body.classList.remove("is-printing"); root.innerHTML = ""; if (sideways) sideways.remove(); window.removeEventListener("afterprint", cleanup); };
     window.addEventListener("afterprint", cleanup);
     window.print();
     setTimeout(cleanup, 1000);
