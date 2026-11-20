@@ -1004,3 +1004,16 @@ button.dash-card:hover { border-color: var(--green-500); }
 .form-computed { background: #eef7f1; font-weight: 700; color: #0b5d33; }
 .doc-handsign-row .doc-handsign .line { min-width: 0; }
 .list-note { display: block; margin-top: 4px; white-space: normal; text-transform: none; }
+
+/* The personal staff account on an officer's record (Directorate of Personnel) */
+.staff-account { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .6rem;
+  border: 1px solid var(--line); border-left: 4px solid #9aa5a0; border-radius: 10px; padding: .6rem .9rem; margin: .7rem 0; background: #fff; font-size: .9rem; }
+.staff-account--active { border-left-color: var(--green-600); background: var(--green-50); }
+.staff-account--inactive { border-left-color: #c0392b; }
+.staff-account__actions { display: flex; gap: .4rem; flex-wrap: wrap; }
+/* A personal account's Home: My Leave and My Record */
+.myrec-card { margin-bottom: 1rem; }
+.myrec-balances { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: .7rem; margin: .4rem 0 .8rem; }
+.myrec-balance { background: var(--green-50); border-radius: 10px; padding: .8rem; text-align: center; }
+.myrec-balance__num { font-size: 1.8rem; font-weight: 700; color: var(--green-700); }
+.myrec-balance__label { font-size: .78rem; color: var(--muted); }

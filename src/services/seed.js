@@ -27,6 +27,21 @@ async function seedUnits() {
 // The roll became the Directorate of Personnel unit: those who already had
 // the roll's privileges are given the unit once, so nobody loses it. One with
 // no unit (who reached every unit) keeps every unit, with this one added.
+// Records linked to a sign in account before personal accounts existed were
+// linked to a work account: that link becomes the record's work account.
+async function workLinksOnce(log = console.log) {
+  const meta = mongoose.connection.collection('appmeta');
+  if (await meta.findOne({ _id: 'staffWorkLinks-2026-11' })) return;
+  const { Staff } = require('../models');
+  let n = 0;
+  for (const s of await Staff.find({ user: { $ne: null } }, 'user workUser')) {
+    const u = await User.findById(s.user, 'kind').lean();
+    if (u && u.kind !== 'personal') { await Staff.updateOne({ _id: s._id }, { $set: { workUser: s.user, user: null } }); n++; }
+  }
+  if (n) log(`  Nominal Roll: ${n} record(s) linked to a work account, now kept as the work account.`);
+  await meta.updateOne({ _id: 'staffWorkLinks-2026-11' }, { $set: { at: new Date() } }, { upsert: true });
+}
+
 async function personnelUnitOnce(log = console.log) {
   const meta = mongoose.connection.collection('appmeta');
   if (await meta.findOne({ _id: 'personnelUnit-2026-11' })) return;
@@ -195,6 +210,7 @@ async function seedAll(log = console.log) {
   await seedUnits();
   await seedFormConfigs();
   await personnelUnitOnce(log);
+  await workLinksOnce(log);
   await retireRoles(log);
   await updateFormConfigs(log);
   await fillCaseNumbers(log);
@@ -207,4 +223,4 @@ async function seedAll(log = console.log) {
   return created;
 }
 
-module.exports = { personnelUnitOnce, seedAll, resetAdmin, report, updateFormConfigs, retireRoles, fillCaseNumbers, usernamesToEmail, SEED_UNITS };
+module.exports = { workLinksOnce, personnelUnitOnce, seedAll, resetAdmin, report, updateFormConfigs, retireRoles, fillCaseNumbers, usernamesToEmail, SEED_UNITS };

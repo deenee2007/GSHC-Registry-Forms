@@ -493,8 +493,26 @@ by the PSN, which is unique. Inside the unit, the privilege **Nominal Roll:
 view** (`personnel_view`) shows the roll and **Nominal Roll: edit**
 (`personnel_edit`, for Secret Registry staff; also opens confidential
 documents) changes it; every opening of a record is audited. Those who had
-these privileges before the unit existed were given it once. **🌴 Leave**
-is a menu item for everyone who signs in, whatever their unit.
+these privileges before the unit existed were given it once.
+
+**Personal staff accounts.** Work accounts are for a unit's or registry's
+work only. Each officer may also have a **personal account**, signed in
+with their **PSN**, for their own matters: Home (their leave for the year
+and their record, read only), **🌴 My Leave** (apply, follow, print the
+letter) and My Account (their own email, under **My Email**, for
+notifications and password resets). Appraisal (APER), notices about
+promotion and retirement, and in-service applications are to follow. The
+**Director Personnel** or the administrator activates it from the
+officer's record (**👤 Personal Account**: **Activate Account**, an email
+optional), only for those who need it; a printed slip gives the PSN and a
+one time activation code, and the officer chooses a password at the first
+sign in. **New Code** and **Deactivate** are on the same record. The server
+refuses every work screen to a personal account; personal accounts are not
+listed in Settings, Users. In a work account, **🌴 Leave** is only for the
+approving officers (Staff Officer, Director Personnel, Chief Registrar,
+Hon. Chief Judge) and the Directorate. An officer's work account, if any,
+is linked on the record as their work account (records linked before were
+moved to it once), so they never act on their own leave.
 
 * **The record:** name, sex, rank and cadre, grade level (01 to 17, or Cons.
   for the Chief Registrar) and step, highest qualification and others, date

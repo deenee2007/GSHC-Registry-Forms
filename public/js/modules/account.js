@@ -22,19 +22,36 @@
         el('h2', { class: 'card__title' }, 'Details'),
         el('div', { class: 'kv-list' }, [
           row('Name', [user.title, user.fullName].filter(Boolean).join(' ')),
-          row('Username', user.username),
-          row('Email', user.email || 'Not set. Ask the administrator to add one so you can reset a forgotten password by email.'),
-          row('Role', user.role === 'admin' ? 'Administrator' : 'Unit User'),
+          row(user.kind === 'personal' ? 'Sign in (PSN)' : 'Username', user.username),
+          row('Email', user.email || (user.kind === 'personal' ? 'Not set. Add one below to receive notifications and reset a forgotten password by email.' : 'Not set. Ask the administrator to add one so you can reset a forgotten password by email.')),
+          row('Role', user.kind === 'personal' ? 'Personal staff account' : user.role === 'admin' ? 'Administrator' : 'Unit User'),
           row('Signs as', (user.signerRoles || []).map(r => workflow.roleLabel(r)).join(', ')),
           row('Last sign in', ui.fmtDate(user.lastLoginAt))
         ])
       ]));
 
+      // A personal staff account adds or changes its own email.
+      if (user.kind === 'personal') {
+        const email = el('input', { type: 'email', value: user.email || '', placeholder: 'you@example.com', autocomplete: 'email' });
+        const pass = el('input', { type: 'password', autocomplete: 'current-password', placeholder: 'Your password' });
+        container.appendChild(el('section', { class: 'card' }, [
+          el('h2', { class: 'card__title' }, 'My Email'),
+          el('p', { class: 'muted' }, 'With an email you receive notifications (such as a leave approval) and can reset a forgotten password yourself. Leave it empty to remove it.'),
+          el('div', { class: 'form-grid' }, [ui.field('Email', email), ui.field('Your password (to confirm)', pass)]),
+          el('div', { class: 'dash-links' }, [el('button', { class: 'btn btn--primary', onclick: async () => {
+            try {
+              const r = await api.patch('/me/email', { email: email.value.trim(), password: pass.value });
+              ctx.auth.set(r.user); ui.toast(r.user.email ? 'Email saved.' : 'Email removed.', 'success'); window.App.router.loadModule('account');
+            } catch (e) { ui.toast(e.message, 'error'); }
+          } }, 'Save Email')])
+        ]));
+      }
+
       // Email alerts
       const alerts = el('input', { type: 'checkbox' });
       alerts.checked = user.emailAlerts;
       let why = '';
-      if (!user.email) why = 'Add an email address (ask the administrator) to receive alerts.';
+      if (!user.email) why = user.kind === 'personal' ? 'Add your email above to receive alerts.' : 'Add an email address (ask the administrator) to receive alerts.';
       else if (user.emailAlertsBlocked) why = 'The administrator has switched email alerts off for your account.';
       alerts.disabled = !!why;
       alerts.addEventListener('change', async () => {

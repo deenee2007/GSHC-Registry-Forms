@@ -34,6 +34,16 @@
   async function buildNav() {
     const { ui, permissions, user } = deps();
     ui.clear(_nav);
+    // A personal staff account: the officer's own matters only.
+    if (user.kind === 'personal') {
+      _nav.appendChild(navItem('🏠  Home', loadDashboard, { 'data-nav': 'home' }));
+      _nav.appendChild(navItem('🌴  My Leave', () => loadModule('leave'), { 'data-nav': 'leave' }));
+      _nav.appendChild(ui.el('div', { class: 'nav-group' }, 'Account'));
+      _nav.appendChild(navItem('🔑  My Account', () => loadModule('account'), { 'data-nav': 'account' }));
+      _nav.appendChild(navItem('❓  Help', () => window.open('/guide#mystaff', '_blank', 'noopener'), { 'data-nav': 'help' }));
+      refreshBadges();
+      return;
+    }
     const list = await units(true);
     const group = (title) => _nav.appendChild(ui.el('div', { class: 'nav-group' }, title));
 
@@ -58,10 +68,12 @@
       _nav.appendChild(navItem('💰  Fees List', () => loadModule('fees'), { 'data-nav': 'fees' }));
     }
 
-    // Leave: for every member of staff who signs in, whatever their unit:
-    // their own applications, and those waiting for an approving officer.
-    // (The Nominal Roll is in the Directorate of Personnel unit, below.)
-    _nav.appendChild(navItem('🌴  Leave', () => loadModule('leave'), { 'data-nav': 'leave' }, 'leave'));
+    // Leave in a work account: for the officers who act on applications and
+    // for the Directorate of Personnel. An officer's own leave is in their
+    // personal staff account (signed in with their PSN).
+    const approves = (user.signerRoles || []).some(r => ['staff_officer', 'director_personnel', 'chief_registrar', 'chief_judge'].includes(r));
+    const directorate = permissions.isAdmin(user) || ((user.unitKeys || []).includes('personnel') && (user.privileges || []).some(p => p === 'personnel_view' || p === 'personnel_edit'));
+    if (approves || directorate) _nav.appendChild(navItem('🌴  Leave', () => loadModule('leave'), { 'data-nav': 'leave' }, 'leave'));
 
     if (list.length) group('Units');
     list.forEach(u => _nav.appendChild(navItem(u.name, () => loadUnit(u), { 'data-unit': u.key }, u.type === 'process' ? 'process' : null)));
@@ -85,7 +97,11 @@
   }
 
   async function refreshBadges() {
-    const { api } = deps();
+    const { api, user } = deps();
+    if (user && user.kind === 'personal') {
+      try { const notes = await api.get('/notifications?unread=1'); if (window.App.notices) window.App.notices.setCount(notes.unread); } catch (e) { /* offline */ }
+      return;
+    }
     try {
       const [stats, notes] = await Promise.all([api.get('/records/stats'), api.get('/notifications?unread=1')]);
       setBadge('inbox', stats.inbox);
@@ -127,6 +143,7 @@
 
   function loadDashboard() {
     setActive('[data-nav="home"]');
+    if (deps().user.kind === 'personal') return show(() => window.App.modules.myRecord.render(_content, deps()));
     return show(() => window.App.dashboard.render(_content, deps()));
   }
 

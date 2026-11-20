@@ -14,6 +14,7 @@ const multer = require('multer');
 const mongoose = require('mongoose');
 const { Staff, StaffDocument, User, STAFF_STATUSES } = require('../models');
 const personnel = require('../services/personnel');
+const account = require('../services/personalAccount');
 const personnelImport = require('../services/personnelImport');
 const fileStore = require('../services/fileStore');
 const audit = require('../services/audit');
@@ -59,9 +60,10 @@ function brief(s) {
 function full(s, u) {
   return {
     ...brief(s), qualifications: s.qualifications || [], phone: s.phone, email: s.email, address: s.address,
-    nextOfKin: s.nextOfKin || { name: '', relationship: '', phone: '' }, statusDate: s.statusDate, user: s.user ? String(s.user) : null,
+    nextOfKin: s.nextOfKin || { name: '', relationship: '', phone: '' }, statusDate: s.statusDate,
+    user: s.user ? String(s.user) : null, workUser: s.workUser ? String(s.workUser) : null,
     history: [...(s.history || [])].reverse(), createdAt: s.createdAt, createdByName: s.createdByName, updatedByName: s.updatedByName,
-    canEdit: canEdit(u)
+    canEdit: canEdit(u), canManageAccount: account.mayManage(u)
   };
 }
 async function load(id) {
@@ -116,7 +118,7 @@ router.get('/staff/:id', wrap(async (req, res) => {
   mustView(req);
   const s = await load(req.params.id);
   await audit.log(req, 'staff_record_opened', { details: { staffId: String(s._id), psn: s.psn } });
-  res.json({ staff: full(s, req.user) });
+  res.json({ staff: { ...full(s, req.user), account: await account.describe(s) } });
 }));
 
 const TEXT = { name: 200, title: 40, rank: 120, cadre: 60, qualification: 200, lga: 40, station: 120, phone: 40, email: 120, address: 300 };
@@ -124,7 +126,7 @@ const DATE_FIELDS = ['dob', 'dofa', 'dopa', 'confirmedOn', 'contractEnds'];
 const LABEL = { psn: 'PSN', name: 'Name', title: 'Title', sex: 'Sex', rank: 'Rank', cadre: 'Cadre', gl: 'GL', step: 'Step', qualification: 'Highest qualification',
   dob: 'Date of birth', dofa: 'Date of first appointment', dopa: 'Date of present appointment', confirmedOn: 'Date of confirmation', lga: 'LGA',
   station: 'Station', contract: 'Contract', contractEnds: 'Contract end date', phone: 'Phone', email: 'Email', address: 'Address', nextOfKin: 'Next of kin',
-  qualifications: 'Qualifications', user: 'Sign in account' };
+  qualifications: 'Qualifications', workUser: 'Work account' };
 async function clean(body, s) {
   const out = {};
   if (body.psn !== undefined) {
@@ -184,14 +186,19 @@ router.put('/staff/:id', wrap(async (req, res) => {
   const s = await load(req.params.id);
   const fields = await clean(req.body || {}, await personnel.getSettings());
   if (fields.psn && fields.psn !== s.psn && await Staff.exists({ psn: fields.psn })) throw new HttpError(409, `PSN ${fields.psn} is already on the roll.`);
-  if (req.body.user !== undefined && isAdmin(req.user)) {
-    const id = req.body.user && mongoose.isValidObjectId(req.body.user) ? req.body.user : null;
-    if (id && !(await User.exists({ _id: id }))) throw new HttpError(400, 'Unknown sign in account.');
-    if (String(s.user || '') !== String(id || '')) { fields.user = id; }
+  // The officer's work account (for a unit's work), linked by the administrator
+  // so they never act on their own leave. (Their personal account is made
+  // from the record, under Personal Account.)
+  const wu = req.body.workUser !== undefined ? req.body.workUser : req.body.user;
+  if (wu !== undefined && isAdmin(req.user)) {
+    const id = wu && mongoose.isValidObjectId(wu) ? wu : null;
+    if (id && !(await User.exists({ _id: id, kind: { $ne: 'personal' } }))) throw new HttpError(400, 'Choose a work account.');
+    if (String(s.workUser || '') !== String(id || '')) { fields.workUser = id; }
   }
-  const changes = Object.keys(fields).filter(k => JSON.stringify(k === 'user' ? String(s.user || '') : s.toObject()[k] ?? '') !== JSON.stringify(k === 'user' ? String(fields.user || '') : fields[k] ?? ''));
+  const isLink = (k) => k === 'workUser';
+  const changes = Object.keys(fields).filter(k => JSON.stringify(isLink(k) ? String(s.workUser || '') : s.toObject()[k] ?? '') !== JSON.stringify(isLink(k) ? String(fields.workUser || '') : fields[k] ?? ''));
   if (!changes.length) return res.json({ staff: full(s, req.user) });
-  const text = changes.map(k => k === 'user' ? `${LABEL.user} ${fields.user ? 'linked' : 'unlinked'}` : `${LABEL[k] || k}: ${shown(k, s.toObject()[k])} to ${shown(k, fields[k])}`).join('; ');
+  const text = changes.map(k => isLink(k) ? `${LABEL.workUser} ${fields.workUser ? 'linked' : 'unlinked'}` : `${LABEL[k] || k}: ${shown(k, s.toObject()[k])} to ${shown(k, fields[k])}`).join('; ');
   Object.assign(s, fields, { updatedByName: req.user.fullName });
   if (changes.some(k => DATE_FIELDS.includes(k))) s.checkDates = false;
   s.history.push({ kind: 'correction', date: today(), text: `Corrected: ${text}`.slice(0, 1500), byName: req.user.fullName, at: new Date() });
@@ -362,6 +369,43 @@ router.post('/import', sheetUpload, wrap(async (req, res) => {
   }
   const a = await personnelImport.analyse(req.file.buffer, req.file.originalname);
   res.json({ ...a, rows: a.rows.map(({ doc, ...x }) => x) });
+}));
+
+// ── The officer's personal staff account (PSN), by the Director Personnel
+// or the administrator, only for those who need one ──
+function mustManage(req) {
+  if (!account.mayManage(req.user)) throw new HttpError(403, 'Only the Director Personnel or the administrator activates personal accounts.');
+}
+const slip = (s, r) => ({ name: s.name, psn: s.psn, rank: s.rank, station: s.station, username: r.user.username, code: r.code, emailed: r.emailed, email: r.user.email || '' });
+
+router.post('/staff/:id/account', wrap(async (req, res) => {
+  mustManage(req);
+  const s = await load(req.params.id);
+  let r;
+  try { r = await account.activate(req, s, { email: req.body.email }); } catch (e) { throw new HttpError(e.status || 500, e.message); }
+  s.history.push({ kind: 'account', date: today(), text: `Personal account activated (sign in: PSN ${s.psn})`, byName: req.user.fullName, at: new Date() });
+  await s.save();
+  await audit.log(req, 'staff_account_activated', { details: { staffId: String(s._id), psn: s.psn, emailed: r.emailed } });
+  res.json({ slip: slip(s, r), account: await account.describe(s) });
+}));
+
+router.post('/staff/:id/account/code', wrap(async (req, res) => {
+  mustManage(req);
+  const s = await load(req.params.id);
+  let r;
+  try { r = await account.newCode(req, s); } catch (e) { throw new HttpError(e.status || 500, e.message); }
+  await audit.log(req, 'staff_account_new_code', { details: { staffId: String(s._id), psn: s.psn, emailed: r.emailed } });
+  res.json({ slip: slip(s, r), account: await account.describe(s) });
+}));
+
+router.post('/staff/:id/account/deactivate', wrap(async (req, res) => {
+  mustManage(req);
+  const s = await load(req.params.id);
+  try { await account.deactivate(s); } catch (e) { throw new HttpError(e.status || 500, e.message); }
+  s.history.push({ kind: 'account', date: today(), text: 'Personal account deactivated', byName: req.user.fullName, at: new Date() });
+  await s.save();
+  await audit.log(req, 'staff_account_deactivated', { details: { staffId: String(s._id), psn: s.psn } });
+  res.json({ account: await account.describe(s) });
 }));
 
 module.exports = router;

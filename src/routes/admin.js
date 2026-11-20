@@ -78,7 +78,8 @@ router.put('/settings', wrap(async (req, res) => {
 
 // ── Users ──
 router.get('/users', wrap(async (req, res) => {
-  const users = await User.find().sort({ fullName: 1 });
+  // Work accounts; personal staff accounts are managed from the Nominal Roll.
+  const users = await User.find({ kind: { $ne: 'personal' } }).sort({ fullName: 1 });
   res.json({ users: users.map(u => u.toSafeJSON()) });
 }));
 
@@ -129,7 +130,7 @@ router.post('/users', wrap(async (req, res) => {
 
 // Email a link to choose a new password (an invitation if they never signed in).
 router.post('/users/:id/send-link', wrap(async (req, res) => {
-  const user = await User.findById(oid(req.params.id));
+  const user = await User.findOne({ _id: oid(req.params.id), kind: { $ne: 'personal' } }); // personal accounts: from the Nominal Roll
   if (!user) throw new HttpError(404, 'User not found.');
   if (!user.active) throw new HttpError(400, 'Activate the account first.');
   if (!mail.enabled()) throw new HttpError(503, 'Email is not set up on this server.');
@@ -140,7 +141,7 @@ router.post('/users/:id/send-link', wrap(async (req, res) => {
 }));
 
 router.patch('/users/:id', wrap(async (req, res) => {
-  const user = await User.findById(oid(req.params.id));
+  const user = await User.findOne({ _id: oid(req.params.id), kind: { $ne: 'personal' } }); // personal accounts: from the Nominal Roll
   if (!user) throw new HttpError(404, 'User not found.');
   const fields = await cleanUserInput(req.body, await Unit.find());
   if (fields.email && await User.exists({ $or: [{ email: fields.email }, { username: fields.email }], _id: { $ne: user._id } })) {
@@ -163,7 +164,7 @@ router.patch('/users/:id', wrap(async (req, res) => {
 }));
 
 router.post('/users/:id/reset-password', wrap(async (req, res) => {
-  const user = await User.findById(oid(req.params.id));
+  const user = await User.findOne({ _id: oid(req.params.id), kind: { $ne: 'personal' } }); // personal accounts: from the Nominal Roll
   if (!user) throw new HttpError(404, 'User not found.');
   const tempPassword = pw.temporaryPassword();
   user.passwordHash = await pw.hash(tempPassword);
@@ -175,7 +176,7 @@ router.post('/users/:id/reset-password', wrap(async (req, res) => {
 }));
 
 router.post('/users/:id/reset-pin', wrap(async (req, res) => {
-  const user = await User.findById(oid(req.params.id));
+  const user = await User.findOne({ _id: oid(req.params.id), kind: { $ne: 'personal' } }); // personal accounts: from the Nominal Roll
   if (!user) throw new HttpError(404, 'User not found.');
   user.signingPinHash = null; user.pinFailures = 0; user.pinLockedUntil = null;
   await user.save();
@@ -197,7 +198,7 @@ async function userWork(id) {
 }
 
 router.get('/users/:id/work', wrap(async (req, res) => {
-  const user = await User.findById(oid(req.params.id));
+  const user = await User.findOne({ _id: oid(req.params.id), kind: { $ne: 'personal' } }); // personal accounts: from the Nominal Roll
   if (!user) throw new HttpError(404, 'User not found.');
   res.json(await userWork(user._id));
 }));
@@ -208,7 +209,7 @@ router.get('/users/:id/work', wrap(async (req, res) => {
 // court record ever loses the name of who made or signed it.
 router.delete('/users/:id/permanent', wrap(async (req, res) => {
   const { Notification, PasswordToken } = require('../models');
-  const user = await User.findById(oid(req.params.id));
+  const user = await User.findOne({ _id: oid(req.params.id), kind: { $ne: 'personal' } }); // personal accounts: from the Nominal Roll
   if (!user) throw new HttpError(404, 'User not found.');
   if (String(user._id) === String(req.user._id)) throw new HttpError(400, 'You cannot delete your own account.');
   if (user.username === config.adminUsername) throw new HttpError(400, 'The built in admin account cannot be deleted.');
@@ -225,7 +226,7 @@ router.delete('/users/:id/permanent', wrap(async (req, res) => {
 }));
 
 router.delete('/users/:id', wrap(async (req, res) => {
-  const user = await User.findById(oid(req.params.id));
+  const user = await User.findOne({ _id: oid(req.params.id), kind: { $ne: 'personal' } }); // personal accounts: from the Nominal Roll
   if (!user) throw new HttpError(404, 'User not found.');
   if (String(user._id) === String(req.user._id)) throw new HttpError(400, 'You cannot deactivate your own account.');
   user.active = false;

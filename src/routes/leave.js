@@ -38,8 +38,11 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const today = () => new Date().toISOString().slice(0, 10);
 const long = (d) => d ? new Date(d + 'T12:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
 const meta = () => mongoose.connection.collection('appmeta');
+// The officer's own: their record, reached from their personal account. For
+// keeping an approving officer off their own application, their work
+// account linked to the record counts too.
 const isOwn = (u, staff) => !!staff && !!staff.user && String(staff.user) === String(u._id);
-const ownStaff = (u) => Staff.findOne({ user: u._id });
+const ownStaff = (u) => Staff.findOne({ $or: [{ user: u._id }, { workUser: u._id }] });
 
 function canSee(u, l, own) {
   return canViewRoll(u) || own || l.steps.some(s => u.signerRoles.includes(s.role));
@@ -62,10 +65,11 @@ async function load(id, u) {
   if (!mongoose.isValidObjectId(id)) throw new HttpError(404, 'Application not found.');
   const l = await Leave.findById(id);
   if (!l) throw new HttpError(404, 'Application not found.');
-  const staff = await Staff.findById(l.staff, 'user');
+  const staff = await Staff.findById(l.staff, 'user workUser');
   const own = isOwn(u, staff);
   if (!canSee(u, l, own)) throw new HttpError(403, 'You do not have access to this application.');
-  return { l, own };
+  // mine: the officer's own application, from either of their accounts.
+  return { l, own, mine: own || (!!staff && !!staff.workUser && String(staff.workUser) === String(u._id)) };
 }
 
 // In app notices, and an email where the person allows alerts.
@@ -79,7 +83,7 @@ async function tell(users, message, link, subject) {
       .map(x => mail.send({ to: x.email, name: x.fullName, ...mail.alertMessage(x, subject, message, '') })));
   } catch (e) { console.error('Leave alert emails failed:', e.message); }
 }
-const holders = (role, not) => User.find({ active: true, signerRoles: role, ...(not ? { _id: { $nin: not } } : {}) });
+const holders = (role, not) => User.find({ active: true, kind: { $ne: 'personal' }, signerRoles: role, ...(not ? { _id: { $nin: not } } : {}) });
 
 // Days used (approved) and asked for (pending) of each kind in a year.
 async function balances(staff, year, s, except) {
@@ -113,7 +117,8 @@ router.get('/counts', wrap(async (req, res) => {
 
 // The officer's own record (when linked), balances and applications.
 router.get('/me', wrap(async (req, res) => {
-  const staff = await ownStaff(req.user);
+  // Their own leave is in their personal staff account.
+  const staff = await Staff.findOne({ user: req.user._id });
   if (!staff) return res.json({ staff: null });
   const s = await leaveSvc.getSettings();
   const year = Number(req.query.year) || new Date().getFullYear();
@@ -203,14 +208,14 @@ router.post('/', wrap(async (req, res) => {
     steps, waitingRole: steps[0].role, appliedBy: req.user._id, appliedByName: req.user.fullName, forSelf: own
   });
   await audit.log(req, 'leave_applied', { details: { leaveId: String(l._id), psn: staff.psn, type: type.key, days, from: sp.from } });
-  await tell(await holders(steps[0].role, [req.user._id, staff.user].filter(Boolean)),
+  await tell(await holders(steps[0].role, [req.user._id, staff.user, staff.workUser].filter(Boolean)),
     `${staff.name} (PSN ${staff.psn}) applies for ${days} ${type.working ? 'working ' : ''}days of ${type.name.toLowerCase()} from ${long(sp.from)}.`, 'leave', 'Leave application');
   res.status(201).json({ leave: serialize(l, req.user, own) });
 }));
 
 // A step: forward, recommend or approve (or decline), signed with the PIN.
 router.post('/:id/act', wrap(async (req, res) => {
-  const { l, own } = await load(req.params.id, req.user);
+  const { l, mine: own } = await load(req.params.id, req.user);
   if (l.status !== 'pending') throw new HttpError(409, 'This application is no longer pending.');
   const i = l.steps.findIndex(s => s.status === 'waiting');
   const step = l.steps[i];
@@ -251,7 +256,7 @@ router.post('/:id/act', wrap(async (req, res) => {
     await tell(await User.find({ active: true, privileges: 'personnel_edit', _id: { $nin: [me._id, ...applicant] } }), `Leave approved for ${l.name} (PSN ${l.psn}): ${what}. Ref. ${l.reference}.`, 'leave', 'Leave approved');
   } else {
     const next = l.steps[i + 1];
-    await tell(await holders(next.role, [me._id, staff && staff.user].filter(Boolean)), `${l.name} (PSN ${l.psn}): ${what}, ${step.action === 'Recommend' ? 'recommended' : 'forwarded'} by the ${step.label}, waits for the ${next.label}.`, 'leave', 'Leave application');
+    await tell(await holders(next.role, [me._id, staff && staff.user, staff && staff.workUser].filter(Boolean)), `${l.name} (PSN ${l.psn}): ${what}, ${step.action === 'Recommend' ? 'recommended' : 'forwarded'} by the ${step.label}, waits for the ${next.label}.`, 'leave', 'Leave application');
   }
   res.json({ leave: serialize(l, req.user, own) });
 }));

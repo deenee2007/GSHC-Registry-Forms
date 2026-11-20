@@ -14,7 +14,7 @@
 
   function loginScreen(message, isError) {
     ui.clear(root);
-    const username = ui.el('input', { type: 'text', placeholder: 'Email or username', autocomplete: 'username', autocapitalize: 'none', 'aria-label': 'Email or username' });
+    const username = ui.el('input', { type: 'text', placeholder: 'Email, username or PSN', autocomplete: 'username', autocapitalize: 'none', 'aria-label': 'Email, username or PSN' });
     const password = ui.el('input', { type: 'password', placeholder: 'Password', autocomplete: 'current-password' });
     const msg = ui.el('p', { class: 'login__msg' + (isError === false ? ' login__msg--info' : '') }, message || '');
     const btn = ui.el('button', { class: 'btn btn--primary btn--block', onclick: submit }, 'Sign In');
@@ -169,7 +169,7 @@
     const footer = ui.el('footer', { class: 'app-footer' },
       `© ${new Date().getFullYear()} Directorate of ICT · Gombe State High Court of Justice`);
 
-    const roleText = user.role === 'admin' ? 'Administrator'
+    const roleText = user.kind === 'personal' ? `Personal account · PSN ${user.username}` : user.role === 'admin' ? 'Administrator'
       : (user.signerRoles || []).length ? user.signerRoles.map(r => App.workflow.roleLabel(r)).join(', ') : 'Unit User';
 
     // The header, on every screen: the notifications bell and the user's

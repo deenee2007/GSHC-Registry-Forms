@@ -61,13 +61,19 @@ before(async () => {
   u.so = await makeUser({ fullName: 'Staff Officer', email: 'so@example.com', signerRoles: ['staff_officer'] }, '1111');
   u.dp = await makeUser({ fullName: 'Director Personnel', email: 'dp@example.com', signerRoles: ['director_personnel'], unitKeys: ['personnel'], privileges: ['personnel_view'] }, '2222');
   u.cr = await makeUser({ fullName: 'Chief Registrar', email: 'cr@example.com', signerRoles: ['chief_registrar'] }, '3333');
-  u.officer = await makeUser({ fullName: 'Musa Clerk', email: 'musa@example.com', unitKeys: ['hc3'], privileges: ['view'] });
+
   const add = async (x) => (await u.secret.post('/api/personnel/staff', x)).body.staff;
   staff.musa = await add({ psn: '5001', name: 'Musa Clerk', sex: 'M', gl: '06', rank: 'Clerical Officer', station: 'High Court No. III', dob: '1980-01-01', dofa: '2005-01-01' });
   staff.senior = await add({ psn: '5002', name: 'Senior Officer', gl: '15', rank: 'Deputy Director', dob: '1975-01-01', dofa: '2000-01-01' });
   staff.retired = await add({ psn: '5003', name: 'Gone Home', gl: '07' });
   await u.secret.post(`/api/personnel/staff/${staff.retired.id}/events`, { kind: 'status', date: '2026-01-01', status: 'retired' });
-  assert.equal((await admin.put(`/api/personnel/staff/${staff.musa.id}`, { user: u.officer.id })).status, 200, 'the administrator links the account');
+  // The Director Personnel activates Musa's personal account; he signs in with his PSN and the slip's code.
+  const act = await u.dp.post(`/api/personnel/staff/${staff.musa.id}/account`, { email: 'musa@example.com' });
+  assert.equal(act.status, 200, JSON.stringify(act.body));
+  u.officer = client();
+  assert.equal((await u.officer.post('/api/auth/login', { username: '5001', password: act.body.slip.code })).status, 200, 'signs in with the PSN');
+  await u.officer.post('/api/auth/change-password', { currentPassword: act.body.slip.code, newPassword: 'Passw0rd123' });
+  u.officer.id = (await u.officer.get('/api/auth/me')).body.user.id;
 });
 after(async () => { server.close(); await mongoose.connection.dropDatabase(); await mongoose.disconnect(); });
 
