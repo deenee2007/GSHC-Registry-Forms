@@ -58,21 +58,10 @@
       _nav.appendChild(navItem('💰  Fees List', () => loadModule('fees'), { 'data-nav': 'fees' }));
     }
 
-    // The Directorate of Personnel: the Nominal Roll for those given it;
-    // Leave for those who act on applications, the Directorate, and any
-    // officer whose account is linked to their record.
-    const roll = permissions.isAdmin(user) || (user.privileges || []).some(p => p === 'personnel_view' || p === 'personnel_edit');
-    const leaveRoles = (user.signerRoles || []).some(r => ['staff_officer', 'director_personnel', 'chief_registrar', 'chief_judge'].includes(r));
-    const personnelGroup = ui.el('div');
-    _nav.appendChild(personnelGroup);
-    const leaveItem = () => navItem('🌴  Leave', () => loadModule('leave'), { 'data-nav': 'leave' }, 'leave');
-    if (roll || leaveRoles) {
-      personnelGroup.append(ui.el('div', { class: 'nav-group' }, 'Personnel'));
-      if (roll) personnelGroup.appendChild(navItem('👥  Nominal Roll', () => loadModule('personnel'), { 'data-nav': 'personnel' }));
-      personnelGroup.appendChild(leaveItem());
-    } else {
-      deps().api.get('/leave/settings').then(r => { if (r.me.hasRecord) { personnelGroup.append(ui.el('div', { class: 'nav-group' }, 'Personnel'), leaveItem()); } }).catch(() => {});
-    }
+    // Leave: for every member of staff who signs in, whatever their unit:
+    // their own applications, and those waiting for an approving officer.
+    // (The Nominal Roll is in the Directorate of Personnel unit, below.)
+    _nav.appendChild(navItem('🌴  Leave', () => loadModule('leave'), { 'data-nav': 'leave' }, 'leave'));
 
     if (list.length) group('Units');
     list.forEach(u => _nav.appendChild(navItem(u.name, () => loadUnit(u), { 'data-unit': u.key }, u.type === 'process' ? 'process' : null)));

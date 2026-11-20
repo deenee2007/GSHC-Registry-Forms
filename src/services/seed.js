@@ -21,6 +21,23 @@ async function seedUnits() {
   // Added later: databases made before it get it too.
   if (!(await Unit.exists({ type: 'process' }))) await Unit.create({ key: 'process', type: 'process', name: 'Process Registry' });
   if (!(await Unit.exists({ type: 'marriage' }))) await Unit.create({ key: 'marriage', type: 'marriage', name: 'Marriage Registry' });
+  if (!(await Unit.exists({ type: 'personnel' }))) await Unit.create({ key: 'personnel', type: 'personnel', name: 'Directorate of Personnel' });
+}
+
+// The roll became the Directorate of Personnel unit: those who already had
+// the roll's privileges are given the unit once, so nobody loses it. One with
+// no unit (who reached every unit) keeps every unit, with this one added.
+async function personnelUnitOnce(log = console.log) {
+  const meta = mongoose.connection.collection('appmeta');
+  if (await meta.findOne({ _id: 'personnelUnit-2026-11' })) return;
+  const all = (await Unit.find({}, 'key').lean()).map(u => u.key);
+  let n = 0;
+  for (const u of await User.find({ role: { $ne: 'admin' }, privileges: { $in: ['personnel_view', 'personnel_edit'] }, unitKeys: { $ne: 'personnel' } })) {
+    u.unitKeys = u.unitKeys.length ? [...u.unitKeys, 'personnel'] : all;
+    await u.save(); n++;
+  }
+  if (n) log(`  Directorate of Personnel: given to ${n} user(s) who had the Nominal Roll.`);
+  await meta.updateOne({ _id: 'personnelUnit-2026-11' }, { $set: { at: new Date() } }, { upsert: true });
 }
 
 // Add a signing rule for any form that does not have one yet. Existing
@@ -177,6 +194,7 @@ async function fillReceiptKeys(log) {
 async function seedAll(log = console.log) {
   await seedUnits();
   await seedFormConfigs();
+  await personnelUnitOnce(log);
   await retireRoles(log);
   await updateFormConfigs(log);
   await fillCaseNumbers(log);
@@ -189,4 +207,4 @@ async function seedAll(log = console.log) {
   return created;
 }
 
-module.exports = { seedAll, resetAdmin, report, updateFormConfigs, retireRoles, fillCaseNumbers, usernamesToEmail, SEED_UNITS };
+module.exports = { personnelUnitOnce, seedAll, resetAdmin, report, updateFormConfigs, retireRoles, fillCaseNumbers, usernamesToEmail, SEED_UNITS };

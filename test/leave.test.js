@@ -57,9 +57,9 @@ before(async () => {
   base = `http://127.0.0.1:${server.address().port}`;
   await admin.post('/api/auth/login', { username: 'admin', password: 'Admin12345' });
   await admin.post('/api/auth/change-password', { currentPassword: 'Admin12345', newPassword: 'NewAdmin123' });
-  u.secret = await makeUser({ fullName: 'Secret Registry', email: 'sr@example.com', privileges: ['personnel_edit'] });
+  u.secret = await makeUser({ fullName: 'Secret Registry', email: 'sr@example.com', unitKeys: ['personnel'], privileges: ['personnel_edit'] });
   u.so = await makeUser({ fullName: 'Staff Officer', email: 'so@example.com', signerRoles: ['staff_officer'] }, '1111');
-  u.dp = await makeUser({ fullName: 'Director Personnel', email: 'dp@example.com', signerRoles: ['director_personnel'], privileges: ['personnel_view'] }, '2222');
+  u.dp = await makeUser({ fullName: 'Director Personnel', email: 'dp@example.com', signerRoles: ['director_personnel'], unitKeys: ['personnel'], privileges: ['personnel_view'] }, '2222');
   u.cr = await makeUser({ fullName: 'Chief Registrar', email: 'cr@example.com', signerRoles: ['chief_registrar'] }, '3333');
   u.officer = await makeUser({ fullName: 'Musa Clerk', email: 'musa@example.com', unitKeys: ['hc3'], privileges: ['view'] });
   const add = async (x) => (await u.secret.post('/api/personnel/staff', x)).body.staff;

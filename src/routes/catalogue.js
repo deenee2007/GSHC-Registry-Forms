@@ -13,7 +13,7 @@ const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).cat
 router.use(requireLogin);
 
 router.get('/units', wrap(async (req, res) => {
-  const ORDER = { process: -1, registry: 0, appeals: 1, execution: 2, general: 3 };
+  const ORDER = { process: -1, registry: 0, appeals: 1, execution: 2, marriage: 3, personnel: 4, general: 5 };
   const units = (await Unit.find({ active: true })).sort((a, b) =>
     (ORDER[a.type] - ORDER[b.type]) || ((a.courtNo || 0) - (b.courtNo || 0)) || a.name.localeCompare(b.name));
   // The Process Registrar sees the Process Registry whichever units they are in.

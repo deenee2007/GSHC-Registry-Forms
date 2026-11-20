@@ -39,10 +39,14 @@ function requireAdmin(req, res, next) {
 
 const isAdmin = (user) => !!user && user.role === 'admin';
 
-// Unit access: admins and users with no unit restriction reach every unit.
+// Unit access: admins and users with no unit restriction reach every unit,
+// except the Directorate of Personnel (staff records), which only those
+// given it in Settings, Users, can open.
+const CLOSED_UNITS = ['personnel'];
 function canAccessUnit(user, unitKey) {
   if (!user) return false;
   if (isAdmin(user)) return true;
+  if (CLOSED_UNITS.includes(unitKey)) return user.unitKeys.includes(unitKey);
   return !user.unitKeys.length ? user.signerRoles.length > 0 : user.unitKeys.includes(unitKey);
 }
 

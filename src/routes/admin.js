@@ -282,11 +282,11 @@ async function unitUse(key) {
   return { records, awaiting, cases, pending, dates, processes, documents, users, used: records + cases + dates + processes + documents > 0 };
 }
 // Units the system makes itself; they may be switched off but not deleted.
-const BUILT_IN = ['process', 'appeals', 'execution', 'marriage'];
+const BUILT_IN = ['process', 'appeals', 'execution', 'marriage', 'personnel'];
 
 // Every unit, active or not, with what it holds (Settings, Units).
 router.get('/units', wrap(async (req, res) => {
-  const ORDER = { process: -1, registry: 0, appeals: 1, execution: 2, marriage: 3, general: 4 };
+  const ORDER = { process: -1, registry: 0, appeals: 1, execution: 2, marriage: 3, personnel: 4, general: 5 };
   const units = (await Unit.find().lean()).sort((a, b) => (b.active - a.active) || ((ORDER[a.type] ?? 9) - (ORDER[b.type] ?? 9)) || ((a.courtNo || 0) - (b.courtNo || 0)) || a.name.localeCompare(b.name));
   const out = [];
   for (const u of units) {

@@ -57,8 +57,8 @@ before(async () => {
   base = `http://127.0.0.1:${server.address().port}`;
   await admin.post('/api/auth/login', { username: 'admin', password: 'Admin12345' });
   await admin.post('/api/auth/change-password', { currentPassword: 'Admin12345', newPassword: 'NewAdmin123' });
-  u.secret = await makeUser({ fullName: 'Secret Registry Clerk', email: 'secret@example.com', privileges: ['personnel_edit'] });
-  u.viewer = await makeUser({ fullName: 'Staff Officer', email: 'so@example.com', privileges: ['personnel_view'] });
+  u.secret = await makeUser({ fullName: 'Secret Registry Clerk', email: 'secret@example.com', unitKeys: ['personnel'], privileges: ['personnel_edit'] });
+  u.viewer = await makeUser({ fullName: 'Staff Officer', email: 'so@example.com', unitKeys: ['personnel'], privileges: ['personnel_view'] });
   u.other = await makeUser({ fullName: 'Court Clerk', email: 'cc@example.com', unitKeys: ['hc3'], privileges: ['view', 'create', 'edit'] });
 });
 after(async () => { server.close(); await mongoose.connection.dropDatabase(); await mongoose.disconnect(); });
@@ -183,4 +183,36 @@ test('import: dates day first, Excel swaps settled from the sheet, ranks and LGA
   const yr = (await u.viewer.get('/api/personnel/staff?q=Bad%20Dates')).body.staff[0];
   assert.match((await u.viewer.get(`/api/personnel/staff/${yr.id}`)).body.staff.history[0].text, /Found on import: .*only the year/, 'why, in the record of service');
   assert.equal((await u.secret.post(`/api/personnel/staff/${yr.id}/dates-checked`)).body.staff.checkDates, false);
+});
+
+
+test('the Directorate of Personnel is a unit: only those given it open it, with the roll privileges inside it', async () => {
+  const { Unit, User } = require('../src/models');
+  assert.ok(await Unit.exists({ key: 'personnel', type: 'personnel', name: 'Directorate of Personnel' }));
+  const units = async (c) => (await c.get('/api/catalogue/units')).body.units.map(x => x.key);
+  assert.ok((await units(u.viewer)).includes('personnel'), 'in the menu for those given it');
+  // A privilege without the unit opens nothing.
+  const loose = await makeUser({ fullName: 'Loose Privilege', email: 'loose@example.com', unitKeys: ['hc1'], privileges: ['personnel_view'] });
+  assert.equal((await loose.get('/api/personnel/staff')).status, 403);
+  assert.ok(!(await units(loose)).includes('personnel'));
+  // A signer with no unit reaches every court, but not the Directorate.
+  const judge = await makeUser({ fullName: 'All Courts Judge', email: 'allcourts@example.com', signerRoles: ['judge'] });
+  const seen = await units(judge);
+  assert.ok(seen.includes('hc1') && seen.includes('hc9'), 'every court');
+  assert.ok(!seen.includes('personnel'), 'not the staff records');
+  // Leave is for everyone who signs in: no unit or privilege needed.
+  assert.equal((await loose.get('/api/leave/settings')).status, 200);
+  assert.equal((await judge.get('/api/leave/counts')).status, 200);
+  // Settings, Units: built in, never deleted.
+  const row = (await admin.get('/api/admin/units')).body.units.find(x => x.key === 'personnel');
+  assert.equal(row.canDelete, false);
+  // Those who had the roll before the unit existed get it once.
+  const { personnelUnitOnce } = require('../src/services/seed');
+  const before = await User.create({ username: 'oldroll', fullName: 'Old Roll Viewer', passwordHash: 'x', unitKeys: ['hc2'], privileges: ['personnel_view'] });
+  const everywhere = await User.create({ username: 'oldroll2', fullName: 'Old Roll Signer', passwordHash: 'x', unitKeys: [], signerRoles: ['chief_registrar'], privileges: ['personnel_view'] });
+  await mongoose.connection.collection('appmeta').deleteOne({ _id: 'personnelUnit-2026-11' });
+  await personnelUnitOnce(() => {});
+  assert.deepEqual((await User.findById(before._id)).unitKeys, ['hc2', 'personnel']);
+  const all = (await User.findById(everywhere._id)).unitKeys;
+  assert.ok(all.includes('personnel') && all.includes('hc1') && all.includes('marriage'), 'one who reached every unit keeps every unit, with the Directorate');
 });

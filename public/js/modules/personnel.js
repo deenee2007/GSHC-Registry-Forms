@@ -36,8 +36,8 @@
       const canEdit = S.me.canEdit;
       const statusLabel = Object.fromEntries(S.statuses.map(s => [s.key, s.label]));
 
-      container.appendChild(el('div', { class: 'page-head' }, [el('h1', null, '👥 Nominal Roll'),
-        el('p', { class: 'muted' }, 'Every member of staff, with the record of service and the documents folder. Retirement is worked out: 60 years of age or 35 years of service, whichever comes first.')]));
+      container.appendChild(el('div', { class: 'page-head' }, [el('h1', null, '👥 Directorate of Personnel'),
+        el('p', { class: 'muted' }, 'The Nominal Roll: every member of staff, with the record of service and the documents folder. Retirement is worked out: 60 years of age or 35 years of service, whichever comes first. Leave applications are under 🌴 Leave in the menu.')]));
       const tabsBar = el('div', { class: 'tabs', role: 'tablist' });
       const toolbar = el('div', { class: 'toolbar' }, [
         canEdit ? el('button', { class: 'btn btn--primary', onclick: () => editForm(null) }, '+ Add Staff') : null,

@@ -485,11 +485,16 @@ numbering at 1 and the rotation at High Court 1). Receipt files stay in
 Cloudinary, like signatures.
 
 ## Directorate of Personnel: the Nominal Roll
-**👥 Nominal Roll** keeps one record per member of staff (signing in or
-not), kept by the PSN, which is unique. It is for those given the
-privilege **Nominal Roll: view** (`personnel_view`) or **Nominal Roll:
-edit** (`personnel_edit`, for Secret Registry staff; also opens confidential
-documents); every opening of a record is audited.
+The **Directorate of Personnel** is a unit (listed under Units, opened like
+the others), given to staff in Settings, Users; unlike the other units it
+is never reached by a signer left with no unit ticked. Its page is the
+**Nominal Roll**: one record per member of staff (signing in or not), kept
+by the PSN, which is unique. Inside the unit, the privilege **Nominal Roll:
+view** (`personnel_view`) shows the roll and **Nominal Roll: edit**
+(`personnel_edit`, for Secret Registry staff; also opens confidential
+documents) changes it; every opening of a record is audited. Those who had
+these privileges before the unit existed were given it once. **🌴 Leave**
+is a menu item for everyone who signs in, whatever their unit.
 
 * **The record:** name, sex, rank and cadre, grade level (01 to 17, or Cons.
   for the Chief Registrar) and step, highest qualification and others, date
