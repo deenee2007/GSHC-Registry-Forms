@@ -222,6 +222,18 @@
           row.appendChild(card(ui, sum('returned'), 'Returned', sum('returned') ? 'dash-card--warn' : ''));
           row.appendChild(card(ui, sum('final'), 'Signed'));
         }
+        // The administrator's overview cards join the same row, at the top.
+        if (isAdmin) {
+          let sys = null;
+          try { sys = await api.get('/admin/stats'); } catch (e) { /* ignore */ }
+          if (sys) row.append(
+            card(ui, sys.activeUsers, 'Active Users', '', () => router.loadModule('settings')),
+            card(ui, sys.signers, 'Signers'),
+            card(ui, sys.units, 'Units'),
+            card(ui, (sys.records.pending || 0), 'Awaiting Signature', sys.records.pending ? 'dash-card--warn' : ''),
+            card(ui, (sys.records.final || 0), 'Signed Documents', 'dash-card--ok')
+          );
+        }
         if (row.children.length) dash.appendChild(row);
       }
 
@@ -264,21 +276,8 @@
         });
       }
 
-      // ── Administrator overview ──
+      // ── Administrator: the units and the backups (the overview cards are at the top) ──
       if (isAdmin && stats) {
-        let sys = null;
-        try { sys = await api.get('/admin/stats'); } catch (e) { /* ignore */ }
-        if (sys) {
-          const row = ui.el('div', { class: 'dash-stats' });
-          row.append(
-            card(ui, sys.activeUsers, 'Active Users', '', () => router.loadModule('settings')),
-            card(ui, sys.signers, 'Signers'),
-            card(ui, sys.units, 'Units'),
-            card(ui, (sys.records.pending || 0), 'Awaiting Signature', sys.records.pending ? 'dash-card--warn' : ''),
-            card(ui, (sys.records.final || 0), 'Signed Documents', 'dash-card--ok')
-          );
-          dash.appendChild(section(ui, 'System Overview', row));
-        }
         const unitRows = units.map(u => ({ unit: u, ...(stats.byUnit[u.key] || {}) }));
         dash.appendChild(section(ui, 'Units', ui.table(
           [
