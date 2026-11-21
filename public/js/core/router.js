@@ -72,7 +72,8 @@
     // for the Directorate of Personnel. An officer's own leave is in their
     // personal staff account (signed in with their PSN).
     const approves = (user.signerRoles || []).some(r => ['staff_officer', 'director_personnel', 'chief_registrar', 'chief_judge'].includes(r));
-    const directorate = permissions.isAdmin(user) || ((user.unitKeys || []).includes('personnel') && (user.privileges || []).some(p => p === 'personnel_view' || p === 'personnel_edit'));
+    // Not the administrator as such: Leave is personnel work, not system administration.
+    const directorate = (user.unitKeys || []).includes('personnel') && (user.privileges || []).some(p => p === 'personnel_view' || p === 'personnel_edit');
     if (approves || directorate) _nav.appendChild(navItem('🌴  Leave', () => loadModule('leave'), { 'data-nav': 'leave' }, 'leave'));
 
     if (list.length) group('Units');
