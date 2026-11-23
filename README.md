@@ -522,6 +522,14 @@ moved to it once), so they never act on their own leave.
 * **Retirement** is worked out: 60 years of age or 35 years of service,
   whichever comes first (or the end of a contract). **Due to Retire** lists
   those retiring within a period and those past the date still in service.
+* **Printed lists, as the Directorate keeps them:** the **Nominal Roll**
+  ("HIGH COURT OF JUSTICE STAFF NOMINAL ROLL AS AT" the year: S/No, Name,
+  Sex, Highest Qualification, GL, PSN, DOB, DOFA, LGA, Contract, DOPA, and
+  the expected date of retirement by age or by service) and the **Staff
+  List** tab ("THE JUDICIARY, HIGH COURT OF JUSTICE GOMBE, STAFF LIST": the
+  officers in service by grade level, Cons. first, with Rank, GL, PSN, DOB,
+  DOFA, DOPA and both expected dates of retirement, the one that applies in
+  bold). Each prints landscape and downloads as CSV.
 * **Record of service:** promotions, postings, confirmation, changes of
   status, notes and corrections, each dated with who recorded it.
 * **Documents folder:** scanned letters and certificates; a confidential one

@@ -298,3 +298,12 @@ test('grade levels: there is no GL 11 (GL 10 is followed by GL 12)', async () =>
   const leaveSvc = require('../src/services/leave');
   await assert.rejects(leaveSvc.setSettings({ seniorFromGl: '11' }), /no GL 11/);
 });
+
+test('the Staff List: both expected dates of retirement, by age (60) and by service (35)', async () => {
+  const s = (await u.secret.post('/api/personnel/staff', { psn: '7801', name: 'Both Dates', gl: '14', rank: 'Chief Executive Officer', dob: '1970-03-10', dofa: '1993-06-01', dopa: '2015-01-01' })).body.staff;
+  const r = (await u.viewer.get('/api/personnel/staff?status=serving')).body.staff.find(x => x.id === s.id);
+  assert.equal(r.retiresByAge, '2030-03-10', '60 years of age');
+  assert.equal(r.retiresByService, '2028-06-01', '35 years of service');
+  assert.equal(r.retiresOn, '2028-06-01', 'the earlier applies');
+  assert.equal(r.retiresBy, 'service');
+});
