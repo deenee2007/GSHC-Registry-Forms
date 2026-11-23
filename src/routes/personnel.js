@@ -12,7 +12,7 @@
 const express = require('express');
 const multer = require('multer');
 const mongoose = require('mongoose');
-const { Staff, StaffDocument, User, STAFF_STATUSES, addYears } = require('../models');
+const { Staff, StaffDocument, User, STAFF_STATUSES, addYears, retirement } = require('../models');
 const personnel = require('../services/personnel');
 const account = require('../services/personalAccount');
 const personnelImport = require('../services/personnelImport');
@@ -378,6 +378,42 @@ router.post('/import', sheetUpload, wrap(async (req, res) => {
   }
   const a = await personnelImport.analyse(req.file.buffer, req.file.originalname);
   res.json({ ...a, rows: a.rows.map(({ doc, ...x }) => x) });
+}));
+
+// ── Correcting a locked date (date of birth, date of first appointment) ──
+// Only the Director Personnel or the administrator, with the reason and a
+// scan of the supporting document (birth certificate, first appointment
+// letter). The scan goes into the officer's folder; the old and the new
+// date, the reason and who corrected it go into the record of service and
+// the audit log. The retirement date is worked out again.
+router.post('/staff/:id/date-correction', docUpload, wrap(async (req, res) => {
+  if (!account.mayManage(req.user)) throw new HttpError(403, 'Only the Director Personnel or the administrator corrects a locked date.');
+  const s = await load(req.params.id);
+  const field = String(req.body.field || '');
+  if (!LOCKED_DATES.includes(field)) throw new HttpError(400, 'Choose the date to correct: date of birth or date of first appointment.');
+  const value = String(req.body.value || '');
+  if (!DAY.test(value)) throw new HttpError(400, 'Enter the correct date.');
+  if (value > today()) throw new HttpError(400, 'The date cannot be in the future.');
+  if (value === s[field]) throw new HttpError(400, `That is already the ${LABEL[field].toLowerCase()} on the record.`);
+  const reason = String(req.body.reason || '').trim().slice(0, 500);
+  if (!reason) throw new HttpError(400, 'Give the reason for the correction.');
+  if (!req.file) throw new HttpError(400, 'Attach a scan of the supporting document (PDF or photo).');
+  let file;
+  try { file = await fileStore.save(req.file.buffer, req.file.originalname, 'documents'); }
+  catch (e) { throw Object.assign(new HttpError(e.status || 500, e.message), { expose: true }); }
+  const title = String(req.body.title || '').trim().slice(0, 200) || `Evidence for the correction of the ${LABEL[field].toLowerCase()}`;
+  const doc = await StaffDocument.create({ staff: s._id, title, docType: 'Date correction', date: today(), confidential: false, file,
+    uploadedBy: req.user._id, uploadedByName: req.user.fullName });
+  const before = s[field], wasRetiring = s.retiresOn;
+  s[field] = value;
+  s.checkDates = false;
+  s.updatedByName = req.user.fullName;
+  const r = retirement(s); s.retiresOn = r.date; s.retiresBy = r.by; // worked out again
+  s.history.push({ kind: 'correction', date: today(), byName: req.user.fullName, at: new Date(),
+    text: `${LABEL[field]} corrected from ${shown(field, before) || 'none'} to ${shown(field, value)}. Reason: ${reason}. Supporting document: ${title}.${s.retiresOn !== wasRetiring ? ` Retirement now ${shown('dob', s.retiresOn)} (was ${shown('dob', wasRetiring) || 'not worked out'}).` : ''}`.slice(0, 1500) });
+  await s.save();
+  await audit.log(req, 'staff_date_corrected', { details: { staffId: String(s._id), psn: s.psn, field, from: before, to: value, reason, documentId: String(doc._id), retiresOn: s.retiresOn } });
+  res.json({ staff: { ...full(s, req.user), account: await account.describe(s) } });
 }));
 
 // ── The officer's personal staff account (PSN), by the Director Personnel

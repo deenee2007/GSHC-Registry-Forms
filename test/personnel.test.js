@@ -324,3 +324,30 @@ test('the Staff List: both expected dates of retirement, by age (60) and by serv
   assert.equal(r.retiresOn, '2028-06-01', 'the earlier applies');
   assert.equal(r.retiresBy, 'service');
 });
+
+test('a locked date is corrected only by the Director Personnel or the administrator, with the reason and the supporting document', async () => {
+  const s = (await u.secret.post('/api/personnel/staff', { psn: '7811', name: 'Wrong Birthday', gl: '09', dob: '1970-01-01', dofa: '2000-01-01' })).body.staff;
+  assert.equal(s.retiresOn, '2030-01-01');
+  const dp = await makeUser({ fullName: 'Director Personnel Two', email: 'dp2@example.com', signerRoles: ['director_personnel'], unitKeys: ['personnel'], privileges: ['personnel_view'] });
+  const form = (fields, withFile = true) => {
+    const f = new FormData();
+    Object.entries(fields).forEach(([k, v]) => f.append(k, v));
+    if (withFile) f.append('file', new Blob([PDF]), 'birth-certificate.pdf');
+    return f;
+  };
+  const go = (c, fields, withFile) => c.upload(`/api/personnel/staff/${s.id}/date-correction`, form(fields, withFile));
+  assert.equal((await go(u.secret, { field: 'dob', value: '1972-01-01', reason: 'x' })).status, 403, 'not the Secret Registry');
+  assert.equal((await go(dp, { field: 'dob', value: '1972-01-01', reason: '' })).status, 400, 'the reason is needed');
+  assert.equal((await go(dp, { field: 'dob', value: '1972-01-01', reason: 'Birth certificate' }, false)).status, 400, 'the document is needed');
+  assert.equal((await go(dp, { field: 'gl', value: '1972-01-01', reason: 'x' })).status, 400, 'only the locked dates');
+  const r = await go(dp, { field: 'dob', value: '1972-01-01', reason: 'Entered as 1970 in error; the birth certificate shows 1972', title: 'Birth certificate' });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.staff.dob, '1972-01-01');
+  assert.equal(r.body.staff.retiresOn, '2032-01-01', 'retirement worked out again');
+  assert.match(r.body.staff.history[0].text, /Date of birth corrected from 1 January 1970 to 1 January 1972\. Reason: Entered as 1970 in error.*Supporting document: Birth certificate\. Retirement now 1 January 2032 \(was 1 January 2030\)/);
+  const docs = (await dp.get(`/api/personnel/staff/${s.id}/documents`)).body.documents;
+  assert.ok(docs.some(d => d.title === 'Birth certificate' && d.docType === 'Date correction'), 'the evidence is in the folder');
+  const { AuditLog } = require('../src/models');
+  assert.ok(await AuditLog.exists({ action: 'staff_date_corrected', 'details.from': '1970-01-01', 'details.to': '1972-01-01' }));
+  assert.equal((await u.secret.put(`/api/personnel/staff/${s.id}`, { dob: '1975-01-01' })).status, 409, 'still locked for ordinary edits');
+});

@@ -524,7 +524,12 @@ moved to it once), so they never act on their own leave.
   anyone (the administrator included), so a retirement cannot be moved. A
   date left empty can be entered once; a date the import was unsure of can
   be corrected until it is marked **Dates are right**. The date of present
-  appointment changes with promotions and stays editable.
+  appointment changes with promotions and stays editable. A locked date is
+  corrected only with **📅 Correct a Locked Date** on the record, by the
+  Director Personnel or the administrator, with the reason and a scan of
+  the supporting document: the scan goes into the officer's folder, the
+  retirement date is worked out again, and the old and new dates, the
+  reason and the corrector go into the record of service and the audit log.
 * **Retirement** is worked out: 60 years of age or 35 years of service,
   whichever comes first (or the end of a contract). **Due to Retire** lists
   those retiring within a period and those past the date still in service.
