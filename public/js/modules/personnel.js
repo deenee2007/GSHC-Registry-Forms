@@ -155,6 +155,7 @@
           el('div', { class: 'doc-preview__actions' }, [
             el('button', { class: 'btn btn--ghost', onclick: () => dialog.close() }, '✕  Close'),
             canEdit ? action('✏ Edit', () => { dialog.close(); editForm(s); }) : null,
+            s.canManageAccount && (s.dob || s.dofa) ? action('📅 Correct a Locked Date', () => correctDate(s, reopen)) : null,
             canEdit ? action('⬆ Promotion', () => event(s, 'promotion', reopen)) : null,
             canEdit ? action('🏢 Posting', () => event(s, 'posting', reopen)) : null,
             canEdit && !s.confirmedOn ? action('✔ Confirmation', () => event(s, 'confirmation', reopen)) : null,
@@ -194,6 +195,40 @@
           docsPanel(s)
         ]);
         ui.modal(`${s.name} · PSN ${s.psn}`, body, { noFooter: true, wide: true, onOpen: (o) => { dialog = o; } });
+      }
+
+      // A locked date (date of birth, first appointment) corrected by the
+      // Director Personnel or the administrator, with the reason and the
+      // supporting document; written into the record of service.
+      function correctDate(s, reopen) {
+        const field = el('select', null, [['dob', 'Date of birth'], ['dofa', 'Date of first appointment']].filter(([k]) => s[k] || k === 'dob').map(([k, l]) => el('option', { value: k }, l)));
+        const now = el('p', { class: 'muted' });
+        const value = el('input', { type: 'date', max: new Date().toISOString().slice(0, 10) });
+        const reason = el('textarea', { rows: 3, maxlength: '500', placeholder: 'e.g. Entered as 1970 in error; the birth certificate shows 1971' });
+        const title = el('input', { type: 'text', placeholder: 'e.g. Birth certificate' });
+        const file = el('input', { type: 'file', accept: 'application/pdf,image/*' });
+        const sync = () => { now.textContent = `On the record now: ${long(s[field.value]) || 'not entered'}.`; };
+        field.addEventListener('change', sync); sync();
+        ui.modal(`Correct a Locked Date · ${s.name}`, el('div', null, [
+          el('div', { class: 'notice notice--warn' }, 'The date of birth and the date of first appointment decide the date of retirement. Correct one only on the evidence of a document. The old and the new date, the reason and your name are written into the record of service and the audit log, and the document goes into the officer\'s folder.'),
+          ui.field('Date to correct', field), now,
+          ui.field('Correct date', value),
+          ui.field('Reason', reason),
+          ui.field('Supporting document (PDF or photo)', file, 'A scan of the birth certificate, the first appointment letter or other evidence'),
+          ui.field('Title of the document (optional)', title)
+        ]), {
+          confirmText: 'Correct the Date', confirmClass: 'btn--danger',
+          onConfirm: async () => {
+            if (!value.value) throw new Error('Enter the correct date.');
+            if (!reason.value.trim()) throw new Error('Give the reason for the correction.');
+            if (!file.files[0]) throw new Error('Attach a scan of the supporting document.');
+            const f = new FormData();
+            f.append('field', field.value); f.append('value', value.value); f.append('reason', reason.value.trim()); f.append('title', title.value.trim()); f.append('file', file.files[0]);
+            const r = await api.post(`/personnel/staff/${s.id}/date-correction`, f);
+            ui.toast(`Corrected. Retires on ${long(r.staff.retiresOn) || 'a date not yet worked out'}.`, 'success', 7000);
+            setTimeout(reopen, 0); return true;
+          }
+        });
       }
 
       // The officer's personal staff account: signed in with their PSN, for
