@@ -389,10 +389,16 @@
           account = el('select', null, [opt('', 'None')]);
           api.get('/admin/users').then(r => { account.append(...r.users.map(u => opt(u.id, `${u.fullName} (${u.username})`))); account.value = v.workUser || ''; }).catch(() => {});
         }
+        // Locked once filled (unless the import flagged them to be checked).
+        const lockDate = (k) => !!(s && s.datesLocked && v[k]);
+        ['dob', 'dofa'].forEach(k => { if (lockDate(k)) { x[k].disabled = true; x[k].title = 'Locked: the date of retirement is worked out from it'; } });
         const body = el('div', { class: 'form-grid' }, [
           s ? el('p', { class: 'muted form-field--full' }, 'For a promotion, posting, confirmation or change of status, use those buttons on the record instead, so the record of service keeps the history. Corrections made here are written into the record of service too.') : null,
           f('PSN *', x.psn), f('Name *', x.name), f('Title', x.title), f('Sex', x.sex), f('Rank', x.rank), f('Grade level', x.gl), f('Step', x.step),
-          f('Highest qualification', x.qualification), f('Date of birth', x.dob), f('Date of first appointment', x.dofa), f('Date of present appointment', x.dopa),
+          f('Highest qualification', x.qualification),
+          f(lockDate('dob') ? 'Date of birth (locked)' : 'Date of birth', x.dob), f(lockDate('dofa') ? 'Date of first appointment (locked)' : 'Date of first appointment', x.dofa),
+          f('Date of present appointment', x.dopa),
+          lockDate('dob') || lockDate('dofa') ? el('p', { class: 'muted form-field--full' }, '🔒 The date of birth and the date of first appointment cannot be changed once entered, because the date of retirement is worked out from them.') : null,
           f('Date of confirmation', x.confirmedOn), f('LGA', x.lga), f('Station', x.station),
           el('label', { class: 'check check--plain form-field--full' }, [x.contract, ' On contract (retires at the end of the contract)']), endRow,
           f('Phone', x.phone), f('Email', x.email), f('Address', x.address, true),

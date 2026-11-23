@@ -93,9 +93,26 @@ test('a staff record: PSN unique, rank tidied, retirement worked out, correction
   assert.equal((await u.secret.post('/api/personnel/staff', { psn: '9', name: 'Bad', lga: 'Lagos' })).status, 400, 'a Gombe LGA');
   assert.equal((await u.secret.post('/api/personnel/staff', { psn: '10', name: 'CR', gl: 'Cons.', rank: 'Chief Registrar' })).body.staff.gl, 'Cons.');
 
-  const fix = await u.secret.put(`/api/personnel/staff/${s.id}`, { dob: '1969-03-01', phone: '08030000000' });
-  assert.equal(fix.body.staff.retiresOn, '2026-11-07');
-  assert.match(fix.body.staff.history[0].text, /Date of birth: 1 March 1970 to 1 March 1969/);
+  // The dates retirement is worked from are locked once entered; other details are corrected.
+  const locked = await u.secret.put(`/api/personnel/staff/${s.id}`, { dob: '1969-03-01', phone: '08030000000' });
+  assert.equal(locked.status, 409);
+  assert.match(locked.body.error, /Date of birth cannot be changed once entered/);
+  assert.equal((await u.secret.put(`/api/personnel/staff/${s.id}`, { dofa: '1995-01-01' })).status, 409, 'nor the date of first appointment');
+  assert.equal((await admin.put(`/api/personnel/staff/${s.id}`, { dob: '1975-01-01' })).status, 409, 'not even by the administrator');
+  const fix = await u.secret.put(`/api/personnel/staff/${s.id}`, { phone: '08030000000', dopa: '2020-01-01' });
+  assert.equal(fix.status, 200);
+  assert.equal(fix.body.staff.retiresOn, '2026-11-07', 'unchanged');
+  assert.match(fix.body.staff.history[0].text, /Phone/);
+  // A date left empty can still be entered once; then it locks too.
+  const late = (await u.secret.post('/api/personnel/staff', { psn: '24399', name: 'No Dates Yet', gl: '06' })).body.staff;
+  assert.equal((await u.secret.put(`/api/personnel/staff/${late.id}`, { dob: '1980-05-05', dofa: '2005-01-01' })).status, 200, 'entered once');
+  assert.equal((await u.secret.put(`/api/personnel/staff/${late.id}`, { dob: '1982-05-05' })).status, 409, 'then locked');
+  // An imported date the import was unsure of can be corrected until it is checked.
+  const { Staff } = require('../src/models');
+  await Staff.updateOne({ _id: late.id }, { checkDates: true });
+  assert.equal((await u.secret.put(`/api/personnel/staff/${late.id}`, { dob: '1981-05-05' })).status, 200, 'flagged by the import: still correctable');
+  await u.secret.post(`/api/personnel/staff/${late.id}/dates-checked`);
+  assert.equal((await u.secret.put(`/api/personnel/staff/${late.id}`, { dob: '1983-05-05' })).status, 409, 'locked once checked');
   const promo = await u.secret.post(`/api/personnel/staff/${s.id}/events`, { kind: 'promotion', date: '2026-01-01', rank: 'C.C.O', gl: '08', step: 2 });
   assert.equal(promo.status, 200, JSON.stringify(promo.body));
   assert.equal(promo.body.staff.rank, 'Chief Clerical Officer'); assert.equal(promo.body.staff.gl, '08'); assert.equal(promo.body.staff.dopa, '2026-01-01');

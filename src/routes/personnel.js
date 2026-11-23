@@ -65,7 +65,8 @@ function full(s, u) {
     nextOfKin: s.nextOfKin || { name: '', relationship: '', phone: '' }, statusDate: s.statusDate,
     user: s.user ? String(s.user) : null, workUser: s.workUser ? String(s.workUser) : null,
     history: [...(s.history || [])].reverse(), createdAt: s.createdAt, createdByName: s.createdByName, updatedByName: s.updatedByName,
-    canEdit: canEdit(u), canManageAccount: account.mayManage(u)
+    canEdit: canEdit(u), canManageAccount: account.mayManage(u),
+    datesLocked: !s.checkDates
   };
 }
 async function load(id) {
@@ -125,6 +126,7 @@ router.get('/staff/:id', wrap(async (req, res) => {
 
 const TEXT = { name: 200, title: 40, rank: 120, cadre: 60, qualification: 200, lga: 40, station: 120, phone: 40, email: 120, address: 300 };
 const DATE_FIELDS = ['dob', 'dofa', 'dopa', 'confirmedOn', 'contractEnds'];
+const LOCKED_DATES = ['dob', 'dofa']; // retirement is worked from these
 const LABEL = { psn: 'PSN', name: 'Name', title: 'Title', sex: 'Sex', rank: 'Rank', cadre: 'Cadre', gl: 'GL', step: 'Step', qualification: 'Highest qualification',
   dob: 'Date of birth', dofa: 'Date of first appointment', dopa: 'Date of present appointment', confirmedOn: 'Date of confirmation', lga: 'LGA',
   station: 'Station', contract: 'Contract', contractEnds: 'Contract end date', phone: 'Phone', email: 'Email', address: 'Address', nextOfKin: 'Next of kin',
@@ -200,6 +202,11 @@ router.put('/staff/:id', wrap(async (req, res) => {
   const isLink = (k) => k === 'workUser';
   const changes = Object.keys(fields).filter(k => JSON.stringify(isLink(k) ? String(s.workUser || '') : s.toObject()[k] ?? '') !== JSON.stringify(isLink(k) ? String(fields.workUser || '') : fields[k] ?? ''));
   if (!changes.length) return res.json({ staff: full(s, req.user) });
+  // The dates retirement is worked from are locked once filled, so they
+  // cannot be changed to move a retirement. The one exception: dates the
+  // import was not sure of, until they are checked against the documents.
+  const locked = changes.filter(k => LOCKED_DATES.includes(k) && s[k] && !s.checkDates);
+  if (locked.length) throw new HttpError(409, `${locked.map(k => LABEL[k]).join(' and ')} cannot be changed once entered: ${locked.length > 1 ? 'they decide' : 'it decides'} the date of retirement.`);
   const text = changes.map(k => isLink(k) ? `${LABEL.workUser} ${fields.workUser ? 'linked' : 'unlinked'}` : `${LABEL[k] || k}: ${shown(k, s.toObject()[k])} to ${shown(k, fields[k])}`).join('; ');
   Object.assign(s, fields, { updatedByName: req.user.fullName });
   if (changes.some(k => DATE_FIELDS.includes(k))) s.checkDates = false;

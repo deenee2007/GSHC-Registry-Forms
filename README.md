@@ -519,6 +519,12 @@ moved to it once), so they never act on their own leave.
   of birth, of first appointment, of present appointment and of
   confirmation, LGA, station, contract and its end, phone, email, address,
   next of kin, status, an optional photo and a link to a sign in account.
+* **Locked dates:** the date of birth and the date of first appointment,
+  from which retirement is worked out, cannot be changed once entered, by
+  anyone (the administrator included), so a retirement cannot be moved. A
+  date left empty can be entered once; a date the import was unsure of can
+  be corrected until it is marked **Dates are right**. The date of present
+  appointment changes with promotions and stays editable.
 * **Retirement** is worked out: 60 years of age or 35 years of service,
   whichever comes first (or the end of a contract). **Due to Retire** lists
   those retiring within a period and those past the date still in service.
