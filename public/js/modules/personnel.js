@@ -489,7 +489,10 @@
       const line = (s, i) => [i + 1, s.name, s.sex, s.qualification, s.gl, s.psn, dmy(s.dob), dmy(s.dofa), s.lga, s.contract ? 'Contract' : '', dmy(s.dopa),
         s.retiresBy === 'age' ? dmy(s.retiresOn) : '', s.retiresBy === 'service' ? dmy(s.retiresOn) : s.retiresBy === 'contract' ? `${dmy(s.retiresOn)} (contract)` : ''];
       const rollTitle = () => `HIGH COURT OF JUSTICE STAFF NOMINAL ROLL AS AT ${new Date().getFullYear()}`;
-      const heading = (...lines) => `<header class="roll-heading">${lines.map(l => `<div>${esc(l)}</div>`).join('')}</header>`;
+      // The Directorate's heading, between the High Court's emblem and the coat of arms.
+      const heading = (...lines) => `<header class="doc-masthead roll-masthead"><img class="doc-emblem" src="/assets/highcourt.png" alt="">
+        <div class="roll-heading">${lines.map(l => `<div>${esc(l)}</div>`).join('')}</div>
+        <img class="doc-emblem" src="/assets/coat.png" alt=""></header><div class="doc-rule"></div>`;
       function printRoll() {
         if (!roll.length) { ui.toast('Nothing to print.', 'info'); return; }
         P.printPage(`<article class="court-doc report-print">${heading(rollTitle())}
