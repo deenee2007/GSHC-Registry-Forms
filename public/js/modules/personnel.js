@@ -484,27 +484,70 @@
         <div class="doc-titleblock"><div class="doc-line1">THE JUDICIARY</div><div class="doc-line2">GOMBE STATE HIGH COURT OF JUSTICE</div><div class="doc-line3">${esc(line3)}</div></div>
         <img class="doc-emblem" src="/assets/coat.png" alt=""></header><div class="doc-rule"></div>`;
       const footer = () => `<footer class="doc-footer"><span>Printed ${esc(P.day(new Date()))}</span><span>Powered by the Directorate of ICT, Gombe State High Court of Justice</span></footer>`;
-      const HEAD = ['S/NO', 'NAME', 'SEX', 'RANK', 'HIG. QUALIFICATION', 'GL', 'PSN', 'DOB', 'DOFA', 'LGA', 'CONTRACT', 'DOPA', 'EXP. DATE OF RET. BY AGE', 'EXP. DATE OF RET. BY SERVICE', 'STATION'];
-      const line = (s, i) => [i + 1, s.name, s.sex, s.rank, s.qualification, s.gl, s.psn, dmy(s.dob), dmy(s.dofa), s.lga, s.contract ? 'Contract' : '', dmy(s.dopa),
-        s.retiresBy === 'age' ? dmy(s.retiresOn) : '', s.retiresBy === 'service' ? dmy(s.retiresOn) : s.retiresBy === 'contract' ? `${dmy(s.retiresOn)} (contract)` : '', s.station];
-      const asAt = () => new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }).toUpperCase();
+      // The Nominal Roll as the Directorate keeps it: its heading and columns.
+      const HEAD = ['S/NO', 'NAME', 'SEX', 'HIG. QUALIFICATION', 'GL', 'PSN', 'DOB', 'DOFA', 'LGA', 'CONTRACT', 'DOPA', 'EXP. DATE OF RET. BY AGE', 'EXP. DATE OF RET. BY SERVICE'];
+      const line = (s, i) => [i + 1, s.name, s.sex, s.qualification, s.gl, s.psn, dmy(s.dob), dmy(s.dofa), s.lga, s.contract ? 'Contract' : '', dmy(s.dopa),
+        s.retiresBy === 'age' ? dmy(s.retiresOn) : '', s.retiresBy === 'service' ? dmy(s.retiresOn) : s.retiresBy === 'contract' ? `${dmy(s.retiresOn)} (contract)` : ''];
+      const rollTitle = () => `HIGH COURT OF JUSTICE STAFF NOMINAL ROLL AS AT ${new Date().getFullYear()}`;
+      const heading = (...lines) => `<header class="roll-heading">${lines.map(l => `<div>${esc(l)}</div>`).join('')}</header>`;
       function printRoll() {
         if (!roll.length) { ui.toast('Nothing to print.', 'info'); return; }
-        P.printPage(`<article class="court-doc report-print">${masthead(`STAFF NOMINAL ROLL AS AT ${asAt()}`)}
+        P.printPage(`<article class="court-doc report-print">${heading(rollTitle())}
           <table class="doc-table roll-print"><thead><tr>${HEAD.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>
           ${roll.map((s, i) => `<tr>${line(s, i).map(c => `<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table>${footer()}</article>`, '@page { size: A4 landscape; margin: 8mm; }');
       }
       function csv() {
         if (!roll.length) { ui.toast('Nothing to download.', 'info'); return; }
-        download(`nominal-roll-${new Date().toISOString().slice(0, 10)}.csv`, [[`HIGH COURT OF JUSTICE STAFF NOMINAL ROLL AS AT ${asAt()}`], HEAD, ...roll.map(line)]);
+        download(`nominal-roll-${new Date().toISOString().slice(0, 10)}.csv`, [[rollTitle()], HEAD, ...roll.map(line)]);
       }
 
-      const TABS = [['roll', 'Nominal Roll'], ['due', 'Due to Retire'], ['summary', 'Summary']];
+      // The Staff List: everyone in service, in order of grade level (Cons.
+      // first, then 17 down; within a grade the earlier present appointment
+      // first), with both expected dates of retirement.
+      const GL_ORDER = (g) => g === 'Cons.' ? 99 : Number(g) || 0;
+      const STAFF_HEAD = ['S/NO', 'NAME', 'SEX', 'RANK', 'GL', 'PSN', 'DOB', 'DOFA', 'DOPA', 'EXP. DATE OF RET. BY AGE', 'EXP. DATE OF RET. BY SERVICE'];
+      const staffLine = (s, i) => [i + 1, s.name, s.sex, s.rank, s.gl, s.psn, dmy(s.dob), dmy(s.dofa), dmy(s.dopa), dmy(s.retiresByAge),
+        s.contract && s.contractEnds ? `${dmy(s.contractEnds)} (contract)` : dmy(s.retiresByService)];
+      const sortStaff = (list) => [...list].sort((a, b) => (GL_ORDER(b.gl) - GL_ORDER(a.gl)) || String(a.dopa || '9').localeCompare(String(b.dopa || '9'))
+        || String(a.dofa || '9').localeCompare(String(b.dofa || '9')) || a.name.localeCompare(b.name));
+      const STAFF_TITLE = ['THE JUDICIARY, HIGH COURT OF JUSTICE GOMBE', 'STAFF LIST'];
+      async function staffList(box) {
+        box.replaceChildren(el('p', { class: 'muted' }, 'Loading…'));
+        let list;
+        try { list = sortStaff((await api.get('/personnel/staff?status=serving')).staff); } catch (e) { box.replaceChildren(ui.empty(e.message)); return; }
+        // The date that comes first is the one that applies; it is shown in bold.
+        const first = (s, which) => s.retiresBy === which || (which === 'service' && s.retiresBy === 'contract');
+        const cell = (v, bold) => bold ? el('strong', null, v) : el('span', null, v);
+        box.replaceChildren(
+          el('div', { class: 'toolbar' }, [
+            el('button', { class: 'btn btn--ghost', onclick: () => printStaff(list) }, '🖨 Print Staff List'),
+            el('button', { class: 'btn btn--ghost', onclick: () => download(`staff-list-${new Date().toISOString().slice(0, 10)}.csv`, [STAFF_TITLE, STAFF_HEAD, ...list.map(staffLine)]) }, '⬇ Staff List (CSV)')
+          ]),
+          el('p', { class: 'muted' }, `${list.length} officer(s) in service, by grade level. Of the two expected dates of retirement, the one that comes first (and applies) is in bold.`),
+          list.length ? ui.table([
+            { label: 'S/No', value: s => String(list.indexOf(s) + 1) },
+            { label: 'Name', key: 'name', primary: true }, { label: 'Sex', key: 'sex' }, { label: 'Rank', key: 'rank' }, { label: 'GL', key: 'gl' },
+            { label: 'PSN', key: 'psn' }, { label: 'DOB', value: s => dmy(s.dob) }, { label: 'DOFA', value: s => dmy(s.dofa) }, { label: 'DOPA', value: s => dmy(s.dopa) },
+            { label: 'Ret. by age', node: s => cell(dmy(s.retiresByAge), first(s, 'age')) },
+            { label: 'Ret. by service', node: s => cell(staffLine(s, 0)[10], first(s, 'service')) }
+          ], list, [{ label: 'Open', onClick: s => openRecord(s.id) }]) : ui.empty('No officer in service on the roll yet.')
+        );
+      }
+      function printStaff(list) {
+        if (!list.length) { ui.toast('Nothing to print.', 'info'); return; }
+        const b = (s, which, v) => (s.retiresBy === which || (which === 'service' && s.retiresBy === 'contract')) ? `<strong>${esc(v)}</strong>` : esc(v);
+        P.printPage(`<article class="court-doc report-print">${heading(...STAFF_TITLE)}
+          <table class="doc-table roll-print"><thead><tr>${STAFF_HEAD.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>
+          ${list.map((s, i) => { const c = staffLine(s, i); return `<tr>${c.slice(0, 9).map(x => `<td>${esc(x)}</td>`).join('')}<td>${b(s, 'age', c[9])}</td><td>${b(s, 'service', c[10])}</td></tr>`; }).join('')}
+          </tbody></table>${footer()}</article>`, '@page { size: A4 landscape; margin: 8mm; }');
+      }
+
+      const TABS = [['roll', 'Nominal Roll'], ['staff', 'Staff List'], ['due', 'Due to Retire'], ['summary', 'Summary']];
       function select(key) {
         tabsBar.querySelectorAll('.tab').forEach(t => t.classList.toggle('is-active', t.dataset.tab === key));
         toolbar.hidden = key !== 'roll';
         if (key === 'roll') { panel.replaceChildren(filters, rollBox); loadRoll(); }
-        else { const box = el('div'); panel.replaceChildren(box); (key === 'due' ? due : summary)(box); }
+        else { const box = el('div'); panel.replaceChildren(box); ({ due, summary, staff: staffList })[key](box); }
       }
       TABS.forEach(([key, name]) => tabsBar.appendChild(el('button', { class: 'tab', role: 'tab', 'data-tab': key, onclick: () => select(key) }, name)));
       select(ctx.tab || 'roll');

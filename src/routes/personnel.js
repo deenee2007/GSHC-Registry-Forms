@@ -12,7 +12,7 @@
 const express = require('express');
 const multer = require('multer');
 const mongoose = require('mongoose');
-const { Staff, StaffDocument, User, STAFF_STATUSES } = require('../models');
+const { Staff, StaffDocument, User, STAFF_STATUSES, addYears } = require('../models');
 const personnel = require('../services/personnel');
 const account = require('../services/personalAccount');
 const personnelImport = require('../services/personnelImport');
@@ -54,6 +54,8 @@ function brief(s) {
     qualification: s.qualification, dob: s.dob, dofa: s.dofa, dopa: s.dopa, confirmedOn: s.confirmedOn, lga: s.lga, station: s.station,
     contract: !!s.contract, contractEnds: s.contractEnds, status: s.status, statusLabel: personnel.STATUS_LABELS[s.status] || s.status,
     retiresOn: s.retiresOn, retiresBy: s.retiresBy, age: years(s.dob), service: years(s.dofa), checkDates: !!s.checkDates,
+    // Both expected dates, for the Staff List: 60 years of age, 35 years of service.
+    retiresByAge: addYears(s.dob, 60) || '', retiresByService: addYears(s.dofa, 35) || '',
     hasPhoto: !!(s.photo && s.photo.contentType)
   };
 }

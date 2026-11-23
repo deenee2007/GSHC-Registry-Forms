@@ -1030,3 +1030,6 @@ button.dash-card:hover { border-color: var(--green-500); }
 .rcert__dates { display: flex; justify-content: space-between; gap: 1rem; margin: 8px 0; }
 .rcert__note { margin-top: 10px; }
 .court-doc--national .doc-sign-wrap { margin-top: 18px; }
+
+/* The heading of the printed Nominal Roll and Staff List, as the Directorate keeps them */
+.roll-heading { text-align: center; font-weight: 800; font-size: 15pt; letter-spacing: .02em; margin: 0 0 10px; line-height: 1.35; }
