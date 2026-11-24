@@ -532,21 +532,21 @@
 
       // The Directorate of Personnel: stations, ranks (with their cadre and
       // the other ways they are written, for the import), cadres, documents.
-      // ── CASH FLOW: the amount released each month (seen only by the Hon. Chief Judge) ──
+      // ── CASH FLOW: the overhead received each month (also entered by the Chief Registrar) ──
       async function renderCashflow() {
         ui.clear(panel);
         let r;
         try { r = await api.get('/cashflow/admin/releases'); } catch (e) { panel.appendChild(ui.empty(e.message)); return; }
         const month = el('input', { type: 'month', value: r.thisMonth });
-        const amount = el('input', { type: 'number', min: '0', step: '0.01', placeholder: 'Amount released, ₦' });
+        const amount = el('input', { type: 'number', min: '0', step: '0.01', placeholder: 'Amount received, ₦' });
         const naira = (n) => `₦${Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
         panel.append(
-          el('p', { class: 'muted' }, 'The amount released for each month. Only the Hon. Chief Judge sees it on the cash flow, with the balance brought forward from the month before and the payments made. To correct a month, enter it again.'),
-          el('div', { class: 'toolbar' }, [ui.field('Month', month), ui.field('Amount released, ₦', amount),
+          el('p', { class: 'muted' }, 'The overhead received from the government for each month. The Chief Registrar can also enter it, from the Cash Flow. The Hon. Chief Judge sees it on the cash flow, with the balance brought forward and the payments made. To correct a month, enter it again.'),
+          el('div', { class: 'toolbar' }, [ui.field('Month', month), ui.field('Overhead received, ₦', amount),
             el('button', { class: 'btn btn--primary', onclick: async () => {
               try { await api.put('/cashflow/admin/releases', { month: month.value, amount: amount.value }); ui.toast('Saved.', 'success'); renderCashflow(); } catch (e) { ui.toast(e.message, 'error'); }
             } }, 'Save')]),
-          r.releases.length ? ui.table([{ label: 'Month', key: 'name' }, { label: 'Amount released', value: x => naira(x.amount) }], r.releases) : ui.empty('No release entered yet.')
+          r.releases.length ? ui.table([{ label: 'Month', key: 'name' }, { label: 'Overhead received', value: x => naira(x.amount) }, { label: 'Entered by', value: x => x.byName || '' }], r.releases) : ui.empty('Nothing entered yet.')
         );
       }
 

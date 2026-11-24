@@ -12,7 +12,9 @@
  *   approved has been paid.
  */
 const express = require('express');
+const crypto = require('crypto');
 const mongoose = require('mongoose');
+const verification = require('../services/verification');
 const { CashItem, CashRelease, User } = require('../models');
 const cf = require('../services/cashflow');
 const store = require('../services/signatureStore');
@@ -134,10 +136,19 @@ router.post('/decide-many', wrap(async (req, res) => {
   res.json({ approved: list.length, total: cf.round(list.reduce((n, r) => n + r.total, 0)) });
 }));
 
+// What the Chief Judge approved, fixed: the memo's QR code checks against it.
+const releaseHash = (r) => crypto.createHash('sha256').update(JSON.stringify({ refNo: r.refNo, total: r.total,
+  items: r.items.map(x => [String(x.item), x.name, x.amount, x.payees.map(p => [p.name, p.bank, p.accountNo, p.accountName, p.amount])]),
+  approvedBy: r.decision && r.decision.byName, approvedAt: r.decision && new Date(r.decision.at).toISOString() })).digest('hex');
+
 async function approve(req, r, note) {
   const me = req.user;
   r.decision = { kind: 'approved', note, by: me._id, byName: me.fullName, title: me.title, at: new Date(), image: me.signature };
   r.status = 'approved';
+  let code;
+  for (let i = 0; i < 5; i++) { code = verification.newCode(); if (!(await CashRelease.exists({ verifyCode: code }))) break; }
+  r.verifyCode = code;
+  r.contentHash = releaseHash(r);
   r.history.push({ action: 'approved', byName: me.fullName, note, at: new Date() });
   await r.save();
   await audit.log(req, 'cashrelease_approved', { details: { releaseId: String(r._id), refNo: r.refNo, total: r.total } });
@@ -219,8 +230,9 @@ router.post('/:rid/pay', wrap(async (req, res) => {
   const pvNo = text(req.body.pvNo, 60);
   if (!pvNo) throw new HttpError(400, 'Enter the payment voucher number.');
   const date = DAY.test(req.body.date || '') ? req.body.date : new Date().toISOString().slice(0, 10);
-  const amount = req.body.amount === undefined || req.body.amount === '' ? line.amount : cf.round(Number(req.body.amount));
-  if (!(amount > 0) || amount > line.amount + 0.004) throw new HttpError(400, `The amount paid must be more than nothing and not more than the ${money(line.amount)} released to ${line.name}.`);
+  // The amount is what the Hon. Chief Judge approved for this beneficiary: it cannot be changed here.
+  const amount = line.amount;
+  if (r.contentHash && releaseHash(r) !== r.contentHash) throw new HttpError(409, 'This release no longer matches what the Hon. Chief Judge approved. Contact the administrator.');
   const it = await CashItem.findById(entry.item);
   if (!it) throw new HttpError(404, 'The cash flow item is missing.');
   const at = new Date();
@@ -238,6 +250,14 @@ router.post('/:rid/pay', wrap(async (req, res) => {
   res.json({ release: serialize(r, req.user) });
 }));
 
+// The QR code for the printed memo (once approved).
+router.get('/:rid/qr', wrap(async (req, res) => {
+  const r = await load(req.params.rid, req.user);
+  if (!r.verifyCode) throw new HttpError(404, 'Not approved yet.');
+  const url = `${verification.baseUrl(req)}/verify/${r.verifyCode}`;
+  res.json({ verifyCode: r.verifyCode, verifyUrl: url, qrDataUrl: await verification.qrDataUrl(url) });
+}));
+
 router.get('/:rid/signature', wrap(async (req, res) => {
   const r = await load(req.params.rid, req.user);
   if (!r.decision || !r.decision.image) throw new HttpError(404, 'Not approved.');
@@ -246,4 +266,22 @@ router.get('/:rid/signature', wrap(async (req, res) => {
   res.set('Content-Type', img.contentType).set('Cache-Control', 'private, max-age=86400').send(img.buffer);
 }));
 
+// The public check (from verify.js): what the code confirms, or null. The
+// account numbers are shown with only their last four digits.
+async function verifyRelease(code) {
+  const r = await CashRelease.findOne({ verifyCode: code });
+  if (!r) return null;
+  const mask = (n) => `******${String(n || '').slice(-4)}`;
+  return {
+    status: releaseHash(r) === r.contentHash ? 'valid' : 'tampered', code: r.verifyCode,
+    document: `Release of Funds: ${r.refNo}`,
+    reference: `${r.items.map(x => x.name).join('; ')}. Total ${money(r.total)}`,
+    court: 'Office of the Hon. Chief Judge, Gombe State High Court of Justice',
+    issuedAt: r.decision.at,
+    signedBy: [{ capacity: 'Hon. Chief Judge', name: r.decision.byName, title: r.decision.title || null, signedAt: r.decision.at }],
+    lines: r.items.flatMap(x => x.payees.map(p => `${p.name} · ${p.bank} · ${mask(p.accountNo)} · ${money(p.amount)}`))
+  };
+}
+
 module.exports = router;
+module.exports.verifyRelease = verifyRelease;

@@ -78,7 +78,9 @@ test('requests, the CJ\'s decisions item by item, payment, and the balance', asy
   assert.equal((await u.acct.post('/api/cashflow', { item: 'Fuel', sections: one('Fuel', 1, 100) })).status, 403, 'the Accountant does not request');
   assert.equal((await u.cj.get('/api/admin/users')).status, 403);
   assert.equal((await admin.put('/api/cashflow/admin/releases', { month, amount: 1000000 })).status, 200, 'the administrator sets the release');
-  assert.equal((await u.cr.put('/api/cashflow/admin/releases', { month, amount: 5 })).status, 403);
+  assert.equal((await u.dcr.put('/api/cashflow/admin/releases', { month, amount: 5 })).status, 403, 'not the DCR');
+  assert.equal((await u.cr.put('/api/cashflow/admin/releases', { month, amount: 1000000 })).status, 200, 'the Chief Registrar enters the overhead received');
+  assert.ok((await u.cj.get('/api/notifications')).body.notifications.some(n => /overhead received/.test(n.message)), 'the CJ is told');
 
   // Three requests, one with an attachment.
   const form = new FormData();
@@ -99,7 +101,8 @@ test('requests, the CJ\'s decisions item by item, payment, and the balance', asy
   assert.deepEqual(cj.items.map(x => [x.sn, x.item, x.requestedByRole]), [[1, 'Diesel for the generator', 'Aide to the Hon. Chief Judge'], [2, 'Stationery', 'Chief Registrar'], [3, 'Travel to Abuja', 'DCR Admin and Finance']]);
   assert.equal(cj.summary.released, 1000000);
   assert.equal(cj.summary.balance, 1000000);
-  assert.equal((await u.cr.get('/api/cashflow')).body.summary, null, 'the money is for the CJ only');
+  assert.equal((await u.dcr.get('/api/cashflow')).body.summary, null, 'not the money');
+  assert.equal((await u.cr.get('/api/cashflow')).body.summary.released, 1000000, 'the Chief Registrar sees the money');
   assert.equal((await u.cr.get('/api/cashflow')).body.items.length, 3, 'the Chief Registrar sees every item');
   assert.equal((await u.acct.get('/api/cashflow')).body.items.length, 0, 'the Accountant sees only the approved');
 
@@ -134,9 +137,10 @@ test('requests, the CJ\'s decisions item by item, payment, and the balance', asy
   assert.equal(r.status, 200, JSON.stringify(r.body));
   const pid = rel.items[0].payees[0].id;
   assert.equal((await u.acct.post(`/api/cashflow/releases/${rel.id}/pay`, { payee: pid, pvNo: '' })).status, 400, 'the PV number');
-  assert.equal((await u.acct.post(`/api/cashflow/releases/${rel.id}/pay`, { payee: pid, pvNo: 'PV/11/26', amount: 400000 })).status, 400, 'not more than released');
-  r = await u.acct.post(`/api/cashflow/releases/${rel.id}/pay`, { payee: pid, pvNo: 'PV/11/26' });
+  // The amount is locked to what the CJ approved, whatever is sent.
+  r = await u.acct.post(`/api/cashflow/releases/${rel.id}/pay`, { payee: pid, pvNo: 'PV/11/26', amount: 1000 });
   assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.release.items[0].payees[0].paid.amount, 350000);
   assert.equal(r.body.release.status, 'paid');
   assert.equal((await u.cj.get(`/api/cashflow/${fuel.id}`)).body.item.status, 'paid');
   cj = (await u.cj.get('/api/cashflow')).body;
@@ -329,4 +333,31 @@ test('the CJ approves several cash flow items at once, with one PIN', async () =
   assert.equal(r.body.total, 130000);
   assert.equal((await u.cj.get(`/api/cashflow/${a.id}`)).body.item.decision.amount, 100000);
   assert.equal((await u.cj.post('/api/cashflow/decide-many', { ids: [a.id], pin: '1357' })).status, 409, 'already decided');
+});
+
+test('the approved release memo has a QR code that confirms the beneficiaries and amounts', async () => {
+  const { CashRelease } = require('../src/models');
+  const list = (await u.cj.get('/api/cashflow/releases')).body.releases;
+  const ok = list.find(x => x.status !== 'declined' && x.items.some(i => i.name === 'Diesel for the generator'));
+  const q = await u.dcr.get(`/api/cashflow/releases/${ok.id}/qr`);
+  assert.equal(q.status, 200, JSON.stringify(q.body));
+  assert.match(q.body.qrDataUrl, /^data:image\/png/);
+  let v = await fetch(`${base}/api/verify/${q.body.verifyCode}`).then(x => x.json());
+  assert.equal(v.status, 'valid');
+  assert.match(v.document, /Release of Funds: GSHC\/CF\/REL/);
+  assert.deepEqual(v.lines, ['Gombe Fuels Ltd · Zenith Bank · ******5678 · ₦350,000.00'], 'the account number masked');
+  // Not before approval.
+  const waiting = (await u.dcr.post('/api/cashflow/releases', { items: [{ item: (await u.cj.get('/api/cashflow')).body.items.find(x => x.item === 'Cleaning').id, payees: [{ name: 'Clean Co', bank: 'Wema Bank', accountNo: '0123456789', amount: 30000 }] }] })).body.release;
+  assert.equal((await u.dcr.get(`/api/cashflow/releases/${waiting.id}/qr`)).status, 404);
+  // An account number changed in the database: the check says so, and the Accountant cannot pay it.
+  const doc = await CashRelease.findById(ok.id);
+  doc.items[0].payees[0].accountNo = '9999999999';
+  doc.markModified('items');
+  await doc.save();
+  v = await fetch(`${base}/api/verify/${q.body.verifyCode}`).then(x => x.json());
+  assert.equal(v.status, 'tampered');
+  await u.cj.post(`/api/cashflow/releases/${waiting.id}/decide`, { action: 'approve', pin: '1357' });
+  const w = (await u.acct.get(`/api/cashflow/releases/${waiting.id}`)).body.release;
+  await CashRelease.updateOne({ _id: waiting.id }, { $set: { 'items.0.payees.0.amount': 90000 } });
+  assert.equal((await u.acct.post(`/api/cashflow/releases/${waiting.id}/pay`, { payee: w.items[0].payees[0].id, pvNo: 'PV/9' })).status, 409, 'altered after approval: not paid');
 });

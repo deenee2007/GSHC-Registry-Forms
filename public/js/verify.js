@@ -27,7 +27,7 @@
 
   function row(dl, label, value) {
     if (!value) return;
-    dl.appendChild(el('dt', null, label));
+    dl.appendChild(el('dt', null, label || ' '));
     dl.appendChild(el('dd', null, value));
   }
 
@@ -46,6 +46,8 @@
       row(dl, 'Issued by', r.court);
       row(dl, 'Issued on', fmt(r.issuedAt));
       (r.signedBy || []).forEach(s => row(dl, 'Signed (' + s.capacity + ')', [s.title, s.name].filter(Boolean).join(' ') + ', ' + fmt(s.signedAt)));
+      // A release of funds: who is to be paid, and how much.
+      (r.lines || []).forEach((l, i) => row(dl, i ? '' : 'To be paid', l));
       if (r.status === 'revoked') {
         row(dl, 'Revoked on', fmt(r.revokedAt));
         row(dl, 'Reason', r.revokeReason);

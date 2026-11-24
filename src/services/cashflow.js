@@ -29,6 +29,11 @@ async function releases() {
   const doc = await meta().findOne({ _id: RELEASES });
   return (doc && doc.months) || {};
 }
+// Who entered each month's figure, and when.
+async function releasesBy() {
+  const doc = await meta().findOne({ _id: RELEASES });
+  return (doc && doc.by) || {};
+}
 async function setRelease(month, amount, byName) {
   if (!MONTH.test(month || '')) throw bad(400, 'Choose the month.');
   const n = Number(amount);
@@ -143,4 +148,4 @@ async function summary(month) {
     approvedUnpaid: ((approved[0] && approved[0].n) || 0) - (await CashItem.aggregate([{ $match: { month, status: { $in: ['approved', 'paid'] } } }, { $unwind: '$payments' }, { $group: { _id: null, n: { $sum: '$payments.amount' } } }]).then(r => (r[0] && r[0].n) || 0)) };
 }
 
-module.exports = { released, paidOf, round, migrate, oneLine, cleanSections, subtotal, thisMonth, nextMonth, monthName, releases, setRelease, nextSn, rollOver, summary, MONTH };
+module.exports = { releasesBy, released, paidOf, round, migrate, oneLine, cleanSections, subtotal, thisMonth, nextMonth, monthName, releases, setRelease, nextSn, rollOver, summary, MONTH };

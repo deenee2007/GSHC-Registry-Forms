@@ -91,6 +91,7 @@
         const kids = [el('div', { class: 'toolbar' }, [
           ui.field('Month', pick),
           me.requester ? el('button', { class: 'btn btn--primary', onclick: () => requestForm() }, '+ New Request') : null,
+          me.setsOverhead ? el('button', { class: 'btn btn--ghost', onclick: () => overheadDialog(r) }, '₦ Overhead Received') : null,
           pend.length ? many : null,
           el('button', { class: 'btn btn--ghost', onclick: () => printApproved(r) }, '🖨 Print Approved Cash Flow')
         ]), all];
@@ -98,7 +99,7 @@
           const s = r.summary;
           const card = (v, l, cls) => el('div', { class: 'dash-card ' + (cls || '') }, [el('div', { class: 'dash-card__num cash-num' }, naira(v)), el('div', { class: 'dash-card__label' }, l)]);
           kids.push(el('div', { class: 'dash-stats cash-stats' }, [
-            card(s.broughtForward, 'Brought forward'), card(s.released, `Released for ${r.monthName}`), card(s.available, 'Available'),
+            card(s.broughtForward, 'Brought forward'), card(s.released, `Overhead received, ${r.monthName}`), card(s.available, 'Available'),
             card(s.approved, 'Approved'), card(s.paid, 'Paid', 'dash-card--ok'), card(s.balance, 'Balance', s.balance < 0 ? 'dash-card--warn' : '')
           ]));
           if (s.approved > s.available) kids.push(el('div', { class: 'notice notice--warn' }, 'The items approved this month are more than the amount available.'));
@@ -489,20 +490,20 @@
       function payDialog(rel, p, after) {
         const pv = el('input', { type: 'text', maxlength: '60', placeholder: 'e.g. PV/112/2026' });
         const date = el('input', { type: 'date', value: new Date().toISOString().slice(0, 10) });
-        const amount = el('input', { type: 'number', min: '0', step: '0.01', value: String(p.amount) });
         ui.modal(`Record Payment · ${p.name}`, el('div', null, [
           el('div', { class: 'cf-paycard' }, [
             el('div', null, [el('span', { class: 'muted' }, 'Beneficiary'), el('strong', null, p.name)]),
             el('div', null, [el('span', { class: 'muted' }, 'Bank'), el('strong', null, p.bank)]),
             el('div', null, [el('span', { class: 'muted' }, 'Account number'), el('strong', { class: 'cf-acct' }, p.accountNo)]),
             el('div', null, [el('span', { class: 'muted' }, 'Account name'), el('strong', null, p.accountName || p.name)]),
-            el('div', null, [el('span', { class: 'muted' }, 'Released'), el('strong', null, naira(p.amount))]),
+            el('div', null, [el('span', { class: 'muted' }, 'Amount to pay (as approved)'), el('strong', null, naira(p.amount))]),
             el('div', null, [el('span', { class: 'muted' }, 'Release'), el('strong', null, rel.refNo)])
           ]),
-          ui.field('Payment voucher number', pv), ui.field('Date paid', date), ui.field('Amount paid, ₦', amount)
-        ]), { confirmText: 'Record Payment', onConfirm: async () => {
+          el('p', { class: 'muted' }, 'The amount is fixed: it is what the Hon. Chief Judge approved for this beneficiary.'),
+          ui.field('Payment voucher number', pv), ui.field('Date paid', date)
+        ]), { confirmText: `Record Payment of ${naira(p.amount)}`, onConfirm: async () => {
           if (!pv.value.trim()) throw new Error('Enter the payment voucher number.');
-          await api.post(`/cashflow/releases/${rel.id}/pay`, { payee: p.id, pvNo: pv.value.trim(), date: date.value, amount: amount.value });
+          await api.post(`/cashflow/releases/${rel.id}/pay`, { payee: p.id, pvNo: pv.value.trim(), date: date.value });
           ui.toast('Payment recorded. The Hon. Chief Judge is notified.', 'success'); router.refreshBadges(); setTimeout(after, 0); return true;
         } });
       }
@@ -516,6 +517,25 @@
         ]), { confirmText: 'Close as Paid', onConfirm: async () => {
           await api.post(`/cashflow/${x.id}/complete`, { note: note.value });
           ui.toast('Closed as paid.', 'success'); setTimeout(done, 0); return true;
+        } });
+      }
+
+      // The Chief Registrar (or the administrator) enters the overhead received each month.
+      async function overheadDialog(r) {
+        let list;
+        try { list = await api.get('/cashflow/admin/releases'); } catch (e) { ui.toast(e.message, 'error'); return; }
+        const month = el('input', { type: 'month', value: r.month });
+        const known = (m) => (list.releases.find(x => x.month === m) || {}).amount;
+        const amount = el('input', { type: 'number', min: '0', step: '0.01', placeholder: 'Amount received, ₦', value: known(r.month) != null ? String(known(r.month)) : '' });
+        month.addEventListener('change', () => { const k = known(month.value); amount.value = k != null ? String(k) : ''; });
+        ui.modal('Overhead Received', el('div', null, [
+          el('p', { class: 'muted' }, 'The overhead received from the government for the month. With the balance brought forward from the month before, it is what is available for the cash flow. To correct a month, enter it again; the Hon. Chief Judge is notified.'),
+          ui.field('Month', month), ui.field('Amount received, ₦', amount),
+          list.releases.length ? ui.table([{ label: 'Month', key: 'name' }, { label: 'Overhead received', value: x => naira(x.amount) }, { label: 'Entered by', value: x => [x.byName, x.at ? day(x.at) : ''].filter(Boolean).join(', ') }], list.releases) : null
+        ]), { confirmText: 'Save', onConfirm: async () => {
+          if (!(Number(amount.value) >= 0) || amount.value === '') throw new Error('Enter the amount received.');
+          await api.put('/cashflow/admin/releases', { month: month.value, amount: amount.value });
+          ui.toast('Saved.', 'success'); setTimeout(monthView, 0); return true;
         } });
       }
 
@@ -727,8 +747,10 @@
       }
 
       // The request for the release of funds as a memo, with the Chief Judge's approval.
-      function printRelease(x) {
+      async function printRelease(x) {
         const ok = x.decision && x.decision.kind === 'approved';
+        let qr = null;
+        if (ok) { try { qr = await api.get(`/cashflow/releases/${x.id}/qr`); } catch (e) { ui.toast(e.message, 'error'); return; } }
         let n = 0;
         const rows = x.items.map(it => it.payees.map((p, j) => `<tr><td>${++n}</td><td>${j ? '' : `${esc(it.name)}<div class="muted">${esc(it.monthName)} cash flow, item ${esc(it.sn)}</div>`}</td><td>${esc(p.name)}${p.accountName && p.accountName !== p.name ? `<div class="muted">A/C name: ${esc(p.accountName)}</div>` : ''}</td><td>${esc(p.bank)}</td><td>${esc(p.accountNo)}</td><td style="text-align:right">${esc(naira(p.amount))}</td></tr>`).join('')).join('');
         window.App.processUi.printPage(`<article class="court-doc report-print">
@@ -745,7 +767,9 @@
           <p>Submitted for your kind consideration and approval, please.</p>
           <div class="cfp-from"><strong>${esc(x.requestedByName)}</strong><br>Deputy Chief Registrar (Admin and Finance)</div>
           ${ok ? `<div class="doc-sign-wrap"><div class="doc-sign-block"><div class="doc-sig-meta" style="font-weight:700">APPROVED</div>${x.decision.signatureUrl ? `<img class="doc-sig-img" src="${x.decision.signatureUrl}" alt="Signature">` : ''}<div class="doc-sign">${esc([x.decision.title, x.decision.byName].filter(Boolean).join(' '))}<br>Hon. Chief Judge</div><div class="doc-sig-meta">${esc(day(x.decision.at))}${x.decision.note ? `: ${esc(x.decision.note)}` : ''}</div></div></div>`
-            : `<p class="muted">Status: ${esc((RSTATUS[x.status] || [x.status])[0])}</p>`}
+            : `<p class="muted">Status: ${esc((RSTATUS[x.status] || [x.status])[0])}. Not yet approved: no payment may be made on this memo.</p>`}
+          ${qr ? `<div class="doc-verify"><img class="doc-qr" src="${qr.qrDataUrl}" alt="Verification QR code"><div class="doc-verify__text">
+            <strong>Verification code: ${esc(qr.verifyCode)}</strong><br>Scan the QR code, or visit ${esc(qr.verifyUrl)}, to confirm this release was approved by the Hon. Chief Judge and that the beneficiaries, account numbers and amounts have not been altered.</div></div>` : ''}
           <footer class="doc-footer"><span>Printed ${esc(day(new Date()))}</span><span>Powered by the Directorate of ICT, Gombe State High Court of Justice</span></footer></article>`,
           '@page { size: A4; margin: 12mm; } .cfp-memo { width: 100%; border-collapse: collapse; margin: 6px 0; } .cfp-memo td { padding: 3px 6px; vertical-align: top; } .cfp-memo td:nth-child(odd) { font-weight: 700; width: 4.5em; } .cfp-from { margin: 18px 0 8px; }');
       }
