@@ -115,27 +115,65 @@
       }
 
       // ── A new request (or the answer to a query) ──
+      // The breakdown: sections (Roofing, Painting…) with their lines; a
+      // simple item is one section with no heading. Quantity and unit price
+      // on every line; the line, section and item totals are worked out.
       function requestForm(x) {
         const v = x || {};
-        const item = el('input', { type: 'text', value: v.item || '', maxlength: '200' });
-        const desc = el('textarea', { rows: 3, maxlength: '3000' }); desc.value = v.description || '';
-        const qty = el('input', { type: 'number', min: '0', step: 'any', value: v.quantity ?? '' });
-        const unit = el('input', { type: 'number', min: '0', step: '0.01', value: v.unitPrice ?? '' });
-        const amount = el('input', { type: 'number', min: '0', step: '0.01', value: v.amount ?? '' });
-        const total = el('div', { class: 'muted' });
-        const sync = () => { if (qty.value && unit.value) { amount.value = String(Math.round(Number(qty.value) * Number(unit.value) * 100) / 100); amount.readOnly = true; } else amount.readOnly = false; total.textContent = amount.value ? `Total: ${naira(amount.value)}` : ''; };
-        [qty, unit, amount].forEach(i => i.addEventListener('input', sync)); sync();
+        const item = el('input', { type: 'text', value: v.item || '', maxlength: '200', placeholder: 'e.g. Renovation of High Court No. II' });
+        const desc = el('textarea', { rows: 2, maxlength: '3000' }); desc.value = v.description || '';
         const dept = el('input', { type: 'text', value: v.department || '', placeholder: 'e.g. Works, High Court No. III, Registry' });
         const just = el('textarea', { rows: 3, maxlength: '3000' }); just.value = v.justification || '';
         const files = el('input', { type: 'file', multiple: 'multiple', accept: 'application/pdf,image/*' });
         const answer = el('textarea', { rows: 3, maxlength: '2000' });
+        const blankLine = () => ({ description: '', quantity: '', unitPrice: '' });
+        const sections = (v.sections && v.sections.length ? v.sections : [{ title: '', lines: [blankLine()] }])
+          .map(sec => ({ title: sec.title || '', lines: sec.lines.map(l => ({ description: l.description, quantity: String(l.quantity), unitPrice: String(l.unitPrice) })) }));
+        const lineAmt = (l) => Math.round((Number(l.quantity) || 0) * (Number(l.unitPrice) || 0) * 100) / 100;
+        const secAmt = (sec) => sec.lines.reduce((n, l) => n + lineAmt(l), 0);
+        const breakdown = el('div', { class: 'cfb' });
+        const grand = el('div', { class: 'cfb-grand' });
+        const totals = () => {
+          breakdown.querySelectorAll('[data-line]').forEach(n => { const [i, j] = n.dataset.line.split('.').map(Number); n.textContent = naira(lineAmt(sections[i].lines[j])); });
+          breakdown.querySelectorAll('[data-sub]').forEach(n => { n.textContent = naira(secAmt(sections[Number(n.dataset.sub)])); });
+          grand.replaceChildren(el('span', null, 'Total amount requested'), el('strong', null, naira(sections.reduce((n, sec) => n + secAmt(sec), 0))));
+        };
+        function draw() {
+          const many = sections.length > 1;
+          breakdown.replaceChildren(...sections.map((sec, i) => {
+            const input = (l, key, attrs) => { const n = el('input', { ...attrs, value: l[key] }); n.addEventListener('input', () => { l[key] = n.value; totals(); }); return n; };
+            const head = el('div', { class: 'cfb-sec__head' }, [
+              el('input', { class: 'cfb-sec__title', type: 'text', maxlength: '200', value: sec.title, 'aria-label': `Heading of section ${i + 1}`,
+                placeholder: many ? `Section ${i + 1} heading, e.g. Roofing` : 'Section heading (optional), e.g. Roofing',
+                oninput: (e) => { sec.title = e.target.value; } }),
+              many ? el('button', { class: 'btn btn--ghost btn--small', type: 'button', title: 'Remove this section', onclick: () => { if (secAmt(sec) && !confirm(`Remove ${sec.title || 'this section'} and its lines?`)) return; sections.splice(i, 1); draw(); } }, '✕ Remove section') : null
+            ]);
+            const rows = sec.lines.map((l, j) => el('div', { class: 'cfb-line' }, [
+              el('span', { class: 'cfb-line__no' }, String(j + 1)),
+              input(l, 'description', { type: 'text', maxlength: '300', placeholder: 'Description, e.g. Roofing sheets', 'aria-label': 'Description', class: 'cfb-line__desc' }),
+              input(l, 'quantity', { type: 'number', min: '0', step: 'any', placeholder: 'Qty', 'aria-label': 'Quantity', class: 'cfb-line__qty' }),
+              input(l, 'unitPrice', { type: 'number', min: '0', step: '0.01', placeholder: 'Unit price ₦', 'aria-label': 'Unit price', class: 'cfb-line__price' }),
+              el('span', { class: 'cfb-line__amt', 'data-line': `${i}.${j}` }),
+              el('button', { class: 'cfb-line__del', type: 'button', title: 'Remove this line', 'aria-label': 'Remove this line', disabled: sec.lines.length === 1 ? 'disabled' : null, onclick: () => { sec.lines.splice(j, 1); draw(); } }, '✕')
+            ]));
+            return el('div', { class: 'cfb-sec' }, [head,
+              el('div', { class: 'cfb-line cfb-line--head' }, [el('span'), el('span', null, 'Description'), el('span', null, 'Quantity'), el('span', null, 'Unit price, ₦'), el('span', null, 'Amount'), el('span')]),
+              ...rows,
+              el('div', { class: 'cfb-sec__foot' }, [
+                el('button', { class: 'btn btn--ghost btn--small', type: 'button', onclick: () => { sec.lines.push(blankLine()); draw(); const d = breakdown.querySelectorAll('.cfb-sec')[i].querySelectorAll('.cfb-line__desc'); d[d.length - 1].focus(); } }, '+ Add a line'),
+                el('span', { class: 'cfb-sub' }, [many || sec.title ? `Subtotal${sec.title ? `, ${sec.title}` : ''}: ` : 'Total: ', el('strong', { 'data-sub': String(i) })])
+              ])
+            ]);
+          }), el('button', { class: 'btn btn--ghost cfb-add', type: 'button', onclick: () => { sections.push({ title: '', lines: [blankLine()] }); draw(); const t = breakdown.querySelectorAll('.cfb-sec__title'); t[t.length - 1].focus(); } }, '+ Add a section (e.g. Roofing, Painting)'));
+          totals();
+        }
+        draw();
         ui.modal(x ? `Answer the Query · ${v.item}` : 'New Request', el('div', { class: 'form-grid' }, [
           x ? el('div', { class: 'notice notice--warn form-field--full' }, [el('strong', null, 'Query from the Hon. Chief Judge: '), v.query ? v.query.text : '']) : null,
           x ? el('div', { class: 'form-field--full' }, ui.field('Your answer', answer)) : null,
-          el('div', { class: 'form-field--full' }, ui.field('Item', item)),
+          el('div', { class: 'form-field--full' }, ui.field('Item', item, 'As it will appear on the cash flow')),
           el('div', { class: 'form-field--full' }, ui.field('Description', desc)),
-          ui.field('Quantity (optional)', qty), ui.field('Unit price, ₦ (optional)', unit),
-          ui.field('Amount, ₦', amount, 'Worked out from the quantity and unit price when both are given'), total,
+          el('div', { class: 'form-field--full' }, [el('div', { class: 'cfb-label' }, 'Breakdown'), el('p', { class: 'muted cfb-hint' }, 'Quantity and unit price on every line; the amounts and totals are worked out. For an item with parts, add a section for each part (e.g. Roofing, Painting), each with its own lines and subtotal.'), breakdown, grand]),
           ui.field('Department or purpose', dept),
           el('div', { class: 'form-field--full' }, ui.field('Justification', just)),
           el('div', { class: 'form-field--full' }, ui.field('Attachments (optional)', files, 'Memo, invoice or quotation: PDF or photo, up to 5 files of 10 MB'))
@@ -143,10 +181,20 @@
           wide: true, confirmText: x ? 'Send Back to the CJ' : 'Submit to the Cash Flow',
           onConfirm: async () => {
             if (!item.value.trim()) throw new Error('Enter the item requested.');
-            if (!(Number(amount.value) > 0)) throw new Error('Enter the amount.');
+            const many = sections.length > 1;
+            for (const [i, sec] of sections.entries()) {
+              if (many && !sec.title.trim()) throw new Error(`Give section ${i + 1} a heading (for example, Roofing).`);
+              for (const [j, l] of sec.lines.entries()) {
+                const where = `${sec.title.trim() ? `${sec.title.trim()}, ` : ''}line ${j + 1}`;
+                if (!l.description.trim()) throw new Error(`Describe ${where}.`);
+                if (!(Number(l.quantity) > 0)) throw new Error(`Enter the quantity for ${where}.`);
+                if (!(Number(l.unitPrice) > 0)) throw new Error(`Enter the unit price for ${where}.`);
+              }
+            }
             if (x && !answer.value.trim()) throw new Error('Answer the query.');
             const f = new FormData();
-            Object.entries({ item: item.value.trim(), description: desc.value, quantity: qty.value, unitPrice: unit.value, amount: amount.value, department: dept.value, justification: just.value, answer: answer.value })
+            Object.entries({ item: item.value.trim(), description: desc.value, department: dept.value, justification: just.value, answer: answer.value,
+              sections: JSON.stringify(sections.map(sec => ({ title: sec.title.trim(), lines: sec.lines.map(l => ({ description: l.description.trim(), quantity: l.quantity, unitPrice: l.unitPrice })) }))) })
               .forEach(([k, val]) => f.append(k, val));
             [...files.files].forEach(file => f.append('files', file));
             if (x) await api.put(`/cashflow/${x.id}`, f); else await api.post('/cashflow', f);
@@ -154,6 +202,57 @@
             router.refreshBadges(); TABS.length && TABS[0][2](); return true;
           }
         });
+      }
+
+      // The breakdown of an item, to read: sections, lines, subtotals; lines
+      // the CJ struck out shown as not approved.
+      function breakdownView(x) {
+        const many = x.sections.length > 1 || (x.sections[0] && x.sections[0].title);
+        const part = x.decision && x.decision.kind === 'approved' && x.sections.some(sec => sec.lines.some(l => l.struck));
+        return el('div', { class: 'cfx-break' }, [
+          el('h4', null, 'Breakdown'),
+          ...x.sections.map(sec => el('div', { class: 'cfx-break__sec' }, [
+            many ? el('div', { class: 'cfx-break__title' }, sec.title) : null,
+            el('table', { class: 'cfx-break__table' }, [
+              el('thead', null, el('tr', null, [el('th', null, 'S/No'), el('th', null, 'Description'), el('th', { class: 'num' }, 'Qty'), el('th', { class: 'num' }, 'Unit price'), el('th', { class: 'num' }, 'Amount')])),
+              el('tbody', null, sec.lines.map((l, j) => el('tr', { class: l.struck ? 'is-struck' : '' }, [
+                el('td', null, String(j + 1)),
+                el('td', null, [l.description, l.struck ? el('span', { class: 'cfx-break__out' }, 'Not approved') : null]),
+                el('td', { class: 'num' }, Number(l.quantity).toLocaleString('en-NG')), el('td', { class: 'num' }, naira(l.unitPrice)), el('td', { class: 'num' }, naira(l.amount))
+              ]))),
+              el('tfoot', null, [
+                el('tr', null, [el('td', { colspan: '4' }, many ? `Subtotal, ${sec.title}` : 'Total'), el('td', { class: 'num' }, naira(sec.subtotal))]),
+                part && sec.approvedSubtotal !== sec.subtotal ? el('tr', { class: 'cfx-break__ok' }, [el('td', { colspan: '4' }, 'Lines approved'), el('td', { class: 'num' }, naira(sec.approvedSubtotal))]) : null
+              ])
+            ])
+          ])),
+          many ? el('div', { class: 'cfx-break__grand' }, [el('span', null, 'Grand total'), el('strong', null, naira(x.amount))]) : null,
+          part ? el('div', { class: 'cfx-break__grand cfx-break__grand--ok' }, [el('span', null, 'Total of the lines approved'), el('strong', null, naira(x.sections.reduce((n, sec) => n + sec.approvedSubtotal, 0)))]) : null
+        ]);
+      }
+
+      // One item with its breakdown, on paper.
+      function printItem(x) {
+        const many = x.sections.length > 1 || (x.sections[0] && x.sections[0].title);
+        const secs = x.sections.map(sec => `${many ? `<h3 class="cfp-sec">${esc(sec.title)}</h3>` : ''}<table class="doc-table"><thead><tr><th>S/No</th><th>Description</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit price</th><th style="text-align:right">Amount</th></tr></thead><tbody>${
+          sec.lines.map((l, j) => `<tr${l.struck ? ' style="text-decoration:line-through;color:#888"' : ''}><td>${j + 1}</td><td>${esc(l.description)}${l.struck ? ' (not approved)' : ''}</td><td style="text-align:right">${esc(Number(l.quantity).toLocaleString('en-NG'))}</td><td style="text-align:right">${esc(naira(l.unitPrice))}</td><td style="text-align:right">${esc(naira(l.amount))}</td></tr>`).join('')
+        }<tr><td colspan="4" style="text-align:right"><strong>${many ? `Subtotal, ${esc(sec.title)}` : 'Total'}</strong></td><td style="text-align:right"><strong>${esc(naira(sec.subtotal))}</strong></td></tr></tbody></table>`).join('');
+        const ok = x.decision && x.decision.kind === 'approved';
+        window.App.processUi.printPage(`<article class="court-doc report-print">
+          <header class="doc-masthead"><img class="doc-emblem" src="/assets/highcourt.png" alt=""><div class="doc-titleblock"><div class="doc-line1">THE JUDICIARY</div><div class="doc-line2">GOMBE STATE HIGH COURT OF JUSTICE</div><div class="doc-line3">CASH FLOW · ${esc(x.monthName.toUpperCase())} · ITEM ${esc(x.sn)}</div></div><img class="doc-emblem" src="/assets/coat.png" alt=""></header><div class="doc-rule"></div>
+          <h2 style="margin:6px 0 2px">${esc(x.item)}</h2>
+          <p style="margin:0 0 8px">Requested by ${esc(x.requestedByName)}${x.requestedByRole ? `, ${esc(x.requestedByRole)}` : ''}${x.department ? ` · ${esc(x.department)}` : ''}</p>
+          ${x.description ? `<p><strong>Description:</strong> ${esc(x.description)}</p>` : ''}
+          ${secs}
+          <table class="doc-table" style="margin-top:8px"><tbody>
+            <tr><td><strong>Total amount requested</strong></td><td style="text-align:right"><strong>${esc(naira(x.amount))}</strong></td></tr>
+            ${ok ? `<tr><td><strong>Amount approved</strong></td><td style="text-align:right"><strong>${esc(naira(x.decision.amount))}</strong></td></tr>` : ''}
+            ${x.payment ? `<tr><td>Paid, PV ${esc(x.payment.pvNo)}, ${esc(day(x.payment.date))}</td><td style="text-align:right">${esc(naira(x.payment.amount))}</td></tr>` : ''}
+          </tbody></table>
+          ${x.justification ? `<p><strong>Justification:</strong> ${esc(x.justification)}</p>` : ''}
+          ${ok ? `<div class="doc-sign-wrap"><div class="doc-sign-block">${x.decision.signatureUrl ? `<img class="doc-sig-img" src="${x.decision.signatureUrl}" alt="Signature">` : ''}<div class="doc-sign">${esc([x.decision.title, x.decision.byName].filter(Boolean).join(' '))}<br>Hon. Chief Judge</div><div class="doc-sig-meta">Approved ${esc(day(x.decision.at))}${x.decision.note ? `: ${esc(x.decision.note)}` : ''}</div></div></div>`
+            : `<p class="muted">Status: ${esc((STATUS[x.status] || [x.status])[0])}</p>`}
+          <footer class="doc-footer"><span>Printed ${esc(day(new Date()))}</span><span>Powered by the Directorate of ICT, Gombe State High Court of Justice</span></footer></article>`);
       }
 
       // ── The details of an item, with the actions this person may take ──
@@ -165,6 +264,7 @@
         const btn = (label, cls, fn) => el('button', { class: 'btn ' + cls, type: 'button', onclick: fn }, label);
         const actions = el('div', { class: 'doc-preview__actions' }, [
           btn('✕  Close', 'btn--ghost', () => dialog.close()),
+          btn('🖨  Print', 'btn--ghost', () => printItem(x)),
           x.can.decide ? btn('✔  Approve', 'btn--ok', () => approve(x, done)) : null,
           x.can.decide ? btn('↩  Return with Query', 'btn--ghost', () => query(x, done)) : null,
           x.can.decide ? btn('✕  Decline', 'btn--danger', () => decline(x, done)) : null,
@@ -219,7 +319,7 @@
           ])]),
           el('div', { class: 'cd-box' }, [el('h4', null, 'The money'), el('div', { class: 'cd-fields' }, [
             field('Requested', naira(x.amount)),
-            field('Quantity × unit price', x.quantity && x.unitPrice ? `${x.quantity} × ${naira(x.unitPrice)}` : '—'),
+            field('Breakdown', `${x.sections.length > 1 ? `${x.sections.length} sections, ` : ''}${x.sections.reduce((n, sec) => n + sec.lines.length, 0)} line(s)`),
             field('Approved', approved !== null ? naira(approved) + (lower ? ` (${naira(x.amount - approved)} less)` : '') : decided === 'declined' ? 'Not approved' : 'Awaiting decision'),
             field('Paid', x.payment ? `${naira(x.payment.amount)} · PV ${x.payment.pvNo}` : approved !== null ? 'Not yet' : '—'),
             x.payment ? field('Payment recorded', `${day(x.payment.date)} by ${x.payment.byName}`, true) : null
@@ -235,22 +335,49 @@
           el('div', { class: 'cfx-tl__head' }, [el('strong', null, ACTION[h.action] || h.action), el('span', null, `${h.byName} · ${when(h.at)}`)]),
           h.note ? el('div', { class: 'cfx-tl__note' }, h.note) : null
         ])))]);
-        const body = el('div', { class: 'cfx' }, [actions, hero, steps, ...notes, cards,
+        const body = el('div', { class: 'cfx' }, [actions, hero, steps, ...notes, cards, x.sections.length ? breakdownView(x) : null,
           (x.description || x.justification) ? el('div', { class: 'cfx-texts' }, [text('Description', x.description), text('Justification', x.justification)]) : null,
           files, timeline]);
         ui.modal('Cash Flow Item', body, { noFooter: true, wide: true, onOpen: (o) => { dialog = o; } });
       }
 
+      // Approve the whole item, or part of it: untick the lines (or a whole
+      // section) not approved; the amount follows, and may be lowered further.
       function approve(x, done) {
+        const many = x.sections.length > 1 || (x.sections[0] && x.sections[0].title);
+        const ticks = [];
         const amount = el('input', { type: 'number', min: '0', step: '0.01', value: String(x.amount) });
+        const kept = el('div', { class: 'cfa-kept' });
+        const sync = () => {
+          const n = Math.round(ticks.filter(t => t.box.checked).reduce((m, t) => m + t.amount, 0) * 100) / 100;
+          amount.value = String(n);
+          kept.replaceChildren(el('span', null, n < x.amount ? `Approving ${naira(n)} of ${naira(x.amount)}` : `Approving the full ${naira(x.amount)}`));
+          x.sections.forEach((sec, i) => { const all = ticks.filter(t => t.i === i); const box = secBoxes[i]; if (box) { box.checked = all.every(t => t.box.checked); box.indeterminate = !box.checked && all.some(t => t.box.checked); } });
+        };
+        const secBoxes = [];
+        const list = el('div', { class: 'cfa-list' }, x.sections.map((sec, i) => {
+          const sbox = el('input', { type: 'checkbox', checked: 'checked', onchange: () => { ticks.filter(t => t.i === i).forEach(t => { t.box.checked = sbox.checked; }); sync(); } });
+          secBoxes[i] = many ? sbox : null;
+          return el('div', { class: 'cfa-sec' }, [
+            many ? el('label', { class: 'cfa-sec__head' }, [sbox, el('strong', null, sec.title), el('span', null, naira(sec.subtotal))]) : null,
+            ...sec.lines.map((l, j) => {
+              const box = el('input', { type: 'checkbox', checked: 'checked', onchange: sync });
+              ticks.push({ i, key: `${i}.${j}`, box, amount: l.amount });
+              return el('label', { class: 'cfa-line' }, [box, el('span', null, `${l.description} (${Number(l.quantity).toLocaleString('en-NG')} × ${naira(l.unitPrice)})`), el('span', { class: 'cfa-line__amt' }, naira(l.amount))]);
+            })
+          ]);
+        }));
         const note = el('input', { type: 'text', maxlength: '500', placeholder: 'Optional' });
         const pin = el('input', { type: 'password', inputmode: 'numeric', autocomplete: 'off', maxlength: '8', placeholder: 'Signing PIN' });
+        sync();
         ui.modal(`Approve · ${x.item}`, el('div', null, [
-          el('p', null, `Requested: ${naira(x.amount)}. You may approve a lower amount.`),
+          el('p', null, `Requested: ${naira(x.amount)}. Untick any line${many ? ' or section' : ''} you do not approve; you may also approve a lower amount.`),
+          list, kept,
           ui.field('Amount approved, ₦', amount), ui.field('Remark (optional)', note), ui.field('Your signing PIN', pin)
-        ]), { confirmText: 'Approve', confirmClass: 'btn--ok', onConfirm: async () => {
+        ]), { wide: true, confirmText: 'Approve', confirmClass: 'btn--ok', onConfirm: async () => {
+          if (!ticks.some(t => t.box.checked)) throw new Error('Every line is unticked. Decline the item instead.');
           if (!pin.value) throw new Error('Enter your signing PIN.');
-          await api.post(`/cashflow/${x.id}/decide`, { action: 'approve', amount: amount.value, note: note.value, pin: pin.value });
+          await api.post(`/cashflow/${x.id}/decide`, { action: 'approve', amount: amount.value, note: note.value, pin: pin.value, struck: ticks.filter(t => !t.box.checked).map(t => t.key) });
           ui.toast('Approved. The Accountant is notified.', 'success'); setTimeout(done, 0); return true;
         } });
       }

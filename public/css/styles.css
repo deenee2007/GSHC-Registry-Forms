@@ -1092,3 +1092,68 @@ button.dash-card:hover { border-color: var(--green-500); }
   .cfx-hero__title { font-size: 1.15rem; }
   .cd-fields { grid-template-columns: 1fr; }
 }
+
+/* Cash flow: the breakdown in the request form (sections and lines) */
+.cfb-label { font-weight: 600; font-size: .9rem; margin-bottom: .2rem; }
+.cfb-hint { margin: 0 0 .6rem; font-size: .82rem; }
+.cfb { display: flex; flex-direction: column; gap: .8rem; }
+.cfb-sec { border: 1px solid var(--line); border-radius: 10px; padding: .7rem .8rem; background: #fbfdfb; }
+.cfb-sec__head { display: flex; gap: .5rem; align-items: center; margin-bottom: .5rem; }
+.cfb-sec__title { flex: 1; min-width: 0; padding: .5rem .6rem; border: 1px solid var(--line); border-radius: 8px; font-weight: 600; }
+.cfb-line { display: grid; grid-template-columns: 1.6rem minmax(0, 1fr) 5.5rem 8rem 8.5rem 2rem; gap: .4rem; align-items: center; margin-bottom: .35rem; }
+.cfb-line input { width: 100%; min-width: 0; padding: .45rem .5rem; border: 1px solid var(--line); border-radius: 7px; font: inherit; }
+.cfb-line--head { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-bottom: .2rem; }
+.cfb-line__no { color: var(--muted); font-size: .8rem; text-align: center; }
+.cfb-line__amt { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+.cfb-line--head span:nth-child(5) { text-align: right; }
+.cfb-line__del { border: 0; background: none; color: var(--danger); cursor: pointer; font-size: .95rem; }
+.cfb-line__del:disabled { opacity: .25; cursor: default; }
+.cfb-sec__foot { display: flex; justify-content: space-between; align-items: center; gap: .5rem; margin-top: .4rem; flex-wrap: wrap; }
+.cfb-sub { font-size: .9rem; }
+.cfb-add { align-self: flex-start; }
+.cfb-grand { display: flex; justify-content: space-between; align-items: center; margin-top: .7rem; padding: .7rem .9rem; border-radius: 10px; background: var(--green-50); color: var(--green-900); }
+.cfb-grand strong { font-size: 1.2rem; font-variant-numeric: tabular-nums; }
+@media (max-width: 640px) {
+  .cfb-line { grid-template-columns: 1.4rem minmax(0, 1fr) minmax(0, 1fr) 2rem; }
+  .cfb-line--head { display: none; }
+  .cfb-line__desc { grid-column: 2 / 4; }
+  .cfb-line__qty { grid-column: 2; }
+  .cfb-line__price { grid-column: 3; }
+  .cfb-line__amt { grid-column: 2 / 4; }
+  .cfb-line__del { grid-row: 1; grid-column: 4; }
+  .cfb-line { padding-bottom: .4rem; border-bottom: 1px dashed var(--line); }
+}
+
+/* Cash flow: the breakdown in Details */
+.cfx-break { border: 1px solid var(--line); border-radius: 12px; padding: .9rem 1rem; background: #fff; }
+.cfx-break h4 { margin: 0 0 .6rem; font-size: .78rem; letter-spacing: .06em; text-transform: uppercase; color: var(--green-700); }
+.cfx-break__sec + .cfx-break__sec { margin-top: .9rem; }
+.cfx-break__title { font-weight: 700; color: var(--green-900); margin-bottom: .3rem; padding-left: .5rem; border-left: 3px solid var(--gold, #c9a227); }
+.cfx-break__table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+.cfx-break__table th { text-align: left; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; padding: .35rem .5rem; border-bottom: 1px solid var(--line); }
+.cfx-break__table td { padding: .4rem .5rem; border-bottom: 1px solid #eef3ef; }
+.cfx-break__table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cfx-break__table tfoot td { font-weight: 700; border-bottom: 0; background: #f5f9f6; }
+.cfx-break__table tfoot td:first-child { text-align: right; }
+.cfx-break__table tr.is-struck td { color: var(--muted); }
+.cfx-break__table tr.is-struck td:not(:first-child) { text-decoration: line-through; }
+.cfx-break__out { display: inline-block; margin-left: .4rem; padding: 0 .4rem; border-radius: 6px; background: #fdeceb; color: var(--danger); font-size: .7rem; font-weight: 600; text-decoration: none; }
+.cfx-break__ok td { color: var(--green-700); }
+.cfx-break__grand { display: flex; justify-content: space-between; margin-top: .8rem; padding: .6rem .8rem; border-radius: 9px; background: var(--green-50); color: var(--green-900); }
+.cfx-break__grand strong { font-size: 1.1rem; font-variant-numeric: tabular-nums; }
+.cfx-break__grand--ok { margin-top: .4rem; background: #fff; border: 1px dashed var(--green-700); }
+@media (max-width: 640px) {
+  .cfx-break { padding: .7rem; overflow-x: auto; }
+  .cfx-break__table { font-size: .8rem; }
+  .cfx-break__table th:nth-child(1), .cfx-break__table td:nth-child(1) { display: none; }
+  .cfx-break__table tfoot td:first-child { text-align: left; }
+}
+
+/* Cash flow: approving part of an item */
+.cfa-list { border: 1px solid var(--line); border-radius: 10px; padding: .5rem .7rem; margin: .4rem 0 .6rem; max-height: 22rem; overflow: auto; }
+.cfa-sec + .cfa-sec { margin-top: .5rem; padding-top: .5rem; border-top: 1px solid var(--line); }
+.cfa-sec__head, .cfa-line { display: grid; grid-template-columns: 1.4rem minmax(0, 1fr) auto; gap: .4rem; align-items: center; padding: .25rem 0; cursor: pointer; }
+.cfa-line { padding-left: 1.2rem; font-size: .9rem; }
+.cfa-sec__head span, .cfa-line__amt { text-align: right; font-variant-numeric: tabular-nums; }
+.cfa-line:has(input:not(:checked)) span { color: var(--muted); text-decoration: line-through; }
+.cfa-kept { margin-bottom: .6rem; font-weight: 700; color: var(--green-900); }

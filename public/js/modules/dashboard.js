@@ -179,11 +179,25 @@
       const dash = ui.el('div', { class: 'dash' });
       container.appendChild(dash);
 
-      const place = units.length === 1 ? units[0].name : isAdmin ? 'System Administrator' : `${units.length} units`;
+      const office = (user.signerRoles || []).map(r => window.App.workflow.roleLabel(r)).join(', ');
+      const place = units.length === 1 ? units[0].name : isAdmin ? 'System Administrator' : units.length ? `${units.length} units` : office;
       dash.appendChild(ui.el('div', { class: 'dash-welcome' }, [
         ui.el('h1', null, `${greeting}, ${[user.title, user.fullName].filter(Boolean).join(' ')}`),
         ui.el('p', { class: 'dash-sub' }, `${place}  ·  ${today}`)
       ]));
+
+      // An account held only for the cash flow (no unit): the cash flow, nothing else.
+      if (!isAdmin && !units.length) {
+        const cash = (user.signerRoles || []).some(r => ['cj_aide', 'chief_registrar', 'dcr_admin_finance', 'accountant', 'chief_judge'].includes(r));
+        if (cash) {
+          let waiting = 0;
+          try { waiting = (await api.get('/cashflow/counts')).waiting; } catch (e) { /* offline */ }
+          const label = (user.signerRoles || []).includes('accountant') ? 'Approved, Waiting for Payment' : 'Returned to Me with a Query';
+          dash.appendChild(ui.el('div', { class: 'dash-stats' }, [card(ui, waiting, label, waiting ? 'dash-card--warn' : '', () => router.loadModule('cashflow'))]));
+          dash.appendChild(ui.el('div', { class: 'dash-links' }, [ui.el('button', { class: 'btn btn--primary', onclick: () => router.loadModule('cashflow') }, '💵 Open the Cash Flow')]));
+        } else dash.appendChild(ui.el('p', { class: 'muted' }, 'No unit is assigned to your account yet. Ask the administrator.'));
+        return;
+      }
 
       if (offline) dash.appendChild(ui.el('div', { class: 'notice notice--warn' }, 'You are offline. You can open your units and save drafts; they will be sent when the connection returns. Submitting and signing need the internet.'));
 

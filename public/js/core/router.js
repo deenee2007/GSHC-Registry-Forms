@@ -54,7 +54,8 @@
       _nav.appendChild(navItem('📤  My Submissions', () => loadModule('submissions'), { 'data-nav': 'submissions' }, 'approved'));
     }
 
-    _nav.appendChild(navItem('📁  Case File', () => loadModule('cases'), { 'data-nav': 'cases' }));
+    // No unit (an account held only for the cash flow): no case work.
+    if (list.length || permissions.isAdmin(user)) _nav.appendChild(navItem('📁  Case File', () => loadModule('cases'), { 'data-nav': 'cases' }));
     // The court's register books; with more than one court, a choice of court first.
     const courts = list.filter(u => u.type === 'registry');
     if (courts.length) _nav.appendChild(navItem('📒  Case Register', () => loadModule('caseRegister', courts.length === 1 ? { unit: courts[0] } : {}), { 'data-nav': 'caseRegister' }, 'newcases'));

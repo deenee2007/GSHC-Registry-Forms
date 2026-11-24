@@ -359,9 +359,14 @@ const CashItemSchema = new Schema({
   sn:            { type: Number, required: true },                      // its number on that month's list
   item:          { type: String, required: true, trim: true },
   description:   { type: String, trim: true, default: '' },
-  quantity:      { type: Number, default: null },
+  quantity:      { type: Number, default: null },                       // (earlier items, before sections)
   unitPrice:     { type: Number, default: null },
-  amount:        { type: Number, required: true },                      // requested
+  // The breakdown: sections (e.g. Roofing, Painting), each with its lines
+  // (quantity × unit price). A simple item has one section with no title.
+  // The CJ may strike lines out when approving part of an item.
+  sections:      { type: [{ _id: false, title: { type: String, default: '' }, lines: [{ _id: false,
+    description: String, quantity: Number, unitPrice: Number, amount: Number, struck: { type: Boolean, default: false } }] }], default: [] },
+  amount:        { type: Number, required: true },                      // requested: the grand total
   department:    { type: String, trim: true, default: '' },
   justification: { type: String, trim: true, default: '' },
   attachments:   { type: [{ _id: false, name: String, file: FileRef }], default: [] },

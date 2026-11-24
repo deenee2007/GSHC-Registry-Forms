@@ -25,7 +25,7 @@
     _meta = { roles: signerRoles, rules: Object.fromEntries(forms.map(f => [f.formType, f.signers])) };
     return _meta;
   }
-  const ROLE_FALLBACK = { marriage_registrar: 'Marriage Registrar', chief_judge: 'Hon. Chief Judge', process_registrar: 'Process Registrar', judge: 'Judge', chief_registrar: 'Chief Registrar', registrar: 'Registrar', chief_bailiff: 'Chief Bailiff', deputy_sheriff: 'Deputy Sheriff', director_of_litigation: 'Director of Litigation', commissioner_for_oaths: 'Commissioner for Oaths' };
+  const ROLE_FALLBACK = { marriage_registrar: 'Marriage Registrar', chief_judge: 'Hon. Chief Judge', process_registrar: 'Process Registrar', judge: 'Judge', chief_registrar: 'Chief Registrar', registrar: 'Registrar', chief_bailiff: 'Chief Bailiff', deputy_sheriff: 'Deputy Sheriff', director_of_litigation: 'Director of Litigation', commissioner_for_oaths: 'Commissioner for Oaths', staff_officer: 'Staff Officer', director_personnel: 'Director of Personnel', cj_aide: 'Aide to the Hon. Chief Judge', dcr_admin_finance: 'DCR Admin and Finance', accountant: 'Accountant' };
   function roleLabel(role) { return (_meta && _meta.roles[role]) || ROLE_FALLBACK[role] || role; }
 
   const formDef = (formType) => (App.allForms || {})[formType];

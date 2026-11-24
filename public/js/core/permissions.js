@@ -19,9 +19,13 @@
     if (isAdmin(user)) return true;
     // The Directorate of Personnel: only those given it.
     if (unitKey === 'personnel') return user.unitKeys.includes(unitKey);
-    if (!user.unitKeys.length) return user.signerRoles.length > 0;
+    // Roles held only for the cash flow give no unit.
+    if (!user.unitKeys.length) return unitRoles(user).length > 0;
     return user.unitKeys.includes(unitKey);
   }
+
+  const OFFICE_ROLES = ['cj_aide', 'dcr_admin_finance', 'accountant'];
+  const unitRoles = (user) => (user.signerRoles || []).filter(r => !OFFICE_ROLES.includes(r));
 
   function can(action, user) {
     user = user || auth().current();
@@ -32,7 +36,7 @@
 
   function isSigner(user) {
     user = user || auth().current();
-    return !!user && (user.signerRoles || []).length > 0;
+    return !!user && unitRoles(user).length > 0;
   }
 
   window.App.permissions = { ACTIONS, isAdmin, canAccessUnit, can, isSigner };

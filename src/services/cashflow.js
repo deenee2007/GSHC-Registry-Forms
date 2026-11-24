@@ -42,8 +42,54 @@ async function nextSn(month) {
   return (r && r.value ? r.value : r).seq;
 }
 
+// Items made before sections and lines: one line each (the quantity and
+// unit price where given, else 1 × the amount). Once per start.
+let migrated = false;
+async function migrate() {
+  if (migrated) return;
+  const old = await CashItem.find({ $or: [{ sections: { $exists: false } }, { sections: { $size: 0 } }] });
+  for (const it of old) await CashItem.updateOne({ _id: it._id }, { $set: { sections: oneLine(it) } });
+  migrated = true;
+}
+function oneLine(it) {
+  const both = it.quantity > 0 && it.unitPrice > 0;
+  return [{ title: '', lines: [{ description: it.item, quantity: both ? it.quantity : 1, unitPrice: both ? it.unitPrice : it.amount, amount: it.amount, struck: false }] }];
+}
+
+// The sections and lines from a request form: quantity and unit price on
+// every line; each line, each section and the item totalled here.
+const round = (n) => Math.round(n * 100) / 100;
+function cleanSections(raw) {
+  let list = raw;
+  if (typeof raw === 'string') { try { list = JSON.parse(raw); } catch (e) { list = null; } }
+  if (!Array.isArray(list) || !list.length) throw bad(400, 'Add at least one line, with its quantity and unit price.');
+  if (list.length > 30) throw bad(400, 'An item can have up to 30 sections.');
+  const many = list.length > 1;
+  const out = list.map((sec, i) => {
+    const title = String((sec && sec.title) || '').trim().slice(0, 200);
+    if (many && !title) throw bad(400, `Give section ${i + 1} a heading (for example, Roofing).`);
+    const lines = Array.isArray(sec && sec.lines) ? sec.lines : [];
+    if (!lines.length) throw bad(400, `${title || 'The item'} has no lines.`);
+    if (lines.length > 100) throw bad(400, 'A section can have up to 100 lines.');
+    return { title, lines: lines.map((l, j) => {
+      const where = `${title ? `${title}, ` : ''}line ${j + 1}`;
+      const description = String((l && l.description) || '').trim().slice(0, 300);
+      const quantity = Number(l && l.quantity), unitPrice = Number(l && l.unitPrice);
+      if (!description) throw bad(400, `Describe ${where}.`);
+      if (!(quantity > 0) || quantity > 1e7) throw bad(400, `Enter the quantity for ${where}.`);
+      if (!(unitPrice > 0) || unitPrice > 1e12) throw bad(400, `Enter the unit price for ${where}.`);
+      return { description, quantity, unitPrice: round(unitPrice), amount: round(quantity * unitPrice), struck: false };
+    }) };
+  });
+  const amount = round(out.reduce((n, sec) => n + sec.lines.reduce((m, l) => m + l.amount, 0), 0));
+  if (amount > 1e13) throw bad(400, 'The total is too large.');
+  return { sections: out, amount };
+}
+const subtotal = (sec, kept) => round(sec.lines.filter(l => !kept || !l.struck).reduce((n, l) => n + l.amount, 0));
+
 // A new month: what was left waiting moves into it.
 async function rollOver() {
+  await migrate();
   const now = thisMonth();
   const left = await CashItem.find({ month: { $lt: now }, status: { $in: ['pending', 'returned', 'approved'] } });
   for (const it of left) {
@@ -79,4 +125,4 @@ async function summary(month) {
     approvedUnpaid: ((approved[0] && approved[0].n) || 0) - (await CashItem.aggregate([{ $match: { month, status: 'paid' } }, { $group: { _id: null, n: { $sum: '$decision.amount' } } }]).then(r => (r[0] && r[0].n) || 0)) };
 }
 
-module.exports = { thisMonth, nextMonth, monthName, releases, setRelease, nextSn, rollOver, summary, MONTH };
+module.exports = { migrate, oneLine, cleanSections, subtotal, thisMonth, nextMonth, monthName, releases, setRelease, nextSn, rollOver, summary, MONTH };

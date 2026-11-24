@@ -55,8 +55,10 @@ function mustUse(u) {
 }
 async function load(id, u) {
   if (!mongoose.isValidObjectId(id)) throw new HttpError(404, 'Item not found.');
+  await cf.migrate();
   const it = await CashItem.findById(id);
   if (!it) throw new HttpError(404, 'Item not found.');
+  if (!it.sections.length) { it.sections = cf.oneLine(it); await it.save(); }
   if (!seesAll(u) && !(isAccountant(u) && ['approved', 'paid'].includes(it.status))) throw new HttpError(403, 'You do not have access to this item.');
   return it;
 }
@@ -66,7 +68,9 @@ function serialize(it, u) {
   const cj = isCJ(u);
   return {
     id: String(o._id), month: o.month, monthName: cf.monthName(o.month), sn: o.sn, item: o.item, description: o.description,
-    quantity: o.quantity, unitPrice: o.unitPrice, amount: o.amount, department: o.department, justification: o.justification,
+    sections: ((o.sections && o.sections.length) ? o.sections : cf.oneLine(o)).map(sec => ({ title: sec.title, subtotal: cf.subtotal(sec), approvedSubtotal: cf.subtotal(sec, true),
+      lines: sec.lines.map(l => ({ description: l.description, quantity: l.quantity, unitPrice: l.unitPrice, amount: l.amount, struck: !!l.struck })) })),
+    amount: o.amount, department: o.department, justification: o.justification,
     attachments: (o.attachments || []).map((a, i) => ({ name: a.name, url: `/api/cashflow/${o._id}/files/${i}` })),
     status: o.status, requestedBy: String(o.requestedBy), requestedByName: o.requestedByName, requestedByRole: ROLE_NAME[o.requestedByRole] || '',
     query: o.query, carriedFrom: o.carriedFrom ? cf.monthName(o.carriedFrom) : '', requesterDecides: !!o.requesterDecides,
@@ -104,18 +108,13 @@ async function saveFiles(req) {
   }
   return out;
 }
+// The item's fields; the total is worked out from its lines.
 function cleanFields(b) {
   const item = text(b.item, 200);
   if (!item) throw new HttpError(400, 'Enter the item requested.');
-  const qty = b.quantity === '' || b.quantity == null ? null : Number(b.quantity);
-  const unit = b.unitPrice === '' || b.unitPrice == null ? null : Number(b.unitPrice);
-  let amount = Number(b.amount);
-  if (qty !== null && unit !== null) {
-    if (!(qty > 0) || !(unit >= 0)) throw new HttpError(400, 'Enter the quantity and the unit price as numbers.');
-    amount = Math.round(qty * unit * 100) / 100;
-  }
-  if (!(amount > 0) || amount > 1e13) throw new HttpError(400, 'Enter the amount requested, in naira.');
-  return { item, description: text(b.description, 3000), quantity: qty, unitPrice: unit, amount: Math.round(amount * 100) / 100,
+  let lines;
+  try { lines = cf.cleanSections(b.sections); } catch (e) { throw new HttpError(e.status || 400, e.message); }
+  return { item, description: text(b.description, 3000), ...lines, quantity: null, unitPrice: null,
     department: text(b.department, 200), justification: text(b.justification, 3000) };
 }
 
@@ -200,14 +199,22 @@ router.post('/:id/decide', wrap(async (req, res) => {
   const note = text(req.body.note, 2000);
   const me = req.user;
   if (action === 'approve') {
-    const amount = req.body.amount === undefined || req.body.amount === '' ? it.amount : Math.round(Number(req.body.amount) * 100) / 100;
+    // Part of an item: the lines struck out ("section.line") are not approved.
+    const struck = new Set((Array.isArray(req.body.struck) ? req.body.struck : []).map(String));
+    const out = [];
+    it.sections.forEach((sec, i) => sec.lines.forEach((l, j) => { l.struck = struck.has(`${i}.${j}`); if (l.struck) out.push(l.description); }));
+    const kept = it.sections.reduce((n, sec) => n + cf.subtotal(sec, true), 0);
+    if (!(kept > 0)) throw new HttpError(400, 'Every line is struck out. Decline the item instead.');
+    const amount = req.body.amount === undefined || req.body.amount === '' ? kept : Math.round(Number(req.body.amount) * 100) / 100;
     if (!(amount > 0)) throw new HttpError(400, 'Enter the amount approved.');
-    if (amount > it.amount) throw new HttpError(400, `The amount approved cannot be more than the ${money(it.amount)} requested.`);
+    if (amount > kept + 0.001) throw new HttpError(400, `The amount approved cannot be more than ${money(kept)}, the total of the lines approved.`);
     if (!me.signature) throw new HttpError(400, 'Register your signature first (My Signature).');
     await verifyPin(me, req.body.pin);
+    it.markModified('sections');
+    const notOut = out.length ? `Not approved: ${out.slice(0, 10).join(', ')}${out.length > 10 ? ` and ${out.length - 10} more` : ''}` : '';
     it.decision = { kind: 'approved', amount, note, by: me._id, byName: me.fullName, title: me.title, at: new Date(), image: me.signature };
     it.status = 'approved';
-    it.history.push({ action: 'approved', byName: me.fullName, note: amount < it.amount ? `${money(amount)} of ${money(it.amount)}${note ? `. ${note}` : ''}` : `${money(amount)}${note ? `. ${note}` : ''}`, at: new Date() });
+    it.history.push({ action: 'approved', byName: me.fullName, note: [amount < it.amount ? `${money(amount)} of ${money(it.amount)}` : money(amount), notOut, note && note.replace(/[.\s]+$/, '')].filter(Boolean).join('. '), at: new Date() });
   } else if (action === 'decline') {
     it.decision = { kind: 'declined', amount: 0, note, by: me._id, byName: me.fullName, title: me.title, at: new Date() };
     it.status = 'declined';
@@ -239,7 +246,7 @@ router.post('/:id/carry', wrap(async (req, res) => {
   if (it.status !== 'declined' || !(isCJ(req.user) || (mine(req.user, it) && it.requesterDecides))) throw new HttpError(403, 'Only the Hon. Chief Judge (or the requester, if left to them) carries an item not approved.');
   const to = [cf.nextMonth(it.month), cf.thisMonth()].sort().pop();
   const from = it.month;
-  Object.assign(it, { month: to, sn: await cf.nextSn(to), status: 'pending', carriedFrom: from, requesterDecides: false });
+  Object.assign(it, { month: to, sn: await cf.nextSn(to), status: 'pending', carriedFrom: from, requesterDecides: false, decision: null });
   it.history.push({ action: 'carried', byName: req.user.fullName, note: `Carried from ${cf.monthName(from)} to the ${cf.monthName(to)} cash flow`, at: new Date() });
   await it.save();
   await audit.log(req, 'cashflow_carried', { details: { itemId: String(it._id), from, to } });
