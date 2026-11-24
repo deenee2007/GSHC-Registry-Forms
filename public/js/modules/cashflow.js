@@ -18,7 +18,7 @@
   const naira = (n) => `₦${Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const esc = (v) => String(v == null ? '' : v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const STATUS = { pending: ['Awaiting the CJ', 'pending'], returned: ['Returned with a query', 'returned'], approved: ['Approved', 'final'],
-    declined: ['Not approved', 'revoked'], paid: ['Paid', 'final'], dismissed: ['Dismissed', 'draft'] };
+    declined: ['Not approved', 'declined'], paid: ['Paid', 'final'], dismissed: ['Dismissed', 'draft'] };
   const ACTION = { requested: 'Requested', answered: 'Query answered', approved: 'Approved', declined: 'Not approved', returned: 'Returned with a query',
     paid: 'Paid', carried: 'Carried forward', dismissed: 'Dismissed', moved: 'Moved to the new month' };
 
@@ -161,7 +161,6 @@
         let x;
         try { x = (await api.get(`/cashflow/${id}`)).item; } catch (e) { ui.toast(e.message, 'error'); return; }
         let dialog;
-        const kv = (k, val) => val ? el('div', { class: 'doc-kv' }, [el('strong', null, k + ': '), val]) : null;
         const done = () => { dialog.close(); router.refreshBadges(); after(); };
         const btn = (label, cls, fn) => el('button', { class: 'btn ' + cls, type: 'button', onclick: fn }, label);
         const actions = el('div', { class: 'doc-preview__actions' }, [
@@ -174,26 +173,72 @@
           x.can.carry ? btn('Dismiss', 'btn--danger', async () => { if (!confirm(`Dismiss ${x.item}? It leaves the cash flow for good.`)) return; try { await api.post(`/cashflow/${x.id}/dismiss`); ui.toast('Dismissed.', 'info'); done(); } catch (e) { ui.toast(e.message, 'error'); } }) : null,
           x.can.pay ? btn('Record Payment', 'btn--primary', () => { dialog.close(); payDialog(x, after); }) : null
         ]);
-        const body = el('div', null, [actions,
-          el('div', { class: 'cash-head' }, [el('h2', null, `${x.sn}. ${x.item}`), badge(x.status)]),
-          el('div', { class: 'case-details' }, [
-            kv('Amount requested', naira(x.amount) + (x.quantity && x.unitPrice ? ` (${x.quantity} × ${naira(x.unitPrice)})` : '')),
-            x.decision && x.decision.kind === 'approved' ? kv('Amount approved', naira(x.decision.amount)) : null,
-            kv('Cash flow', x.monthName + (x.carriedFrom ? ` (carried from ${x.carriedFrom})` : '')),
-            kv('Submitted by', `${x.requestedByName}${x.requestedByRole ? `, ${x.requestedByRole}` : ''}, ${day(x.createdAt)}`),
-            kv('Department or purpose', x.department), kv('Description', x.description), kv('Justification', x.justification),
-            x.query && x.status === 'returned' ? kv('Query', x.query.text) : null,
-            x.decision && x.decision.note ? kv(x.decision.kind === 'approved' ? 'Remark' : 'Reason', x.decision.note) : null,
-            x.payment ? kv('Payment', `${naira(x.payment.amount)}, PV ${x.payment.pvNo}, ${day(x.payment.date)}, recorded by ${x.payment.byName}`) : null,
-            x.status === 'declined' && x.requesterDecides ? kv('Next step', 'Left to the requester: carry it to the next cash flow or dismiss it') : null
+        // ── The item, laid out: header, progress, notices, cards, attachments, timeline ──
+        const when = (d) => d ? new Date(d).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+        const field = (label, value, wide) => value ? el('div', { class: 'cd-field' + (wide ? ' cd-field--wide' : '') }, [el('div', { class: 'cd-label' }, label), el('div', { class: 'cd-value' }, value)]) : null;
+        const approved = x.decision && x.decision.kind === 'approved' ? x.decision.amount : null;
+        const lower = approved !== null && approved < x.amount;
+        const hero = el('div', { class: 'cfx-hero cfx-hero--' + x.status }, [
+          el('div', { class: 'cfx-hero__main' }, [
+            el('div', { class: 'cfx-hero__over' }, `Item ${x.sn} · ${x.monthName} cash flow${x.carriedFrom ? ` · carried from ${x.carriedFrom}` : ''}`),
+            el('div', { class: 'cfx-hero__title' }, x.item),
+            el('div', { class: 'cfx-hero__by' }, [badge(x.status), el('span', null, `Requested by ${x.requestedByName}${x.requestedByRole ? `, ${x.requestedByRole}` : ''}`)])
           ]),
-          x.attachments.length ? el('div', { class: 'case-docs' }, [el('h3', null, 'Attachments'),
-            ...x.attachments.map(a => el('div', null, el('a', { href: a.url, target: '_blank', rel: 'noopener' }, '📎 ' + a.name)))]) : null,
-          el('div', { class: 'case-docs' }, [el('h3', null, 'History'), ui.table([
-            { label: 'When', value: h => day(h.at) }, { label: 'What', value: h => ACTION[h.action] || h.action }, { label: 'By', value: h => h.byName }, { label: 'Note', value: h => h.note || '' }
-          ], x.history)])
+          el('div', { class: 'cfx-hero__money' }, [
+            el('div', { class: 'cfx-hero__label' }, 'Amount requested'),
+            el('div', { class: 'cfx-hero__amount' + (lower ? ' cfx-hero__amount--struck' : '') }, naira(x.amount)),
+            approved !== null ? el('div', { class: 'cfx-hero__approved' }, `Approved ${naira(approved)}`) : null,
+            x.payment ? el('div', { class: 'cfx-hero__paid' }, `Paid ${naira(x.payment.amount)}`) : null
+          ])
         ]);
-        ui.modal(`Cash Flow · ${x.item}`, body, { noFooter: true, wide: true, onOpen: (o) => { dialog = o; } });
+        // Progress: requested, the Chief Judge's decision, payment.
+        const decided = x.decision ? x.decision.kind : (x.status === 'returned' ? 'query' : null);
+        const step = (name, state, sub) => el('li', { class: 'cd-step ' + state }, [
+          el('span', { class: 'cd-dot' }, state === 'is-done' ? '✓' : state === 'is-stop' ? '✕' : ''),
+          el('span', { class: 'cd-step__name' }, name), sub ? el('span', { class: 'cd-step__date' }, sub) : null]);
+        const steps = el('ol', { class: 'cd-steps cfx-steps' }, [
+          step('Requested', 'is-done', day(x.createdAt)),
+          x.status === 'returned' ? step('Query from the CJ', 'is-next', x.query ? day(x.query.at) : '')
+            : decided === 'approved' ? step('Approved by the CJ', 'is-done', day(x.decision.at))
+              : decided === 'declined' ? step('Not approved', 'is-stop', day(x.decision.at))
+                : step('Decision of the CJ', 'is-next', 'Waiting'),
+          decided === 'declined' ? step(x.status === 'dismissed' ? 'Dismissed' : 'Carry or dismiss', x.status === 'dismissed' ? 'is-stop' : 'is-next', '')
+            : step('Paid', x.payment ? 'is-done' : decided === 'approved' ? 'is-next' : '', x.payment ? day(x.payment.date) : decided === 'approved' ? 'With the Accountant' : '')
+        ]);
+        const notice = (cls, title, text, by) => el('div', { class: 'cfx-note cfx-note--' + cls }, [el('div', { class: 'cfx-note__title' }, title), el('div', null, text), by ? el('div', { class: 'cfx-note__by' }, by) : null]);
+        const notes = [
+          x.status === 'returned' && x.query ? notice('query', '↩ Query from the Hon. Chief Judge', x.query.text, `${x.query.byName}, ${when(x.query.at)}`) : null,
+          decided === 'declined' ? notice('declined', '✕ Not approved', x.decision.note || 'No reason given.',
+            `${x.decision.byName}, ${when(x.decision.at)}${x.status === 'declined' ? (x.requesterDecides ? ' · Left to the requester to carry forward or dismiss' : ' · The Hon. Chief Judge carries it forward or dismisses it') : ''}`) : null,
+          decided === 'approved' && x.decision.note ? notice('approved', '✔ Remark of the Hon. Chief Judge', x.decision.note, `${x.decision.byName}, ${when(x.decision.at)}`) : null
+        ].filter(Boolean);
+        const cards = el('div', { class: 'cd-grid' }, [
+          el('div', { class: 'cd-box' }, [el('h4', null, 'The request'), el('div', { class: 'cd-fields' }, [
+            field('Requested by', x.requestedByName), field('Office', x.requestedByRole),
+            field('Date', when(x.createdAt)), field('Department or purpose', x.department || '—')
+          ])]),
+          el('div', { class: 'cd-box' }, [el('h4', null, 'The money'), el('div', { class: 'cd-fields' }, [
+            field('Requested', naira(x.amount)),
+            field('Quantity × unit price', x.quantity && x.unitPrice ? `${x.quantity} × ${naira(x.unitPrice)}` : '—'),
+            field('Approved', approved !== null ? naira(approved) + (lower ? ` (${naira(x.amount - approved)} less)` : '') : decided === 'declined' ? 'Not approved' : 'Awaiting decision'),
+            field('Paid', x.payment ? `${naira(x.payment.amount)} · PV ${x.payment.pvNo}` : approved !== null ? 'Not yet' : '—'),
+            x.payment ? field('Payment recorded', `${day(x.payment.date)} by ${x.payment.byName}`, true) : null
+          ])])
+        ]);
+        const text = (title, body) => body ? el('div', { class: 'cfx-text' }, [el('h4', null, title), el('p', null, body)]) : null;
+        const fileIcon = (n) => /\.pdf$/i.test(n) ? '📄' : /\.(png|jpe?g|gif|webp|heic)$/i.test(n) ? '🖼' : '📎';
+        const files = x.attachments.length ? el('div', { class: 'cfx-files' }, [el('h4', null, `Attachments (${x.attachments.length})`),
+          el('div', { class: 'cfx-files__list' }, x.attachments.map(a => el('a', { class: 'cfx-file', href: a.url, target: '_blank', rel: 'noopener' }, [
+            el('span', { class: 'cfx-file__icon' }, fileIcon(a.name)), el('span', { class: 'cfx-file__name' }, a.name), el('span', { class: 'cfx-file__open' }, 'Open')])))]) : null;
+        const TONE = { requested: 'info', answered: 'info', approved: 'ok', paid: 'ok', declined: 'bad', dismissed: 'bad', returned: 'warn', carried: 'info', moved: 'info' };
+        const timeline = el('div', { class: 'cfx-timeline' }, [el('h4', null, 'History'), el('ol', null, x.history.map(h => el('li', { class: 'cfx-tl cfx-tl--' + (TONE[h.action] || 'info') }, [
+          el('div', { class: 'cfx-tl__head' }, [el('strong', null, ACTION[h.action] || h.action), el('span', null, `${h.byName} · ${when(h.at)}`)]),
+          h.note ? el('div', { class: 'cfx-tl__note' }, h.note) : null
+        ])))]);
+        const body = el('div', { class: 'cfx' }, [actions, hero, steps, ...notes, cards,
+          (x.description || x.justification) ? el('div', { class: 'cfx-texts' }, [text('Description', x.description), text('Justification', x.justification)]) : null,
+          files, timeline]);
+        ui.modal('Cash Flow Item', body, { noFooter: true, wide: true, onOpen: (o) => { dialog = o; } });
       }
 
       function approve(x, done) {
