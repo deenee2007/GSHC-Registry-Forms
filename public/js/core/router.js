@@ -75,6 +75,10 @@
     // Not the administrator as such: Leave is personnel work, not system administration.
     const directorate = (user.unitKeys || []).includes('personnel') && (user.privileges || []).some(p => p === 'personnel_view' || p === 'personnel_edit');
     if (approves || directorate) _nav.appendChild(navItem('🌴  Leave', () => loadModule('leave'), { 'data-nav': 'leave' }, 'leave'));
+    // The monthly cash flow: the Hon. Chief Judge, those who request items, and the Accountant.
+    if ((user.signerRoles || []).some(r => ['chief_judge', 'cj_aide', 'chief_registrar', 'dcr_admin_finance', 'accountant'].includes(r))) {
+      _nav.appendChild(navItem('💵  Cash Flow', () => loadModule('cashflow'), { 'data-nav': 'cashflow' }, 'cashflow'));
+    }
 
     if (list.length) group('Units');
     list.forEach(u => _nav.appendChild(navItem(u.name, () => loadUnit(u), { 'data-unit': u.key }, u.type === 'process' ? 'process' : null)));
@@ -118,9 +122,13 @@
       let leave = 0;
       if (badges.leave) { try { leave = (await api.get('/leave/counts')).waiting; } catch (e) { /* keep zero */ } }
       setBadge('leave', leave);
+      // Cash flow items waiting for this person (the CJ's decisions, payments, queries).
+      let cash = 0;
+      if (badges.cashflow) { try { cash = (await api.get('/cashflow/counts')).waiting; } catch (e) { /* keep zero */ } }
+      setBadge('cashflow', cash);
       // Phones: the menu button shows whether anything waits inside the menu.
       const menu = document.getElementById('menu-badge');
-      const waiting = stats.inbox + stats.approvedUnprinted + cases.awaitingAssignment + cases.toRegister + (cases.newCases || 0) + leave;
+      const waiting = stats.inbox + stats.approvedUnprinted + cases.awaitingAssignment + cases.toRegister + (cases.newCases || 0) + leave + cash;
       if (menu) { menu.textContent = waiting > 99 ? '99+' : String(waiting); menu.hidden = !waiting; }
     } catch (e) { /* offline: keep the last numbers */ }
   }
