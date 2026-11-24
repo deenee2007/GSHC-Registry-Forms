@@ -21,6 +21,8 @@ const cf = require('../src/services/cashflow');
 
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
 let server, base;
+// A simple item: one line, quantity × unit price.
+const one = (description, quantity, unitPrice) => [{ title: '', lines: [{ description, quantity, unitPrice }] }];
 function client() {
   let cookie = '';
   async function call(method, p, body) {
@@ -73,14 +75,14 @@ after(async () => { server.close(); await mongoose.connection.dropDatabase(); aw
 test('requests, the CJ\'s decisions item by item, payment, and the balance', async () => {
   const month = cf.thisMonth();
   assert.equal((await u.clerk.get('/api/cashflow')).status, 403, 'not for other staff');
-  assert.equal((await u.acct.post('/api/cashflow', { item: 'Fuel', amount: 100 })).status, 403, 'the Accountant does not request');
+  assert.equal((await u.acct.post('/api/cashflow', { item: 'Fuel', sections: one('Fuel', 1, 100) })).status, 403, 'the Accountant does not request');
   assert.equal((await u.cj.get('/api/admin/users')).status, 403);
   assert.equal((await admin.put('/api/cashflow/admin/releases', { month, amount: 1000000 })).status, 200, 'the administrator sets the release');
   assert.equal((await u.cr.put('/api/cashflow/admin/releases', { month, amount: 5 })).status, 403);
 
   // Three requests, one with an attachment.
   const form = new FormData();
-  Object.entries({ item: 'Diesel for the generator', description: 'For the court complex', quantity: '400', unitPrice: '1000', department: 'Works', justification: 'Power outages' }).forEach(([k, v]) => form.append(k, v));
+  Object.entries({ item: 'Diesel for the generator', description: 'For the court complex', sections: JSON.stringify(one('Diesel, litres', 400, 1000)), department: 'Works', justification: 'Power outages' }).forEach(([k, v]) => form.append(k, v));
   form.append('files', new Blob(['%PDF-1.4']), 'quotation.pdf');
   let r = await u.aide.upload('/api/cashflow', form);
   assert.equal(r.status, 201, JSON.stringify(r.body));
@@ -88,8 +90,8 @@ test('requests, the CJ\'s decisions item by item, payment, and the balance', asy
   assert.equal(fuel.amount, 400000, 'quantity times unit price');
   assert.equal(fuel.sn, 1);
   assert.equal(fuel.attachments.length, 1);
-  const stat = (await u.cr.post('/api/cashflow', { item: 'Stationery', amount: 250000, justification: 'Registry stock' })).body.item;
-  const trip = (await u.dcr.post('/api/cashflow', { item: 'Travel to Abuja', amount: 300000 })).body.item;
+  const stat = (await u.cr.post('/api/cashflow', { item: 'Stationery', sections: one('Stationery', 1, 250000), justification: 'Registry stock' })).body.item;
+  const trip = (await u.dcr.post('/api/cashflow', { item: 'Travel to Abuja', sections: one('Travel and lodging', 2, 150000) })).body.item;
   assert.ok((await u.cj.get('/api/notifications')).body.notifications.some(n => /put Stationery/.test(n.message)), 'the CJ is told');
 
   // The CJ sees the list, who submitted each, and the money; others do not see the money.
@@ -114,7 +116,7 @@ test('requests, the CJ\'s decisions item by item, payment, and the balance', asy
   assert.equal((await u.cj.post(`/api/cashflow/${stat.id}/decide`, { action: 'return' })).status, 400, 'the query is needed');
   await u.cj.post(`/api/cashflow/${stat.id}/decide`, { action: 'return', note: 'Attach the store request' });
   assert.equal((await u.dcr.put(`/api/cashflow/${stat.id}`, { answer: 'x' })).status, 409, 'only its requester');
-  r = await u.cr.put(`/api/cashflow/${stat.id}`, { answer: 'Store request attached; reduced to 200,000', amount: 200000 });
+  r = await u.cr.put(`/api/cashflow/${stat.id}`, { answer: 'Store request attached; reduced to 200,000', sections: one('Stationery', 1, 200000) });
   assert.equal(r.body.item.status, 'pending');
   assert.equal(r.body.item.amount, 200000);
   // Decline, leaving it to the requester.
@@ -168,7 +170,7 @@ test('the administrator oversees the cash flow (everything, the money too) but d
   assert.ok(r.body.summary && typeof r.body.balance === 'undefined' && r.body.summary.balance !== undefined, 'the money');
   const item = r.body.items[0];
   assert.equal((await admin.get(`/api/cashflow/${item.id}`)).status, 200, 'details');
-  assert.equal((await admin.post('/api/cashflow', { item: 'X', amount: 5 })).status, 403, 'no requests');
+  assert.equal((await admin.post('/api/cashflow', { item: 'X', sections: one('X', 1, 5) })).status, 403, 'no requests');
   const pending = r.body.items.find(x => x.status === 'pending');
   if (pending) assert.equal((await admin.post(`/api/cashflow/${pending.id}/decide`, { action: 'decline' })).status, 403, 'no decisions');
 });
@@ -188,7 +190,7 @@ test('the printed approved cash flow has a QR code that confirms it, and shows i
   assert.match(v.reference, /total approved ₦350,000\.00/);
   assert.equal(v.signedBy[0].capacity, 'Hon. Chief Judge');
   // A new approval: the next print has a new code; the first still checks as it was.
-  const n = (await u.aide.post('/api/cashflow', { item: 'Toner', amount: 90000 })).body.item;
+  const n = (await u.aide.post('/api/cashflow', { item: 'Toner', sections: one('Toner', 3, 30000) })).body.item;
   await u.cj.post(`/api/cashflow/${n.id}/decide`, { action: 'approve', pin: '1357' });
   const b = await u.cj.post('/api/cashflow/sheet', { month });
   assert.notEqual(b.body.verifyCode, a.body.verifyCode);
@@ -196,4 +198,53 @@ test('the printed approved cash flow has a QR code that confirms it, and shows i
   // Altered in the database: the check says so.
   await CashSheet.updateOne({ verifyCode: a.body.verifyCode }, { total: 1 });
   assert.equal((await fetch(`${base}/api/verify/${a.body.verifyCode}`).then(x => x.json())).status, 'tampered');
+});
+
+test('an item in sections, each with lines and a subtotal; the CJ approves part of it', async () => {
+  const reno = [
+    { title: 'Roofing', lines: [{ description: 'Roofing sheets', quantity: 120, unitPrice: 8500 }, { description: 'Nails', quantity: 10, unitPrice: 3000 }, { description: 'Labour', quantity: 1, unitPrice: 250000 }] },
+    { title: 'Painting', lines: [{ description: 'Paint, buckets', quantity: 40, unitPrice: 12000 }, { description: 'Labour', quantity: 1, unitPrice: 150000 }] }
+  ];
+  // Quantity and unit price on every line; headings when there are sections.
+  assert.equal((await u.cr.post('/api/cashflow', { item: 'Renovation', sections: [{ title: '', lines: [{ description: 'Sheets', quantity: 2 }] }] })).status, 400, 'the unit price');
+  assert.equal((await u.cr.post('/api/cashflow', { item: 'Renovation', sections: [{ title: '', lines: [{ description: 'Sheets', unitPrice: 5 }] }] })).status, 400, 'the quantity');
+  assert.equal((await u.cr.post('/api/cashflow', { item: 'Renovation', sections: [reno[0], { ...reno[1], title: '' }] })).status, 400, 'each section a heading');
+  assert.equal((await u.cr.post('/api/cashflow', { item: 'Renovation' })).status, 400, 'at least one line');
+  let r = await u.cr.post('/api/cashflow', { item: 'Renovation of High Court No. II', sections: reno, amount: 5 });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  const it = r.body.item;
+  assert.equal(it.amount, 1930000, 'the grand total, worked out (not the amount sent)');
+  assert.deepEqual(it.sections.map(sec => [sec.title, sec.subtotal]), [['Roofing', 1300000], ['Painting', 630000]]);
+  assert.equal(it.sections[0].lines[0].amount, 1020000);
+  // Approve the roofing and the paint, not the painting labour.
+  assert.equal((await u.cj.post(`/api/cashflow/${it.id}/decide`, { action: 'approve', pin: '1357', struck: ['0.0', '0.1', '0.2', '1.0', '1.1'] })).status, 400, 'not every line struck');
+  assert.equal((await u.cj.post(`/api/cashflow/${it.id}/decide`, { action: 'approve', pin: '1357', struck: ['1.1'], amount: 1800000 })).status, 400, 'not more than the lines approved');
+  r = await u.cj.post(`/api/cashflow/${it.id}/decide`, { action: 'approve', pin: '1357', struck: ['1.1'] });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.item.decision.amount, 1780000);
+  assert.equal(r.body.item.sections[1].lines[1].struck, true);
+  assert.equal(r.body.item.sections[1].approvedSubtotal, 480000);
+  assert.match(r.body.item.history[0].note, /Not approved: Labour/);
+});
+
+test('items made before sections become one line each', async () => {
+  const { CashItem } = require('../src/models');
+  const doc = await CashItem.collection.insertOne({ month: cf.thisMonth(), sn: 99, item: 'Old item', amount: 75000, quantity: null, unitPrice: null, status: 'pending',
+    requestedBy: new mongoose.Types.ObjectId(u.aide.id), requestedByName: 'CJ Aide', history: [], attachments: [] });
+  const r = await u.cj.get(`/api/cashflow/${doc.insertedId}`);
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.item.sections[0].lines.map(l => [l.description, l.quantity, l.unitPrice, l.amount]), [['Old item', 1, 75000, 75000]]);
+  const a = await u.cj.post(`/api/cashflow/${doc.insertedId}/decide`, { action: 'approve', pin: '1357' });
+  assert.equal(a.status, 200, JSON.stringify(a.body));
+  assert.equal(a.body.item.decision.amount, 75000);
+});
+
+test('a role held only for the cash flow opens no unit', async () => {
+  const units = async (c) => (await c.get('/api/catalogue/units')).body.units.map(x => x.key);
+  assert.deepEqual(await units(u.aide), [], 'the CJ\'s aide: no unit');
+  assert.deepEqual(await units(u.acct), [], 'the Accountant: no unit');
+  assert.deepEqual(await units(u.dcr), [], 'the DCR Admin and Finance: no unit');
+  assert.ok((await units(u.cr)).includes('hc1'), 'the Chief Registrar still reaches the courts');
+  const given = await makeUser({ fullName: 'Aide With Unit', email: 'aide2@example.com', signerRoles: ['cj_aide'], unitKeys: ['hc1'] });
+  assert.deepEqual(await units(given), ['hc1'], 'a unit given to them in Settings');
 });

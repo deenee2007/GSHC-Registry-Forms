@@ -42,12 +42,17 @@ const isAdmin = (user) => !!user && user.role === 'admin';
 // Unit access: admins and users with no unit restriction reach every unit,
 // except the Directorate of Personnel (staff records), which only those
 // given it in Settings, Users, can open.
+// Roles held only for the cash flow (the CJ's aide, the DCR Admin and
+// Finance, the Accountant) give no unit: such a person reaches a unit only
+// when it is given to them in Settings, Users.
 const CLOSED_UNITS = ['personnel'];
+const OFFICE_ROLES = ['cj_aide', 'dcr_admin_finance', 'accountant'];
+const unitRoles = (user) => (user.signerRoles || []).filter(r => !OFFICE_ROLES.includes(r));
 function canAccessUnit(user, unitKey) {
   if (!user) return false;
   if (isAdmin(user)) return true;
   if (CLOSED_UNITS.includes(unitKey)) return user.unitKeys.includes(unitKey);
-  return !user.unitKeys.length ? user.signerRoles.length > 0 : user.unitKeys.includes(unitKey);
+  return !user.unitKeys.length ? unitRoles(user).length > 0 : user.unitKeys.includes(unitKey);
 }
 
 function can(user, action) {
@@ -65,4 +70,4 @@ function requireAppHeader(req, res, next) {
   next();
 }
 
-module.exports = { HttpError, loadUser, requireLogin, allowTempPassword, requireAdmin, isAdmin, canAccessUnit, can, requireAppHeader };
+module.exports = { OFFICE_ROLES, unitRoles, HttpError, loadUser, requireLogin, allowTempPassword, requireAdmin, isAdmin, canAccessUnit, can, requireAppHeader };

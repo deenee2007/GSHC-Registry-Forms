@@ -81,7 +81,7 @@
         // Five tidy columns; the less used actions sit behind More.
         const small = (text, cls) => el('div', { class: 'cell-sub' + (cls ? ' ' + cls : '') }, text);
         const accessOf = (u) => u.role === 'admin' ? 'Administrator · all units'
-          : (u.unitKeys.length ? u.unitKeys.map(unitName).join(', ') : (u.signerRoles.length ? 'All units' : 'No unit'));
+          : (u.unitKeys.length ? u.unitKeys.map(unitName).join(', ') : (u.signerRoles.some(r => !['cj_aide', 'dcr_admin_finance', 'accountant'].includes(r)) ? 'All units' : u.signerRoles.length ? 'Cash Flow only' : 'No unit'));
         const alertsOf = (u) => !u.email ? 'No email' : !meta.settings.emailAlerts ? 'Off for everyone'
           : u.emailAlertsBlocked ? 'Off (by admin)' : u.emailAlerts ? 'On' : 'Off (by user)';
         panel.appendChild(ui.table(
