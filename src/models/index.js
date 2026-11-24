@@ -377,7 +377,11 @@ const CashItemSchema = new Schema({
   query:         { type: { _id: false, text: String, byName: String, at: Date }, default: null },
   decision:      { type: { _id: false, kind: String, amount: Number, note: String, by: Schema.Types.ObjectId, byName: String, title: String, at: Date, image: ImageRef }, default: null },
   requesterDecides: { type: Boolean, default: false },                  // the CJ left carrying or dismissing to the requester
-  payment:       { type: { _id: false, pvNo: String, date: String, amount: Number, byName: String, at: Date }, default: null },
+  payment:       { type: { _id: false, pvNo: String, date: String, amount: Number, byName: String, at: Date }, default: null },  // (earlier items)
+  // Payments, made through approved releases of funds: one per beneficiary
+  // paid, with the cash flow month it was paid in.
+  payments:      { type: [{ _id: false, release: Schema.Types.ObjectId, refNo: String, payee: String, bank: String, accountNo: String,
+    pvNo: String, date: String, amount: Number, month: String, byName: String, at: Date }], default: [] },
   carriedFrom:   { type: String, default: '' },                         // the month it came from
   history:       { type: [{ _id: false, action: String, byName: String, note: String, at: Date }], default: [] }
 }, { timestamps: true });
@@ -385,6 +389,27 @@ CashItemSchema.index({ month: 1, sn: 1 });
 
 // A printed approved cash flow: what was printed, fixed under its own
 // verification code, so its QR code confirms it (and shows if altered).
+// A request for the release of funds, written by the DCR Admin and Finance
+// to the Hon. Chief Judge for one or more approved cash flow items, each
+// with the beneficiaries to be paid (bank and account), in full or in part.
+// The CJ approves it with the signing PIN (or returns it, or declines it);
+// the Accountant then pays each beneficiary.
+const CashReleaseSchema = new Schema({
+  refNo:         { type: String, required: true, unique: true },
+  items:         { type: [{ _id: false, item: { type: Schema.Types.ObjectId, ref: 'CashItem' }, sn: Number, month: String, name: String, amount: Number,
+    payees: [{ name: String, bank: String, accountNo: String, accountName: String, amount: Number,
+      paid: { type: { _id: false, pvNo: String, date: String, amount: Number, byName: String, at: Date }, default: null } }] }], default: [] },
+  total:         { type: Number, required: true },
+  note:          { type: String, trim: true, default: '' },
+  status:        { type: String, enum: ['pending', 'returned', 'approved', 'declined', 'paid'], default: 'pending', index: true },
+  requestedBy:   { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  requestedByName: String,
+  query:         { type: { _id: false, text: String, byName: String, at: Date }, default: null },
+  decision:      { type: { _id: false, kind: String, note: String, by: Schema.Types.ObjectId, byName: String, title: String, at: Date, image: ImageRef }, default: null },
+  history:       { type: [{ _id: false, action: String, byName: String, note: String, at: Date }], default: [] }
+}, { timestamps: true });
+CashReleaseSchema.index({ 'items.item': 1 });
+
 const CashSheetSchema = new Schema({
   month:       { type: String, required: true, index: true },
   verifyCode:  { type: String, required: true, unique: true },
@@ -553,5 +578,6 @@ module.exports = {
   DiaryEntry:   mongoose.model('DiaryEntry', DiaryEntrySchema),
   CashItem:     mongoose.model('CashItem', CashItemSchema),
   CashSheet:    mongoose.model('CashSheet', CashSheetSchema),
+  CashRelease:  mongoose.model('CashRelease', CashReleaseSchema),
   CASE_STATUSES, DOC_TYPES
 };

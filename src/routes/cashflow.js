@@ -16,7 +16,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const multer = require('multer');
-const { CashItem, CashSheet, User, Notification } = require('../models');
+const { CashItem, CashSheet, CashRelease, User, Notification } = require('../models');
 const crypto = require('crypto');
 const verification = require('../services/verification');
 const cf = require('../services/cashflow');
@@ -40,6 +40,7 @@ const has = (u, roles) => (u.signerRoles || []).some(r => roles.includes(r));
 const isCJ = (u) => has(u, ['chief_judge']);
 const isRequester = (u) => has(u, REQUESTERS);
 const isAccountant = (u) => has(u, ['accountant']);
+const isDCR = (u) => has(u, ['dcr_admin_finance']);
 // The administrator sees everything (the money too), to oversee; acting is for the officers.
 const seesAll = (u) => isCJ(u) || isRequester(u) || isAdmin(u);
 const seesMoney = (u) => isCJ(u) || isAdmin(u);
@@ -63,9 +64,14 @@ async function load(id, u) {
   return it;
 }
 
-function serialize(it, u) {
+// `extra`: how much of the item is already in releases of funds, and (for
+// Details) the releases themselves.
+function serialize(it, u, extra = {}) {
   const o = it.toObject ? it.toObject() : it;
   const cj = isCJ(u);
+  const paid = cf.paidOf(o);
+  const approvedAmt = o.decision && o.decision.kind === 'approved' ? o.decision.amount : 0;
+  const inReleases = extra.released != null ? extra.released : null;
   return {
     id: String(o._id), month: o.month, monthName: cf.monthName(o.month), sn: o.sn, item: o.item, description: o.description,
     sections: ((o.sections && o.sections.length) ? o.sections : cf.oneLine(o)).map(sec => ({ title: sec.title, subtotal: cf.subtotal(sec), approvedSubtotal: cf.subtotal(sec, true),
@@ -76,12 +82,16 @@ function serialize(it, u) {
     query: o.query, carriedFrom: o.carriedFrom ? cf.monthName(o.carriedFrom) : '', requesterDecides: !!o.requesterDecides,
     decision: o.decision ? { kind: o.decision.kind, amount: o.decision.amount, note: o.decision.note, byName: o.decision.byName, title: o.decision.title, at: o.decision.at,
       signatureUrl: o.decision.image ? `/api/cashflow/${o._id}/signature` : null } : null,
-    payment: o.payment, history: [...(o.history || [])].reverse(), createdAt: o.createdAt,
+    payments: o.payments || [], paid, released: inReleases, toRelease: inReleases == null ? null : cf.round(Math.max(0, approvedAmt - inReleases)),
+    releases: extra.releases || undefined,
+    history: [...(o.history || [])].reverse(), createdAt: o.createdAt,
     can: {
       decide: cj && ['pending'].includes(o.status),
       answer: mine(u, o) && o.status === 'returned',
       carry: o.status === 'declined' && (cj || (mine(u, o) && o.requesterDecides)),
-      pay: isAccountant(u) && o.status === 'approved'
+      release: isDCR(u) && o.status === 'approved' && inReleases != null && approvedAmt - inReleases > 0.004,
+      // Approved, part paid, and nothing more to come: closed as paid.
+      complete: (cj || isDCR(u)) && o.status === 'approved' && paid > 0 && extra.open === false
     }
   };
 }
@@ -128,9 +138,17 @@ router.get('/me', wrap(async (req, res) => {
 // Waiting for this person: the CJ's decisions, the Accountant's payments, a requester's queries.
 router.get('/counts', wrap(async (req, res) => {
   const u = req.user;
-  const n = isCJ(u) ? await CashItem.countDocuments({ status: 'pending' })
-    : isAccountant(u) ? await CashItem.countDocuments({ status: 'approved' })
-    : isRequester(u) ? await CashItem.countDocuments({ requestedBy: u._id, status: 'returned' }) : 0;
+  let n = 0;
+  if (isCJ(u)) n += await CashItem.countDocuments({ status: 'pending' }) + await CashRelease.countDocuments({ status: 'pending' });
+  if (isAccountant(u)) n += (await CashRelease.aggregate([{ $match: { status: 'approved' } }, { $unwind: '$items' }, { $unwind: '$items.payees' }, { $match: { 'items.payees.paid': null } }, { $count: 'n' }]).then(r => (r[0] && r[0].n) || 0));
+  if (isRequester(u)) n += await CashItem.countDocuments({ requestedBy: u._id, status: 'returned' });
+  if (isDCR(u)) {
+    n += await CashRelease.countDocuments({ requestedBy: u._id, status: 'returned' });
+    // Approved items with nothing yet in a release of funds.
+    const approved = await CashItem.find({ status: 'approved' }, { _id: 1 });
+    const rel = await cf.released(approved.map(x => x._id));
+    n += approved.filter(x => !rel[String(x._id)]).length;
+  }
   res.json({ waiting: n });
 }));
 
@@ -142,8 +160,9 @@ router.get('/', wrap(async (req, res) => {
   const q = { month, status: { $ne: 'dismissed' } };
   if (!seesAll(req.user)) q.status = { $in: ['approved', 'paid'] };
   const list = await CashItem.find(q).sort({ sn: 1 });
+  const rel = await cf.released(list.map(x => x._id));
   const months = (await CashItem.distinct('month')).concat(Object.keys(await cf.releases()), [cf.thisMonth()]);
-  res.json({ month, monthName: cf.monthName(month), items: list.map(x => serialize(x, req.user)),
+  res.json({ month, monthName: cf.monthName(month), items: list.map(x => serialize(x, req.user, { released: rel[String(x._id)] })),
     months: [...new Set(months)].sort().reverse().map(m => ({ month: m, name: cf.monthName(m) })),
     summary: seesMoney(req.user) ? await cf.summary(month) : null });
 }));
@@ -155,9 +174,48 @@ router.get('/mine', wrap(async (req, res) => {
   res.json({ items: list.map(x => serialize(x, req.user)) });
 }));
 
+// The Hon. Chief Judge approves several items at once, each in full, with one PIN.
+router.post('/decide-many', wrap(async (req, res) => {
+  if (!isCJ(req.user)) throw new HttpError(403, 'Only the Hon. Chief Judge decides on the cash flow.');
+  const ids = [...new Set((Array.isArray(req.body.ids) ? req.body.ids : []).map(String))].filter(i => mongoose.isValidObjectId(i));
+  if (!ids.length) throw new HttpError(400, 'Select the items to approve.');
+  if (ids.length > 200) throw new HttpError(400, 'Approve up to 200 items at a time.');
+  const list = await CashItem.find({ _id: { $in: ids } });
+  if (list.length !== ids.length || list.some(it => it.status !== 'pending')) throw new HttpError(409, 'Some of the items selected are no longer waiting for a decision. Refresh the list.');
+  const me = req.user;
+  if (!me.signature) throw new HttpError(400, 'Register your signature first (My Signature).');
+  await verifyPin(me, req.body.pin);
+  const note = text(req.body.note, 2000);
+  const at = new Date();
+  for (const it of list) {
+    it.sections.forEach(sec => sec.lines.forEach(l => { l.struck = false; }));
+    it.markModified('sections');
+    it.decision = { kind: 'approved', amount: it.amount, note, by: me._id, byName: me.fullName, title: me.title, at, image: me.signature };
+    it.status = 'approved';
+    it.history.push({ action: 'approved', byName: me.fullName, note: [money(it.amount), note && note.replace(/[.\s]+$/, '')].filter(Boolean).join('. '), at });
+    await it.save();
+    await audit.log(req, 'cashflow_approved', { details: { itemId: String(it._id), item: it.item, amount: it.amount, note, together: list.length } });
+  }
+  const byRequester = new Map();
+  list.forEach(it => { const k = String(it.requestedBy); byRequester.set(k, [...(byRequester.get(k) || []), it]); });
+  for (const [uid, its] of byRequester) {
+    await tell(await User.find({ _id: uid, active: true }), `The Hon. Chief Judge approved ${its.map(it => `${it.item} (${money(it.amount)})`).join('; ')}.`, 'Cash flow: approved');
+  }
+  await tell(await holders('dcr_admin_finance'), `Approved on the cash flow, for release of funds: ${list.map(it => `${it.item}, ${money(it.amount)}`).join('; ')}.`, 'Cash flow: approved');
+  res.json({ approved: list.length, total: cf.round(list.reduce((n, it) => n + it.amount, 0)) });
+}));
+
 router.get('/:id', wrap(async (req, res) => {
   const it = await load(req.params.id, req.user);
-  res.json({ item: serialize(it, req.user) });
+  const rel = await cf.released([it._id]);
+  const releases = (await CashRelease.find({ 'items.item': it._id }).sort({ createdAt: 1 })).map(r => {
+    const x = r.items.find(i => String(i.item) === String(it._id));
+    return { id: String(r._id), refNo: r.refNo, status: r.status, at: r.createdAt, decidedAt: r.decision ? r.decision.at : null,
+      amount: x.amount, payees: x.payees.map(p => ({ name: p.name, bank: p.bank, accountNo: p.accountNo, amount: p.amount, paid: p.paid })) };
+  });
+  // A release still waiting, or a beneficiary still to be paid: not to be closed yet.
+  const open = releases.some(r => ['pending', 'returned'].includes(r.status) || (r.status === 'approved' && r.payees.some(p => !p.paid)));
+  res.json({ item: serialize(it, req.user, { released: rel[String(it._id)], releases, open }) });
 }));
 
 // A new request: straight onto this month's cash flow.
@@ -231,7 +289,7 @@ router.post('/:id/decide', wrap(async (req, res) => {
   const what = `${it.item} (${money(it.amount)})`;
   if (it.status === 'approved') {
     await tell(await requester(it), `The Hon. Chief Judge approved ${what}${it.decision.amount < it.amount ? `: ${money(it.decision.amount)}` : ''}.`, 'Cash flow: approved');
-    await tell(await holders('accountant'), `Approved for payment: ${it.item}, ${money(it.decision.amount)} (${it.monthName || cf.monthName(it.month)} cash flow, requested by ${it.requestedByName}).`, 'Cash flow: approved for payment');
+    await tell(await holders('dcr_admin_finance'), `Approved on the cash flow, for release of funds: ${it.item}, ${money(it.decision.amount)} (${cf.monthName(it.month)} cash flow, requested by ${it.requestedByName}).`, 'Cash flow: approved');
   } else if (it.status === 'declined') {
     await tell(await requester(it), `The Hon. Chief Judge did not approve ${what}${note ? `: ${note}` : ''}.${it.requesterDecides ? ' Carry it to the next cash flow or dismiss it.' : ''}`, 'Cash flow: not approved');
   } else {
@@ -263,24 +321,22 @@ router.post('/:id/dismiss', wrap(async (req, res) => {
   res.json({ item: serialize(it, req.user) });
 }));
 
-// The Accountant records the payment of an approved item.
-router.post('/:id/pay', wrap(async (req, res) => {
-  if (!isAccountant(req.user)) throw new HttpError(403, 'Only the Accountant records payments.');
+// An approved item paid in part, with nothing more to come: closed as paid
+// (the Hon. Chief Judge or the DCR Admin and Finance).
+router.post('/:id/complete', wrap(async (req, res) => {
   const it = await load(req.params.id, req.user);
-  if (it.status !== 'approved') throw new HttpError(409, 'Only an approved item, not yet paid, can be paid.');
-  const pvNo = text(req.body.pvNo, 60);
-  if (!pvNo) throw new HttpError(400, 'Enter the payment voucher number.');
-  const date = DAY.test(req.body.date || '') ? req.body.date : new Date().toISOString().slice(0, 10);
-  const amount = req.body.amount === undefined || req.body.amount === '' ? it.decision.amount : Math.round(Number(req.body.amount) * 100) / 100;
-  if (!(amount > 0) || amount > it.decision.amount) throw new HttpError(400, `The amount paid must be more than nothing and not more than the ${money(it.decision.amount)} approved.`);
-  it.payment = { pvNo, date, amount, byName: req.user.fullName, at: new Date() };
+  if (!(isCJ(req.user) || isDCR(req.user))) throw new HttpError(403, 'Only the Hon. Chief Judge or the DCR Admin and Finance closes an item.');
+  const paid = cf.paidOf(it);
+  if (it.status !== 'approved' || !(paid > 0)) throw new HttpError(409, 'Only an approved item already paid in part can be closed.');
+  const open = await CashRelease.exists({ 'items.item': it._id, status: { $in: ['pending', 'returned'] } });
+  if (open) throw new HttpError(409, 'A release of funds for this item is still waiting. Let it be decided first.');
+  const unpaid = await CashRelease.exists({ items: { $elemMatch: { item: it._id, payees: { $elemMatch: { paid: null } } } }, status: 'approved' });
+  if (unpaid) throw new HttpError(409, 'A beneficiary in an approved release is still to be paid.');
   it.status = 'paid';
-  it.history.push({ action: 'paid', byName: req.user.fullName, note: `${money(amount)}, PV ${pvNo}`, at: new Date() });
+  it.history.push({ action: 'completed', byName: req.user.fullName, note: [`Closed with ${money(paid)} paid of ${money(it.decision.amount)} approved`, text(req.body.note, 500)].filter(Boolean).join('. '), at: new Date() });
   await it.save();
-  await audit.log(req, 'cashflow_paid', { details: { itemId: String(it._id), pvNo, amount } });
-  const msg = `Paid: ${it.item}, ${money(amount)} (PV ${pvNo}).`;
-  await tell([...await holders('chief_judge'), ...await requester(it)], msg, 'Cash flow: paid');
-  res.json({ item: serialize(it, req.user) });
+  await audit.log(req, 'cashflow_completed', { details: { itemId: String(it._id), paid } });
+  res.json({ item: serialize(it, req.user, { released: (await cf.released([it._id]))[String(it._id)] }) });
 }));
 
 router.get('/:id/files/:i', wrap(async (req, res) => {
@@ -310,7 +366,7 @@ router.post('/sheet', wrap(async (req, res) => {
   const list = await CashItem.find({ month, status: { $in: ['approved', 'paid'] } }).sort({ sn: 1 });
   if (!list.length) throw new HttpError(409, 'Nothing approved on this cash flow yet.');
   const items = list.map(x => ({ sn: x.sn, item: x.item, requestedByName: x.requestedByName, amount: x.amount, approved: x.decision.amount,
-    approvedBy: [x.decision.title, x.decision.byName].filter(Boolean).join(' '), approvedAt: x.decision.at, paid: x.status === 'paid', pvNo: x.payment ? x.payment.pvNo : '' }));
+    approvedBy: [x.decision.title, x.decision.byName].filter(Boolean).join(' '), approvedAt: x.decision.at, paid: x.status === 'paid', pvNo: (x.payments || []).map(p => p.pvNo).join(', ') }));
   const total = Math.round(items.reduce((n, i) => n + i.approved, 0) * 100) / 100;
   const hash = sheetHash(month, items, total);
   let sheet = await CashSheet.findOne({ month, contentHash: hash });
@@ -355,3 +411,4 @@ router.put('/admin/releases', wrap(async (req, res) => {
 
 module.exports = router;
 module.exports.verifySheet = verifySheet;
+module.exports.helpers = { isCJ, isDCR, isAccountant, seesAll, tell, holders, money, text, DAY };

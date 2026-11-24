@@ -10,6 +10,11 @@
  * query), and the month's list. The Accountant: the approved items, to
  * record each payment. Print: the month's approved cash flow, with the
  * Chief Judge's signature.
+ *
+ * Release of funds: for approved items, the DCR Admin and Finance requests
+ * the release of funds (beneficiaries with their bank and account numbers,
+ * in full or in instalments); the Chief Judge approves it with the PIN
+ * (several at once if he wishes); the Accountant pays each beneficiary.
  */
 (function () {
   window.App = window.App || {};
@@ -20,7 +25,14 @@
   const STATUS = { pending: ['Awaiting the CJ', 'pending'], returned: ['Returned with a query', 'returned'], approved: ['Approved', 'final'],
     declined: ['Not approved', 'declined'], paid: ['Paid', 'final'], dismissed: ['Dismissed', 'draft'] };
   const ACTION = { requested: 'Requested', answered: 'Query answered', approved: 'Approved', declined: 'Not approved', returned: 'Returned with a query',
-    paid: 'Paid', carried: 'Carried forward', dismissed: 'Dismissed', moved: 'Moved to the new month' };
+    paid: 'Paid', carried: 'Carried forward', dismissed: 'Dismissed', moved: 'Moved to the new month', completed: 'Closed as paid' };
+  const RSTATUS = { pending: ['Awaiting the CJ', 'pending'], returned: ['Returned with a query', 'returned'], approved: ['Approved for payment', 'final'],
+    declined: ['Not approved', 'declined'], paid: ['Paid', 'final'] };
+  // Nigerian banks, as suggestions (any name may be typed).
+  const BANKS = ['Access Bank', 'Citibank Nigeria', 'Ecobank Nigeria', 'Fidelity Bank', 'First Bank of Nigeria', 'First City Monument Bank (FCMB)', 'Globus Bank',
+    'Guaranty Trust Bank (GTBank)', 'Jaiz Bank', 'Keystone Bank', 'Lotus Bank', 'Optimus Bank', 'Parallex Bank', 'Polaris Bank', 'PremiumTrust Bank', 'Providus Bank',
+    'Signature Bank', 'Stanbic IBTC Bank', 'Standard Chartered Bank', 'Sterling Bank', 'SunTrust Bank', 'TAJBank', 'Titan Trust Bank', 'Union Bank of Nigeria',
+    'United Bank for Africa (UBA)', 'Unity Bank', 'Wema Bank', 'Zenith Bank'];
 
   window.App.modules.cashflow = {
     async render(container, ctx) {
@@ -29,13 +41,21 @@
       let me;
       try { me = await api.get('/cashflow/me'); } catch (e) { container.appendChild(ui.empty(e.offline ? 'The cash flow needs the internet.' : e.message)); return; }
       const badge = (s) => { const [t, c] = STATUS[s] || [s, 'draft']; return el('span', { class: 'badge badge--' + c }, t); };
+      const rbadge = (s) => { const [t, c] = RSTATUS[s] || [s, 'draft']; return el('span', { class: 'badge badge--' + c }, t); };
+      // An approved item: whether its funds are released and paid yet.
+      const itemBadge = (x) => {
+        if (x.status !== 'approved') return badge(x.status);
+        if (x.paid > 0) return el('span', { class: 'badge badge--final' }, 'Part paid');
+        if (x.released > 0) return el('span', { class: 'badge badge--pending' }, 'Release requested');
+        return badge('approved');
+      };
       const day = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
 
       container.appendChild(el('div', { class: 'page-head' }, [
         el('h1', null, '💵 Cash Flow'),
         el('p', { class: 'muted' }, me.cj ? 'Items placed on the monthly cash flow for your approval. Open Details to approve, decline or return an item with a query.'
           : me.admin && !me.requester && !me.accountant ? 'The monthly cash flow, for oversight: every item, the money and the balance. Decisions are the Hon. Chief Judge\'s; requests and payments are made by the officers concerned.'
-          : me.accountant && !me.seesAll ? 'Items approved by the Hon. Chief Judge, for payment.'
+          : me.accountant && !me.seesAll ? 'Releases of funds approved by the Hon. Chief Judge: pay each beneficiary and record the payment voucher.'
             : 'Items requested on the monthly cash flow, for the approval of the Hon. Chief Judge.')
       ]));
       const tabsBar = el('div', { class: 'tabs', role: 'tablist' });
@@ -44,6 +64,7 @@
       const TABS = [
         me.seesAll ? ['month', me.cj ? 'This Month\'s Cash Flow' : 'The Cash Flow', monthView] : null,
         me.requester ? ['mine', 'My Requests', mineView] : null,
+        me.seesAll ? ['releases', 'Release of Funds', releasesView] : null,
         me.accountant ? ['pay', 'For Payment', payView] : null
       ].filter(Boolean);
       TABS.forEach(([key, label, fn], i) => {
@@ -60,11 +81,19 @@
         try { r = await api.get(`/cashflow?month=${month}`); } catch (e) { panel.replaceChildren(ui.empty(e.message)); return; }
         const pick = el('select', { 'aria-label': 'Month', onchange: () => { month = pick.value; monthView(); } }, r.months.map(m => el('option', { value: m.month }, m.name)));
         pick.value = r.month;
+        // The CJ ticks items waiting for him and approves them together.
+        const pend = r.items.filter(x => x.can.decide);
+        const picked = new Set();
+        const many = el('button', { class: 'btn btn--ok', disabled: 'disabled', onclick: () => approveMany(r.items.filter(x => picked.has(x.id)), monthView) }, '✔ Approve Selected');
+        const setMany = () => { many.disabled = !picked.size; many.textContent = picked.size ? `✔ Approve Selected (${picked.size})` : '✔ Approve Selected'; };
+        const tick = (x) => x.can.decide ? el('input', { type: 'checkbox', class: 'cf-tick', 'aria-label': `Select ${x.item}`, onchange: (e) => { e.target.checked ? picked.add(x.id) : picked.delete(x.id); setMany(); } }) : el('span');
+        const all = pend.length > 1 ? el('label', { class: 'check check--plain cf-all' }, [el('input', { type: 'checkbox', onchange: (e) => { panel.querySelectorAll('.cf-tick').forEach(b => { b.checked = e.target.checked; }); pend.forEach(x => e.target.checked ? picked.add(x.id) : picked.delete(x.id)); setMany(); } }), ` Select all ${pend.length} awaiting you`]) : null;
         const kids = [el('div', { class: 'toolbar' }, [
           ui.field('Month', pick),
           me.requester ? el('button', { class: 'btn btn--primary', onclick: () => requestForm() }, '+ New Request') : null,
+          pend.length ? many : null,
           el('button', { class: 'btn btn--ghost', onclick: () => printApproved(r) }, '🖨 Print Approved Cash Flow')
-        ])];
+        ]), all];
         if (r.summary) {
           const s = r.summary;
           const card = (v, l, cls) => el('div', { class: 'dash-card ' + (cls || '') }, [el('div', { class: 'dash-card__num cash-num' }, naira(v)), el('div', { class: 'dash-card__label' }, l)]);
@@ -75,11 +104,12 @@
           if (s.approved > s.available) kids.push(el('div', { class: 'notice notice--warn' }, 'The items approved this month are more than the amount available.'));
         }
         kids.push(r.items.length ? ui.table([
+          ...(pend.length ? [{ label: '', node: tick }] : []),
           { label: 'S/No', value: x => String(x.sn) },
           { label: 'Item', value: x => x.item, primary: true },
           { label: 'Amount', value: x => naira(x.amount) + (x.decision && x.decision.kind === 'approved' && x.decision.amount < x.amount ? ` (approved ${naira(x.decision.amount)})` : '') },
           { label: 'Submitted by', value: x => `${x.requestedByName}${x.requestedByRole ? `, ${x.requestedByRole}` : ''}` },
-          { label: 'Status', node: x => el('span', null, [badge(x.status), x.carriedFrom ? el('div', { class: 'muted cash-from' }, `from ${x.carriedFrom}`) : null]) }
+          { label: 'Status', node: x => el('span', null, [itemBadge(x), x.carriedFrom ? el('div', { class: 'muted cash-from' }, `from ${x.carriedFrom}`) : null]) }
         ], r.items, [{ label: 'Details', onClick: x => details(x.id, monthView) }]) : ui.empty(`Nothing on the ${r.monthName} cash flow yet.`));
         panel.replaceChildren(...kids);
       }
@@ -98,19 +128,58 @@
         );
       }
 
-      // ── The Accountant: approved items to pay ──
+      // ── The Accountant: the beneficiaries of approved releases, to pay ──
       async function payView() {
         panel.replaceChildren(el('p', { class: 'muted' }, 'Loading…'));
         let r;
-        try { r = await api.get(`/cashflow?month=${month}`); } catch (e) { panel.replaceChildren(ui.empty(e.message)); return; }
-        const todo = r.items.filter(x => x.status === 'approved'), done = r.items.filter(x => x.status === 'paid');
-        const cols = [{ label: 'S/No', value: x => String(x.sn) }, { label: 'Item', value: x => x.item, primary: true },
-          { label: 'Approved', value: x => naira(x.decision && x.decision.amount) }, { label: 'Requested by', value: x => x.requestedByName }];
+        try { r = await api.get('/cashflow/releases'); } catch (e) { panel.replaceChildren(ui.empty(e.message)); return; }
+        const lines = [];
+        r.releases.filter(x => ['approved', 'paid'].includes(x.status)).forEach(rel => rel.items.forEach(it => it.payees.forEach(p => lines.push({ rel, it, p }))));
+        const todo = lines.filter(l => !l.p.paid), done = lines.filter(l => l.p.paid).slice(0, 100);
+        const cols = [
+          { label: 'Release', value: l => l.rel.refNo },
+          { label: 'Item', value: l => `${l.it.name} (${l.it.monthName}, item ${l.it.sn})` },
+          { label: 'Beneficiary', value: l => l.p.name, primary: true },
+          { label: 'Bank', value: l => l.p.bank },
+          { label: 'Account No.', node: l => el('span', { class: 'cf-acct' }, l.p.accountNo) },
+          { label: 'Account name', value: l => l.p.accountName || l.p.name },
+          { label: 'Amount', value: l => naira(l.p.amount), num: true }
+        ];
+        const total = todo.reduce((n, l) => n + l.p.amount, 0);
         panel.replaceChildren(
-          el('h3', { class: 'settings-group' }, `To pay (${todo.length})`),
-          todo.length ? ui.table(cols, todo, [{ label: 'Record Payment', class: 'btn--primary', onClick: x => payDialog(x, payView) }, { label: 'Details', onClick: x => details(x.id, payView) }]) : ui.empty('Nothing waiting for payment.'),
+          el('h3', { class: 'settings-group' }, `To pay (${todo.length})${todo.length ? ` · ${naira(total)}` : ''}`),
+          todo.length ? ui.table(cols, todo, [{ label: 'Record Payment', class: 'btn--primary', onClick: l => payDialog(l.rel, l.p, payView) }, { label: 'Release', onClick: l => releaseDetails(l.rel.id, payView) }]) : ui.empty('Nothing waiting for payment.'),
           el('h3', { class: 'settings-group' }, `Paid (${done.length})`),
-          done.length ? ui.table([...cols, { label: 'Paid', value: x => `${naira(x.payment.amount)}, PV ${x.payment.pvNo}, ${day(x.payment.date)}` }], done, [{ label: 'Details', onClick: x => details(x.id, payView) }]) : ui.empty('Nothing paid yet this month.')
+          done.length ? ui.table([...cols.slice(0, 3), { label: 'Paid', value: l => `${naira(l.p.paid.amount)}, PV ${l.p.paid.pvNo}, ${day(l.p.paid.date)}` }], done, [{ label: 'Release', onClick: l => releaseDetails(l.rel.id, payView) }]) : ui.empty('Nothing paid yet.')
+        );
+      }
+
+      // ── Release of funds: the list ──
+      async function releasesView() {
+        panel.replaceChildren(el('p', { class: 'muted' }, 'Loading…'));
+        let r;
+        try { r = await api.get('/cashflow/releases'); } catch (e) { panel.replaceChildren(ui.empty(e.message)); return; }
+        const pend = r.releases.filter(x => x.can.decide);
+        const picked = new Set();
+        const many = el('button', { class: 'btn btn--ok', disabled: 'disabled', onclick: () => approveReleases(r.releases.filter(x => picked.has(x.id)), releasesView) }, '✔ Approve Selected');
+        const setMany = () => { many.disabled = !picked.size; many.textContent = picked.size ? `✔ Approve Selected (${picked.size})` : '✔ Approve Selected'; };
+        const tick = (x) => x.can.decide ? el('input', { type: 'checkbox', class: 'cf-tick', 'aria-label': `Select ${x.refNo}`, onchange: (e) => { e.target.checked ? picked.add(x.id) : picked.delete(x.id); setMany(); } }) : el('span');
+        const all = pend.length > 1 ? el('label', { class: 'check check--plain cf-all' }, [el('input', { type: 'checkbox', onchange: (e) => { panel.querySelectorAll('.cf-tick').forEach(b => { b.checked = e.target.checked; }); pend.forEach(x => e.target.checked ? picked.add(x.id) : picked.delete(x.id)); setMany(); } }), ` Select all ${pend.length} awaiting you`]) : null;
+        panel.replaceChildren(
+          el('p', { class: 'muted' }, 'After the Hon. Chief Judge approves items on the cash flow, the DCR Admin and Finance requests the release of funds for them, naming the beneficiaries and their accounts. Once the Chief Judge approves a release, the Accountant pays.'),
+          el('div', { class: 'toolbar' }, [
+            r.dcr ? el('button', { class: 'btn btn--primary', onclick: () => releaseForm() }, '+ Request Release of Funds') : null,
+            pend.length ? many : null
+          ]), all,
+          r.releases.length ? ui.table([
+            ...(pend.length ? [{ label: '', node: tick }] : []),
+            { label: 'Reference', value: x => x.refNo },
+            { label: 'Date', value: x => day(x.createdAt) },
+            { label: 'Items', value: x => x.items.map(i => i.name).join('; '), primary: true },
+            { label: 'Beneficiaries', value: x => String(x.items.reduce((n, i) => n + i.payees.length, 0)) },
+            { label: 'Total', value: x => naira(x.total), num: true },
+            { label: 'Status', node: x => x.status === 'approved' && x.paid > 0 ? el('span', { class: 'badge badge--final' }, 'Part paid') : rbadge(x.status) }
+          ], r.releases, [{ label: x => x.can.answer ? 'Answer Query' : 'Details', onClick: x => releaseDetails(x.id, releasesView) }]) : ui.empty('No release of funds has been requested yet.')
         );
       }
 
@@ -247,7 +316,7 @@
           <table class="doc-table" style="margin-top:8px"><tbody>
             <tr><td><strong>Total amount requested</strong></td><td style="text-align:right"><strong>${esc(naira(x.amount))}</strong></td></tr>
             ${ok ? `<tr><td><strong>Amount approved</strong></td><td style="text-align:right"><strong>${esc(naira(x.decision.amount))}</strong></td></tr>` : ''}
-            ${x.payment ? `<tr><td>Paid, PV ${esc(x.payment.pvNo)}, ${esc(day(x.payment.date))}</td><td style="text-align:right">${esc(naira(x.payment.amount))}</td></tr>` : ''}
+            ${(x.payments || []).map(pm => `<tr><td>Paid to ${esc(pm.payee || '')}, PV ${esc(pm.pvNo)}, ${esc(day(pm.date))}</td><td style="text-align:right">${esc(naira(pm.amount))}</td></tr>`).join('')}
           </tbody></table>
           ${x.justification ? `<p><strong>Justification:</strong> ${esc(x.justification)}</p>` : ''}
           ${ok ? `<div class="doc-sign-wrap"><div class="doc-sign-block">${x.decision.signatureUrl ? `<img class="doc-sig-img" src="${x.decision.signatureUrl}" alt="Signature">` : ''}<div class="doc-sign">${esc([x.decision.title, x.decision.byName].filter(Boolean).join(' '))}<br>Hon. Chief Judge</div><div class="doc-sig-meta">Approved ${esc(day(x.decision.at))}${x.decision.note ? `: ${esc(x.decision.note)}` : ''}</div></div></div>`
@@ -271,7 +340,8 @@
           x.can.answer ? btn('Answer Query', 'btn--primary', () => { dialog.close(); requestForm(x); }) : null,
           x.can.carry ? btn('➜  Carry to Next Cash Flow', 'btn--primary', async () => { try { await api.post(`/cashflow/${x.id}/carry`); ui.toast('Carried to the next cash flow.', 'success'); done(); } catch (e) { ui.toast(e.message, 'error'); } }) : null,
           x.can.carry ? btn('Dismiss', 'btn--danger', async () => { if (!confirm(`Dismiss ${x.item}? It leaves the cash flow for good.`)) return; try { await api.post(`/cashflow/${x.id}/dismiss`); ui.toast('Dismissed.', 'info'); done(); } catch (e) { ui.toast(e.message, 'error'); } }) : null,
-          x.can.pay ? btn('Record Payment', 'btn--primary', () => { dialog.close(); payDialog(x, after); }) : null
+          x.can.release ? btn('Request Release of Funds', 'btn--primary', () => { dialog.close(); releaseForm(null, x.id, after); }) : null,
+          x.can.complete ? btn('Close as Paid', 'btn--ghost', () => complete(x, done)) : null
         ]);
         // ── The item, laid out: header, progress, notices, cards, attachments, timeline ──
         const when = (d) => d ? new Date(d).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
@@ -288,7 +358,7 @@
             el('div', { class: 'cfx-hero__label' }, 'Amount requested'),
             el('div', { class: 'cfx-hero__amount' + (lower ? ' cfx-hero__amount--struck' : '') }, naira(x.amount)),
             approved !== null ? el('div', { class: 'cfx-hero__approved' }, `Approved ${naira(approved)}`) : null,
-            x.payment ? el('div', { class: 'cfx-hero__paid' }, `Paid ${naira(x.payment.amount)}`) : null
+            x.paid > 0 ? el('div', { class: 'cfx-hero__paid' }, x.status === 'paid' ? `Paid ${naira(x.paid)}` : `Paid so far ${naira(x.paid)}`) : null
           ])
         ]);
         // Progress: requested, the Chief Judge's decision, payment.
@@ -303,8 +373,12 @@
               : decided === 'declined' ? step('Not approved', 'is-stop', day(x.decision.at))
                 : step('Decision of the CJ', 'is-next', 'Waiting'),
           decided === 'declined' ? step(x.status === 'dismissed' ? 'Dismissed' : 'Carry or dismiss', x.status === 'dismissed' ? 'is-stop' : 'is-next', '')
-            : step('Paid', x.payment ? 'is-done' : decided === 'approved' ? 'is-next' : '', x.payment ? day(x.payment.date) : decided === 'approved' ? 'With the Accountant' : '')
-        ]);
+            : null,
+          decided === 'declined' ? null : step('Release of funds', x.released > 0 ? 'is-done' : decided === 'approved' ? 'is-next' : '',
+            x.released > 0 ? (x.releases && x.releases.length ? day(x.releases[0].at) : naira(x.released)) : decided === 'approved' ? 'With the DCR Admin and Finance' : ''),
+          decided === 'declined' ? null : step(x.status === 'paid' ? 'Paid' : x.paid > 0 ? 'Part paid' : 'Paid', x.status === 'paid' ? 'is-done' : x.paid > 0 ? 'is-next' : '',
+            x.status === 'paid' && x.payments.length ? day(x.payments[x.payments.length - 1].date) : x.paid > 0 ? `${naira(x.paid)} of ${naira(approved)}` : x.released > 0 ? 'With the Accountant' : '')
+        ].filter(Boolean));
         const notice = (cls, title, text, by) => el('div', { class: 'cfx-note cfx-note--' + cls }, [el('div', { class: 'cfx-note__title' }, title), el('div', null, text), by ? el('div', { class: 'cfx-note__by' }, by) : null]);
         const notes = [
           x.status === 'returned' && x.query ? notice('query', '↩ Query from the Hon. Chief Judge', x.query.text, `${x.query.byName}, ${when(x.query.at)}`) : null,
@@ -321,8 +395,8 @@
             field('Requested', naira(x.amount)),
             field('Breakdown', `${x.sections.length > 1 ? `${x.sections.length} sections, ` : ''}${x.sections.reduce((n, sec) => n + sec.lines.length, 0)} line(s)`),
             field('Approved', approved !== null ? naira(approved) + (lower ? ` (${naira(x.amount - approved)} less)` : '') : decided === 'declined' ? 'Not approved' : 'Awaiting decision'),
-            field('Paid', x.payment ? `${naira(x.payment.amount)} · PV ${x.payment.pvNo}` : approved !== null ? 'Not yet' : '—'),
-            x.payment ? field('Payment recorded', `${day(x.payment.date)} by ${x.payment.byName}`, true) : null
+            approved !== null ? field('Released', x.released != null ? naira(x.released) + (x.toRelease > 0 && x.status === 'approved' ? ` (${naira(x.toRelease)} still to release)` : '') : '—') : null,
+            field('Paid', x.paid > 0 ? naira(x.paid) : approved !== null ? 'Not yet' : '—')
           ])])
         ]);
         const text = (title, body) => body ? el('div', { class: 'cfx-text' }, [el('h4', null, title), el('p', null, body)]) : null;
@@ -335,7 +409,17 @@
           el('div', { class: 'cfx-tl__head' }, [el('strong', null, ACTION[h.action] || h.action), el('span', null, `${h.byName} · ${when(h.at)}`)]),
           h.note ? el('div', { class: 'cfx-tl__note' }, h.note) : null
         ])))]);
-        const body = el('div', { class: 'cfx' }, [actions, hero, steps, ...notes, cards, x.sections.length ? breakdownView(x) : null,
+        // The releases of funds for this item, and the payments made.
+        const rels = x.releases && x.releases.length ? el('div', { class: 'cfx-rels' }, [el('h4', null, `Release of funds and payments (${x.releases.length})`),
+          ...x.releases.map(rl => el('div', { class: 'cfx-rel' }, [
+            el('div', { class: 'cfx-rel__head' }, [el('strong', null, rl.refNo), rbadge(rl.status), el('span', { class: 'muted' }, day(rl.at)), el('span', { class: 'cfx-rel__amt' }, naira(rl.amount)),
+              el('button', { class: 'btn btn--ghost btn--small', type: 'button', onclick: () => { dialog.close(); releaseDetails(rl.id, after); } }, 'Open')]),
+            el('div', { class: 'cfx-rel__payees' }, rl.payees.map(p => el('div', { class: 'cfx-payee' }, [
+              el('span', { class: 'cfx-payee__name' }, p.name), el('span', { class: 'muted' }, `${p.bank} · ${p.accountNo}`), el('span', { class: 'cfx-payee__amt' }, naira(p.amount)),
+              p.paid ? el('span', { class: 'badge badge--final' }, `Paid, PV ${p.paid.pvNo}`) : el('span', { class: 'badge badge--draft' }, rl.status === 'approved' ? 'To be paid' : rl.status === 'declined' ? 'Not approved' : 'Awaiting approval')
+            ])))
+          ]))]) : null;
+        const body = el('div', { class: 'cfx' }, [actions, hero, steps, ...notes, cards, x.sections.length ? breakdownView(x) : null, rels,
           (x.description || x.justification) ? el('div', { class: 'cfx-texts' }, [text('Description', x.description), text('Justification', x.justification)]) : null,
           files, timeline]);
         ui.modal('Cash Flow Item', body, { noFooter: true, wide: true, onOpen: (o) => { dialog = o; } });
@@ -401,18 +485,269 @@
           ui.toast('Not approved.', 'info'); setTimeout(done, 0); return true;
         } });
       }
-      function payDialog(x, after) {
+      // The Accountant pays one beneficiary of an approved release.
+      function payDialog(rel, p, after) {
         const pv = el('input', { type: 'text', maxlength: '60', placeholder: 'e.g. PV/112/2026' });
         const date = el('input', { type: 'date', value: new Date().toISOString().slice(0, 10) });
-        const amount = el('input', { type: 'number', min: '0', step: '0.01', value: String(x.decision.amount) });
-        ui.modal(`Record Payment · ${x.item}`, el('div', null, [
-          el('p', null, `Approved: ${naira(x.decision.amount)}.`),
+        const amount = el('input', { type: 'number', min: '0', step: '0.01', value: String(p.amount) });
+        ui.modal(`Record Payment · ${p.name}`, el('div', null, [
+          el('div', { class: 'cf-paycard' }, [
+            el('div', null, [el('span', { class: 'muted' }, 'Beneficiary'), el('strong', null, p.name)]),
+            el('div', null, [el('span', { class: 'muted' }, 'Bank'), el('strong', null, p.bank)]),
+            el('div', null, [el('span', { class: 'muted' }, 'Account number'), el('strong', { class: 'cf-acct' }, p.accountNo)]),
+            el('div', null, [el('span', { class: 'muted' }, 'Account name'), el('strong', null, p.accountName || p.name)]),
+            el('div', null, [el('span', { class: 'muted' }, 'Released'), el('strong', null, naira(p.amount))]),
+            el('div', null, [el('span', { class: 'muted' }, 'Release'), el('strong', null, rel.refNo)])
+          ]),
           ui.field('Payment voucher number', pv), ui.field('Date paid', date), ui.field('Amount paid, ₦', amount)
         ]), { confirmText: 'Record Payment', onConfirm: async () => {
           if (!pv.value.trim()) throw new Error('Enter the payment voucher number.');
-          await api.post(`/cashflow/${x.id}/pay`, { pvNo: pv.value.trim(), date: date.value, amount: amount.value });
+          await api.post(`/cashflow/releases/${rel.id}/pay`, { payee: p.id, pvNo: pv.value.trim(), date: date.value, amount: amount.value });
           ui.toast('Payment recorded. The Hon. Chief Judge is notified.', 'success'); router.refreshBadges(); setTimeout(after, 0); return true;
         } });
+      }
+
+      // An approved item paid in part, with nothing more to come.
+      function complete(x, done) {
+        const note = el('input', { type: 'text', maxlength: '500', placeholder: 'e.g. The balance was not needed' });
+        ui.modal(`Close as Paid · ${x.item}`, el('div', null, [
+          el('p', null, `${naira(x.paid)} has been paid of the ${naira(x.decision.amount)} approved. Closing the item marks it paid; nothing more can be released for it.`),
+          ui.field('Reason (optional)', note)
+        ]), { confirmText: 'Close as Paid', onConfirm: async () => {
+          await api.post(`/cashflow/${x.id}/complete`, { note: note.value });
+          ui.toast('Closed as paid.', 'success'); setTimeout(done, 0); return true;
+        } });
+      }
+
+      // The Hon. Chief Judge approves several items at once, each in full.
+      function approveMany(list, after) {
+        if (!list.length) return;
+        const total = list.reduce((n, x) => n + x.amount, 0);
+        const note = el('input', { type: 'text', maxlength: '500', placeholder: 'Optional' });
+        const pin = el('input', { type: 'password', inputmode: 'numeric', autocomplete: 'off', maxlength: '8', placeholder: 'Signing PIN' });
+        ui.modal(`Approve ${list.length} Item${list.length > 1 ? 's' : ''}`, el('div', null, [
+          el('p', null, 'Each item is approved in full, as requested. To approve part of an item, open its Details instead.'),
+          el('div', { class: 'cfa-list' }, list.map(x => el('div', { class: 'cfa-line cfa-line--plain' }, [el('span', null, String(x.sn)), el('span', null, `${x.item} · ${x.requestedByName}`), el('span', { class: 'cfa-line__amt' }, naira(x.amount))]))),
+          el('div', { class: 'cfa-kept' }, `Total: ${naira(total)}`),
+          ui.field('Remark (optional)', note), ui.field('Your signing PIN', pin)
+        ]), { wide: true, confirmText: `Approve ${list.length}`, confirmClass: 'btn--ok', onConfirm: async () => {
+          if (!pin.value) throw new Error('Enter your signing PIN.');
+          const r = await api.post('/cashflow/decide-many', { ids: list.map(x => x.id), pin: pin.value, note: note.value });
+          ui.toast(`${r.approved} item(s) approved, ${naira(r.total)}. The DCR Admin and Finance is notified.`, 'success', 6000);
+          router.refreshBadges(); setTimeout(after, 0); return true;
+        } });
+      }
+
+      // ── A request for the release of funds (or the answer to a query) ──
+      // The DCR chooses approved items; for each, the beneficiaries with
+      // their bank and account, and the amount (all that is left, or part).
+      async function releaseForm(rel, preselect, after) {
+        let open;
+        try { open = (await api.get(`/cashflow/releases/open-items${rel ? `?except=${rel.id}` : ''}`)).items; } catch (e) { ui.toast(e.message, 'error'); return; }
+        if (!open.length) { ui.toast('No approved item is waiting for the release of funds.', 'info'); return; }
+        const blank = (amount) => ({ name: '', bank: '', accountNo: '', accountName: '', amount: amount ? String(amount) : '' });
+        // The choice: each open item, ticked or not, with its beneficiaries.
+        const state = open.map(it => {
+          const had = rel && rel.items.find(x => x.item === it.id);
+          return { it, on: !!had || it.id === preselect, payees: had ? had.payees.map(p => ({ name: p.name, bank: p.bank, accountNo: p.accountNo, accountName: p.accountName === p.name ? '' : (p.accountName || ''), amount: String(p.amount) })) : [blank(it.left)] };
+        });
+        const banks = el('datalist', { id: 'cf-banks' }, BANKS.map(b => el('option', { value: b })));
+        const wrap = el('div', { class: 'cfr' });
+        const grand = el('div', { class: 'cfb-grand' });
+        const sumOf = (st) => st.payees.reduce((n, p) => n + (Number(p.amount) || 0), 0);
+        const totals = () => {
+          wrap.querySelectorAll('[data-sum]').forEach(n => { const st = state[Number(n.dataset.sum)]; const v = sumOf(st); n.textContent = `${naira(v)} of ${naira(st.it.left)} left to release`; n.classList.toggle('is-over', v > st.it.left + 0.004); });
+          const t = state.filter(st => st.on).reduce((n, st) => n + sumOf(st), 0);
+          grand.replaceChildren(el('span', null, `Total to release (${state.filter(st => st.on).length} item${state.filter(st => st.on).length === 1 ? '' : 's'})`), el('strong', null, naira(t)));
+        };
+        function draw() {
+          wrap.replaceChildren(...state.map((st, i) => {
+            const head = el('label', { class: 'cfr-item__head' }, [
+              el('input', { type: 'checkbox', checked: st.on ? 'checked' : null, onchange: (e) => { st.on = e.target.checked; draw(); } }),
+              el('span', { class: 'cfr-item__name' }, [el('strong', null, st.it.item), el('span', { class: 'muted' }, ` · ${st.it.monthName}, item ${st.it.sn} · requested by ${st.it.requestedByName}`)]),
+              el('span', { class: 'cfr-item__nums' }, [`Approved ${naira(st.it.approved)}`, st.it.released ? el('span', { class: 'muted' }, ` · released ${naira(st.it.released)}`) : null])
+            ]);
+            if (!st.on) return el('div', { class: 'cfr-item' }, [head]);
+            const input = (p, key, attrs) => { const n = el('input', { ...attrs, value: p[key] }); n.addEventListener('input', () => { p[key] = n.value; totals(); }); return n; };
+            return el('div', { class: 'cfr-item is-on' }, [head,
+              ...st.payees.map((p, j) => el('div', { class: 'cfr-payee' }, [
+                el('span', { class: 'cfr-payee__no' }, String(j + 1)),
+                input(p, 'name', { type: 'text', maxlength: '150', placeholder: 'Beneficiary, e.g. Bauchi Roofing Works', 'aria-label': 'Beneficiary', class: 'cfr-payee__name' }),
+                input(p, 'bank', { type: 'text', maxlength: '100', placeholder: 'Bank', list: 'cf-banks', 'aria-label': 'Bank', class: 'cfr-payee__bank' }),
+                input(p, 'accountNo', { type: 'text', inputmode: 'numeric', maxlength: '10', placeholder: 'Account no. (10 digits)', 'aria-label': 'Account number', class: 'cfr-payee__acct' }),
+                input(p, 'accountName', { type: 'text', maxlength: '150', placeholder: 'Account name, if different', 'aria-label': 'Account name', class: 'cfr-payee__aname' }),
+                input(p, 'amount', { type: 'number', min: '0', step: '0.01', placeholder: 'Amount ₦', 'aria-label': 'Amount', class: 'cfr-payee__amt' }),
+                el('button', { class: 'cfb-line__del', type: 'button', title: 'Remove this beneficiary', 'aria-label': 'Remove this beneficiary', disabled: st.payees.length === 1 ? 'disabled' : null, onclick: () => { st.payees.splice(j, 1); draw(); } }, '✕')
+              ])),
+              el('div', { class: 'cfb-sec__foot' }, [
+                el('button', { class: 'btn btn--ghost btn--small', type: 'button', onclick: () => { st.payees.push(blank()); draw(); } }, '+ Add a beneficiary'),
+                el('span', { class: 'cfr-sum', 'data-sum': String(i) })
+              ])
+            ]);
+          }));
+          totals();
+        }
+        draw();
+        const note = el('textarea', { rows: 3, maxlength: '3000', placeholder: 'e.g. The work has started; the contractors are to be paid the first instalment.' }); note.value = rel ? rel.note : '';
+        const answer = el('textarea', { rows: 3, maxlength: '2000' });
+        ui.modal(rel ? `Answer the Query · ${rel.refNo}` : 'Request Release of Funds', el('div', null, [banks,
+          rel ? el('div', { class: 'notice notice--warn' }, [el('strong', null, 'Query from the Hon. Chief Judge: '), rel.query ? rel.query.text : '']) : null,
+          rel ? ui.field('Your answer', answer) : null,
+          el('p', { class: 'muted' }, 'Tick the approved items to release funds for. For each, name who is to be paid, their bank and 10 digit account number, and the amount: all that is left, or part of it (an instalment). An item can be paid to more than one beneficiary.'),
+          wrap, grand,
+          ui.field('Remarks to the Hon. Chief Judge (optional)', note)
+        ]), {
+          wide: true, confirmText: rel ? 'Send Back to the CJ' : 'Send to the Hon. Chief Judge',
+          onConfirm: async () => {
+            const on = state.filter(st => st.on);
+            if (!on.length) throw new Error('Tick at least one item.');
+            for (const st of on) for (const [j, p] of st.payees.entries()) {
+              const where = `${st.it.item}, beneficiary ${j + 1}`;
+              if (!p.name.trim()) throw new Error(`Enter the name of ${where}.`);
+              if (!p.bank.trim()) throw new Error(`Enter the bank of ${where}.`);
+              if (!/^\d{10}$/.test(p.accountNo.replace(/\s/g, ''))) throw new Error(`The account number of ${where} must be 10 digits.`);
+              if (!(Number(p.amount) > 0)) throw new Error(`Enter the amount for ${where}.`);
+            }
+            for (const st of on) if (sumOf(st) > st.it.left + 0.004) throw new Error(`${st.it.item}: more than the ${naira(st.it.left)} left to release.`);
+            if (rel && !answer.value.trim()) throw new Error('Answer the query.');
+            const body = { note: note.value, answer: answer.value, items: on.map(st => ({ item: st.it.id, payees: st.payees.map(p => ({ ...p, accountNo: p.accountNo.replace(/\s/g, '') })) })) };
+            const r = rel ? await api.put(`/cashflow/releases/${rel.id}`, body) : await api.post('/cashflow/releases', body);
+            ui.toast(rel ? 'Sent back to the Hon. Chief Judge.' : `${r.release.refNo} sent to the Hon. Chief Judge.`, 'success', 6000);
+            router.refreshBadges(); setTimeout(after || releasesView, 0); return true;
+          }
+        });
+      }
+
+      // ── A release of funds: its details and actions ──
+      async function releaseDetails(id, after) {
+        let x;
+        try { x = (await api.get(`/cashflow/releases/${id}`)).release; } catch (e) { ui.toast(e.message, 'error'); return; }
+        let dialog;
+        const done = () => { dialog.close(); router.refreshBadges(); (after || releasesView)(); };
+        const btn = (label, cls, fn) => el('button', { class: 'btn ' + cls, type: 'button', onclick: fn }, label);
+        const when = (d) => d ? new Date(d).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+        const actions = el('div', { class: 'doc-preview__actions' }, [
+          btn('✕  Close', 'btn--ghost', () => dialog.close()),
+          btn('🖨  Print Memo', 'btn--ghost', () => printRelease(x)),
+          x.can.decide ? btn('✔  Approve', 'btn--ok', () => approveReleases([x], done)) : null,
+          x.can.decide ? btn('↩  Return with Query', 'btn--ghost', () => releaseQuery(x, done)) : null,
+          x.can.decide ? btn('✕  Decline', 'btn--danger', () => releaseDecline(x, done)) : null,
+          x.can.answer ? btn('Answer Query', 'btn--primary', () => { dialog.close(); releaseForm(x, null, after); }) : null
+        ]);
+        const hero = el('div', { class: 'cfx-hero cfx-hero--' + (x.status === 'approved' ? 'approved' : x.status) }, [
+          el('div', { class: 'cfx-hero__main' }, [
+            el('div', { class: 'cfx-hero__over' }, `Release of funds · ${x.refNo}`),
+            el('div', { class: 'cfx-hero__title' }, x.items.map(i => i.name).join('; ')),
+            el('div', { class: 'cfx-hero__by' }, [rbadge(x.status), el('span', null, `Requested by ${x.requestedByName}, DCR Admin and Finance · ${day(x.createdAt)}`)])
+          ]),
+          el('div', { class: 'cfx-hero__money' }, [
+            el('div', { class: 'cfx-hero__label' }, 'Amount to release'),
+            el('div', { class: 'cfx-hero__amount' }, naira(x.total)),
+            x.paid > 0 ? el('div', { class: 'cfx-hero__paid' }, x.status === 'paid' ? `Paid ${naira(x.paid)}` : `Paid so far ${naira(x.paid)}`) : null
+          ])
+        ]);
+        const step = (name, state, sub) => el('li', { class: 'cd-step ' + state }, [
+          el('span', { class: 'cd-dot' }, state === 'is-done' ? '✓' : state === 'is-stop' ? '✕' : ''),
+          el('span', { class: 'cd-step__name' }, name), sub ? el('span', { class: 'cd-step__date' }, sub) : null]);
+        const ok = x.decision && x.decision.kind === 'approved';
+        const steps = el('ol', { class: 'cd-steps cfx-steps' }, [
+          step('Requested', 'is-done', day(x.createdAt)),
+          x.status === 'returned' ? step('Query from the CJ', 'is-next', x.query ? day(x.query.at) : '')
+            : ok ? step('Approved by the CJ', 'is-done', day(x.decision.at))
+              : x.status === 'declined' ? step('Not approved', 'is-stop', day(x.decision.at)) : step('Approval of the CJ', 'is-next', 'Waiting'),
+          x.status === 'declined' ? null : step(x.status === 'paid' ? 'Paid' : x.paid > 0 ? 'Part paid' : 'Paid', x.status === 'paid' ? 'is-done' : ok ? 'is-next' : '', x.status === 'paid' ? '' : ok ? 'With the Accountant' : '')
+        ].filter(Boolean));
+        const notice = (cls, title, text, by) => el('div', { class: 'cfx-note cfx-note--' + cls }, [el('div', { class: 'cfx-note__title' }, title), el('div', null, text), by ? el('div', { class: 'cfx-note__by' }, by) : null]);
+        const notes = [
+          x.status === 'returned' && x.query ? notice('query', '↩ Query from the Hon. Chief Judge', x.query.text, `${x.query.byName}, ${when(x.query.at)}`) : null,
+          x.status === 'declined' ? notice('declined', '✕ Not approved', x.decision.note || 'No reason given.', `${x.decision.byName}, ${when(x.decision.at)} · The amount is free to be requested again`) : null,
+          ok && x.decision.note ? notice('approved', '✔ Remark of the Hon. Chief Judge', x.decision.note, `${x.decision.byName}, ${when(x.decision.at)}`) : null,
+          x.note ? notice('info', 'Remarks of the DCR Admin and Finance', x.note, '') : null
+        ].filter(Boolean);
+        const items = el('div', { class: 'cfx-break' }, [el('h4', null, `Items and beneficiaries (${x.items.length})`),
+          ...x.items.map(it => el('div', { class: 'cfx-break__sec' }, [
+            el('div', { class: 'cfx-break__title' }, `${it.name} · ${it.monthName} cash flow, item ${it.sn}`),
+            el('div', { class: 'table-scroll' }, el('table', { class: 'cfx-break__table' }, [
+              el('thead', null, el('tr', null, [el('th', null, 'Beneficiary'), el('th', null, 'Bank'), el('th', null, 'Account No.'), el('th', { class: 'num' }, 'Amount'), el('th', null, 'Payment'), x.can.pay ? el('th') : null])),
+              el('tbody', null, it.payees.map(p => el('tr', null, [
+                el('td', null, [p.name, p.accountName && p.accountName !== p.name ? el('div', { class: 'muted' }, `Account name: ${p.accountName}`) : null]),
+                el('td', null, p.bank), el('td', null, el('span', { class: 'cf-acct' }, p.accountNo)), el('td', { class: 'num' }, naira(p.amount)),
+                el('td', null, p.paid ? `${naira(p.paid.amount)}, PV ${p.paid.pvNo}, ${day(p.paid.date)}` : ok ? 'To be paid' : '—'),
+                x.can.pay ? el('td', null, p.paid ? null : el('button', { class: 'btn btn--primary btn--small', type: 'button', onclick: () => { dialog.close(); payDialog(x, p, after || payView); } }, 'Record Payment')) : null
+              ]))),
+              el('tfoot', null, el('tr', null, [el('td', { colspan: '3' }, 'Total for this item'), el('td', { class: 'num' }, naira(it.amount)), el('td'), x.can.pay ? el('td') : null]))
+            ]))
+          ])),
+          x.items.length > 1 ? el('div', { class: 'cfx-break__grand' }, [el('span', null, 'Total to release'), el('strong', null, naira(x.total))]) : null
+        ]);
+        const TONE = { requested: 'info', answered: 'info', approved: 'ok', paid: 'ok', declined: 'bad', returned: 'warn' };
+        const timeline = el('div', { class: 'cfx-timeline' }, [el('h4', null, 'History'), el('ol', null, x.history.map(h => el('li', { class: 'cfx-tl cfx-tl--' + (TONE[h.action] || 'info') }, [
+          el('div', { class: 'cfx-tl__head' }, [el('strong', null, ACTION[h.action] || h.action), el('span', null, `${h.byName} · ${when(h.at)}`)]),
+          h.note ? el('div', { class: 'cfx-tl__note' }, h.note) : null
+        ])))]);
+        ui.modal('Release of Funds', el('div', { class: 'cfx' }, [actions, hero, steps, ...notes, items, timeline]), { noFooter: true, wide: true, onOpen: (o) => { dialog = o; } });
+      }
+
+      // The Hon. Chief Judge approves one release, or several at once, with the PIN.
+      function approveReleases(list, after) {
+        if (!list.length) return;
+        const total = list.reduce((n, x) => n + x.total, 0);
+        const note = el('input', { type: 'text', maxlength: '500', placeholder: 'Optional' });
+        const pin = el('input', { type: 'password', inputmode: 'numeric', autocomplete: 'off', maxlength: '8', placeholder: 'Signing PIN' });
+        ui.modal(list.length > 1 ? `Approve ${list.length} Releases of Funds` : `Approve Release · ${list[0].refNo}`, el('div', null, [
+          el('div', { class: 'cfa-list' }, list.map(x => el('div', { class: 'cfa-sec' }, [
+            el('div', { class: 'cfa-sec__head cfa-line--plain' }, [el('span'), el('strong', null, `${x.refNo} · ${x.items.map(i => i.name).join('; ')}`), el('span', null, naira(x.total))]),
+            ...x.items.flatMap(i => i.payees.map(p => el('div', { class: 'cfa-line cfa-line--plain' }, [el('span'), el('span', null, `${p.name} · ${p.bank} · ${p.accountNo}`), el('span', { class: 'cfa-line__amt' }, naira(p.amount))])))
+          ]))),
+          el('div', { class: 'cfa-kept' }, `Total: ${naira(total)}`),
+          ui.field('Remark (optional)', note), ui.field('Your signing PIN', pin)
+        ]), { wide: true, confirmText: list.length > 1 ? `Approve ${list.length}` : 'Approve', confirmClass: 'btn--ok', onConfirm: async () => {
+          if (!pin.value) throw new Error('Enter your signing PIN.');
+          if (list.length > 1) await api.post('/cashflow/releases/decide-many', { ids: list.map(x => x.id), pin: pin.value, note: note.value });
+          else await api.post(`/cashflow/releases/${list[0].id}/decide`, { action: 'approve', pin: pin.value, note: note.value });
+          ui.toast(`Approved, ${naira(total)}. The Accountant is notified.`, 'success', 6000);
+          router.refreshBadges(); setTimeout(after, 0); return true;
+        } });
+      }
+      function releaseQuery(x, done) {
+        const note = el('textarea', { rows: 3, maxlength: '2000', placeholder: 'What should the DCR Admin and Finance clarify or correct?' });
+        ui.modal(`Return with Query · ${x.refNo}`, ui.field('Query', note), { confirmText: 'Return', onConfirm: async () => {
+          if (!note.value.trim()) throw new Error('Write the query.');
+          await api.post(`/cashflow/releases/${x.id}/decide`, { action: 'return', note: note.value.trim() });
+          ui.toast(`Returned to ${x.requestedByName} with your query.`, 'info'); setTimeout(done, 0); return true;
+        } });
+      }
+      function releaseDecline(x, done) {
+        const note = el('input', { type: 'text', maxlength: '500', placeholder: 'Optional' });
+        ui.modal(`Decline · ${x.refNo}`, el('div', null, [ui.field('Reason (optional)', note), el('p', { class: 'muted' }, 'The amount becomes free to be requested again.')]),
+          { confirmText: 'Decline', confirmClass: 'btn--danger', onConfirm: async () => {
+            await api.post(`/cashflow/releases/${x.id}/decide`, { action: 'decline', note: note.value });
+            ui.toast('Not approved.', 'info'); setTimeout(done, 0); return true;
+          } });
+      }
+
+      // The request for the release of funds as a memo, with the Chief Judge's approval.
+      function printRelease(x) {
+        const ok = x.decision && x.decision.kind === 'approved';
+        let n = 0;
+        const rows = x.items.map(it => it.payees.map((p, j) => `<tr><td>${++n}</td><td>${j ? '' : `${esc(it.name)}<div class="muted">${esc(it.monthName)} cash flow, item ${esc(it.sn)}</div>`}</td><td>${esc(p.name)}${p.accountName && p.accountName !== p.name ? `<div class="muted">A/C name: ${esc(p.accountName)}</div>` : ''}</td><td>${esc(p.bank)}</td><td>${esc(p.accountNo)}</td><td style="text-align:right">${esc(naira(p.amount))}</td></tr>`).join('')).join('');
+        window.App.processUi.printPage(`<article class="court-doc report-print">
+          <header class="doc-masthead"><img class="doc-emblem" src="/assets/highcourt.png" alt=""><div class="doc-titleblock"><div class="doc-line1">THE JUDICIARY</div><div class="doc-line2">GOMBE STATE HIGH COURT OF JUSTICE</div><div class="doc-line3">INTERNAL MEMO</div></div><img class="doc-emblem" src="/assets/coat.png" alt=""></header><div class="doc-rule"></div>
+          <table class="cfp-memo"><tbody>
+            <tr><td>From:</td><td>The Deputy Chief Registrar (Admin and Finance)</td><td>Ref:</td><td>${esc(x.refNo)}</td></tr>
+            <tr><td>To:</td><td>The Hon. Chief Judge</td><td>Date:</td><td>${esc(day(x.createdAt))}</td></tr>
+          </tbody></table>
+          <h3 style="text-align:center;text-decoration:underline;margin:10px 0">REQUEST FOR RELEASE OF FUNDS</h3>
+          <p>I write to request the release of funds for the following item(s) approved on the cash flow, to be paid to the beneficiaries named below:</p>
+          <table class="doc-table"><thead><tr><th>S/No</th><th>Item</th><th>Beneficiary</th><th>Bank</th><th>Account No.</th><th style="text-align:right">Amount</th></tr></thead>
+          <tbody>${rows}<tr><td colspan="5" style="text-align:right"><strong>Total</strong></td><td style="text-align:right"><strong>${esc(naira(x.total))}</strong></td></tr></tbody></table>
+          ${x.note ? `<p>${esc(x.note)}</p>` : ''}
+          <p>Submitted for your kind consideration and approval, please.</p>
+          <div class="cfp-from"><strong>${esc(x.requestedByName)}</strong><br>Deputy Chief Registrar (Admin and Finance)</div>
+          ${ok ? `<div class="doc-sign-wrap"><div class="doc-sign-block"><div class="doc-sig-meta" style="font-weight:700">APPROVED</div>${x.decision.signatureUrl ? `<img class="doc-sig-img" src="${x.decision.signatureUrl}" alt="Signature">` : ''}<div class="doc-sign">${esc([x.decision.title, x.decision.byName].filter(Boolean).join(' '))}<br>Hon. Chief Judge</div><div class="doc-sig-meta">${esc(day(x.decision.at))}${x.decision.note ? `: ${esc(x.decision.note)}` : ''}</div></div></div>`
+            : `<p class="muted">Status: ${esc((RSTATUS[x.status] || [x.status])[0])}</p>`}
+          <footer class="doc-footer"><span>Printed ${esc(day(new Date()))}</span><span>Powered by the Directorate of ICT, Gombe State High Court of Justice</span></footer></article>`,
+          '@page { size: A4; margin: 12mm; } .cfp-memo { width: 100%; border-collapse: collapse; margin: 6px 0; } .cfp-memo td { padding: 3px 6px; vertical-align: top; } .cfp-memo td:nth-child(odd) { font-weight: 700; width: 4.5em; } .cfp-from { margin: 18px 0 8px; }');
       }
 
       // ── The month's approved cash flow, signed by the Chief Judge ──
@@ -424,7 +759,7 @@
         try { sheet = await api.post('/cashflow/sheet', { month: r.month }); } catch (e) { ui.toast(e.message, 'error'); return; }
         const total = list.reduce((n, x) => n + x.decision.amount, 0);
         const signer = list.slice().reverse().find(x => x.decision && x.decision.signatureUrl);
-        const rows = list.map((x, i) => `<tr><td>${i + 1}</td><td>${esc(x.item)}${x.department ? `<div class="muted">${esc(x.department)}</div>` : ''}</td><td>${esc(x.requestedByName)}</td><td style="text-align:right">${esc(naira(x.amount))}</td><td style="text-align:right">${esc(naira(x.decision.amount))}</td><td>${esc(day(x.decision.at))}</td><td>${x.payment ? `Paid, PV ${esc(x.payment.pvNo)}` : 'To be paid'}</td></tr>`).join('');
+        const rows = list.map((x, i) => `<tr><td>${i + 1}</td><td>${esc(x.item)}${x.department ? `<div class="muted">${esc(x.department)}</div>` : ''}</td><td>${esc(x.requestedByName)}</td><td style="text-align:right">${esc(naira(x.amount))}</td><td style="text-align:right">${esc(naira(x.decision.amount))}</td><td>${esc(day(x.decision.at))}</td><td>${x.status === 'paid' ? `Paid${x.payments.length ? `, PV ${esc(x.payments.map(pm => pm.pvNo).join(', '))}` : ''}` : x.paid > 0 ? `Part paid, ${esc(naira(x.paid))}` : 'To be paid'}</td></tr>`).join('');
         window.App.processUi.printPage(`<article class="court-doc report-print">
           <header class="doc-masthead"><img class="doc-emblem" src="/assets/highcourt.png" alt=""><div class="doc-titleblock"><div class="doc-line1">THE JUDICIARY</div><div class="doc-line2">GOMBE STATE HIGH COURT OF JUSTICE</div><div class="doc-line3">APPROVED CASH FLOW · ${esc(r.monthName.toUpperCase())}</div></div><img class="doc-emblem" src="/assets/coat.png" alt=""></header><div class="doc-rule"></div>
           <table class="doc-table"><thead><tr><th>S/No</th><th>Item</th><th>Requested by</th><th>Requested</th><th>Approved</th><th>Date approved</th><th>Payment</th></tr></thead>
