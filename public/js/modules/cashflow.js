@@ -25,7 +25,7 @@
   const STATUS = { pending: ['Awaiting the CJ', 'pending'], returned: ['Returned with a query', 'returned'], approved: ['Approved', 'final'],
     declined: ['Not approved', 'declined'], paid: ['Paid', 'final'], dismissed: ['Dismissed', 'draft'] };
   const ACTION = { requested: 'Requested', answered: 'Query answered', approved: 'Approved', declined: 'Not approved', returned: 'Returned with a query',
-    paid: 'Paid', carried: 'Carried forward', dismissed: 'Dismissed', moved: 'Moved to the new month', completed: 'Closed as paid' };
+    paid: 'Paid', carried: 'Carried forward', dismissed: 'Dismissed', moved: 'Moved to the new month', completed: 'Closed as paid', transmitted: 'Transmitted to the Accountant' };
   const RSTATUS = { pending: ['Awaiting the CJ', 'pending'], returned: ['Returned with a query', 'returned'], approved: ['Approved for payment', 'final'],
     declined: ['Not approved', 'declined'], paid: ['Paid', 'final'] };
   // Nigerian banks, as suggestions (any name may be typed).
@@ -42,6 +42,10 @@
       try { me = await api.get('/cashflow/me'); } catch (e) { container.appendChild(ui.empty(e.offline ? 'The cash flow needs the internet.' : e.message)); return; }
       const badge = (s) => { const [t, c] = STATUS[s] || [s, 'draft']; return el('span', { class: 'badge badge--' + c }, t); };
       const rbadge = (s) => { const [t, c] = RSTATUS[s] || [s, 'draft']; return el('span', { class: 'badge badge--' + c }, t); };
+      // A release: approved but still with the Chief Registrar, or with the Accountant.
+      const relBadge = (x) => x.status === 'approved' && !x.transmitted ? el('span', { class: 'badge badge--pending' }, 'To transmit')
+        : x.status === 'approved' && x.paid > 0 ? el('span', { class: 'badge badge--final' }, 'Part paid')
+          : x.status === 'approved' ? el('span', { class: 'badge badge--final' }, 'With the Accountant') : rbadge(x.status);
       // An approved item: whether its funds are released and paid yet.
       const itemBadge = (x) => {
         if (x.status !== 'approved') return badge(x.status);
@@ -160,14 +164,20 @@
         panel.replaceChildren(el('p', { class: 'muted' }, 'Loading…'));
         let r;
         try { r = await api.get('/cashflow/releases'); } catch (e) { panel.replaceChildren(ui.empty(e.message)); return; }
-        const pend = r.releases.filter(x => x.can.decide);
+        // The CJ ticks releases to approve; the Chief Registrar, approved ones to transmit.
+        const send = r.releases.some(x => x.can.transmit);
+        const pend = r.releases.filter(x => send ? x.can.transmit : x.can.decide);
+        const word = send ? '➜ Transmit Selected to the Accountant' : '✔ Approve Selected';
         const picked = new Set();
-        const many = el('button', { class: 'btn btn--ok', disabled: 'disabled', onclick: () => approveReleases(r.releases.filter(x => picked.has(x.id)), releasesView) }, '✔ Approve Selected');
-        const setMany = () => { many.disabled = !picked.size; many.textContent = picked.size ? `✔ Approve Selected (${picked.size})` : '✔ Approve Selected'; };
-        const tick = (x) => x.can.decide ? el('input', { type: 'checkbox', class: 'cf-tick', 'aria-label': `Select ${x.refNo}`, onchange: (e) => { e.target.checked ? picked.add(x.id) : picked.delete(x.id); setMany(); } }) : el('span');
-        const all = pend.length > 1 ? el('label', { class: 'check check--plain cf-all' }, [el('input', { type: 'checkbox', onchange: (e) => { panel.querySelectorAll('.cf-tick').forEach(b => { b.checked = e.target.checked; }); pend.forEach(x => e.target.checked ? picked.add(x.id) : picked.delete(x.id)); setMany(); } }), ` Select all ${pend.length} awaiting you`]) : null;
+        const many = el('button', { class: 'btn btn--ok', disabled: 'disabled', onclick: () => {
+          const list = r.releases.filter(x => picked.has(x.id));
+          send ? transmitReleases(list, releasesView) : approveReleases(list, releasesView);
+        } }, word);
+        const setMany = () => { many.disabled = !picked.size; many.textContent = picked.size ? `${word} (${picked.size})` : word; };
+        const tick = (x) => pend.includes(x) ? el('input', { type: 'checkbox', class: 'cf-tick', 'aria-label': `Select ${x.refNo}`, onchange: (e) => { e.target.checked ? picked.add(x.id) : picked.delete(x.id); setMany(); } }) : el('span');
+        const all = pend.length > 1 ? el('label', { class: 'check check--plain cf-all' }, [el('input', { type: 'checkbox', onchange: (e) => { panel.querySelectorAll('.cf-tick').forEach(b => { b.checked = e.target.checked; }); pend.forEach(x => e.target.checked ? picked.add(x.id) : picked.delete(x.id)); setMany(); } }), ` Select all ${pend.length} ${send ? 'to transmit' : 'awaiting you'}`]) : null;
         panel.replaceChildren(
-          el('p', { class: 'muted' }, 'After the Hon. Chief Judge approves items on the cash flow, the DCR Admin and Finance requests the release of funds for them, naming the beneficiaries and their accounts. Once the Chief Judge approves a release, the Accountant pays.'),
+          el('p', { class: 'muted' }, 'After the Hon. Chief Judge approves items on the cash flow, the DCR Admin and Finance requests the release of funds for them, naming the beneficiaries and their accounts. Once the Chief Judge approves a release, the Chief Registrar transmits it to the Accountant, who pays.'),
           el('div', { class: 'toolbar' }, [
             r.dcr ? el('button', { class: 'btn btn--primary', onclick: () => releaseForm() }, '+ Request Release of Funds') : null,
             pend.length ? many : null
@@ -179,7 +189,7 @@
             { label: 'Items', value: x => x.items.map(i => i.name).join('; '), primary: true },
             { label: 'Beneficiaries', value: x => String(x.items.reduce((n, i) => n + i.payees.length, 0)) },
             { label: 'Total', value: x => naira(x.total), num: true },
-            { label: 'Status', node: x => x.status === 'approved' && x.paid > 0 ? el('span', { class: 'badge badge--final' }, 'Part paid') : rbadge(x.status) }
+            { label: 'Status', node: relBadge }
           ], r.releases, [{ label: x => x.can.answer ? 'Answer Query' : 'Details', onClick: x => releaseDetails(x.id, releasesView) }]) : ui.empty('No release of funds has been requested yet.')
         );
       }
@@ -417,7 +427,7 @@
               el('button', { class: 'btn btn--ghost btn--small', type: 'button', onclick: () => { dialog.close(); releaseDetails(rl.id, after); } }, 'Open')]),
             el('div', { class: 'cfx-rel__payees' }, rl.payees.map(p => el('div', { class: 'cfx-payee' }, [
               el('span', { class: 'cfx-payee__name' }, p.name), el('span', { class: 'muted' }, `${p.bank} · ${p.accountNo}`), el('span', { class: 'cfx-payee__amt' }, naira(p.amount)),
-              p.paid ? el('span', { class: 'badge badge--final' }, `Paid, PV ${p.paid.pvNo}`) : el('span', { class: 'badge badge--draft' }, rl.status === 'approved' ? 'To be paid' : rl.status === 'declined' ? 'Not approved' : 'Awaiting approval')
+              p.paid ? el('span', { class: 'badge badge--final' }, `Paid, PV ${p.paid.pvNo}`) : el('span', { class: 'badge badge--draft' }, rl.status === 'approved' ? (rl.transmitted ? 'To be paid' : 'Awaiting transmission') : rl.status === 'declined' ? 'Not approved' : 'Awaiting approval')
             ])))
           ]))]) : null;
         const body = el('div', { class: 'cfx' }, [actions, hero, steps, ...notes, cards, x.sections.length ? breakdownView(x) : null, rels,
@@ -652,13 +662,14 @@
           x.can.decide ? btn('✔  Approve', 'btn--ok', () => approveReleases([x], done)) : null,
           x.can.decide ? btn('↩  Return with Query', 'btn--ghost', () => releaseQuery(x, done)) : null,
           x.can.decide ? btn('✕  Decline', 'btn--danger', () => releaseDecline(x, done)) : null,
-          x.can.answer ? btn('Answer Query', 'btn--primary', () => { dialog.close(); releaseForm(x, null, after); }) : null
+          x.can.answer ? btn('Answer Query', 'btn--primary', () => { dialog.close(); releaseForm(x, null, after); }) : null,
+          x.can.transmit ? btn('➜  Transmit to the Accountant', 'btn--primary', () => transmitReleases([x], done)) : null
         ]);
         const hero = el('div', { class: 'cfx-hero cfx-hero--' + (x.status === 'approved' ? 'approved' : x.status) }, [
           el('div', { class: 'cfx-hero__main' }, [
             el('div', { class: 'cfx-hero__over' }, `Release of funds · ${x.refNo}`),
             el('div', { class: 'cfx-hero__title' }, x.items.map(i => i.name).join('; ')),
-            el('div', { class: 'cfx-hero__by' }, [rbadge(x.status), el('span', null, `Requested by ${x.requestedByName}, DCR Admin and Finance · ${day(x.createdAt)}`)])
+            el('div', { class: 'cfx-hero__by' }, [relBadge(x), el('span', null, `Requested by ${x.requestedByName}, DCR Admin and Finance · ${day(x.createdAt)}`)])
           ]),
           el('div', { class: 'cfx-hero__money' }, [
             el('div', { class: 'cfx-hero__label' }, 'Amount to release'),
@@ -675,14 +686,16 @@
           x.status === 'returned' ? step('Query from the CJ', 'is-next', x.query ? day(x.query.at) : '')
             : ok ? step('Approved by the CJ', 'is-done', day(x.decision.at))
               : x.status === 'declined' ? step('Not approved', 'is-stop', day(x.decision.at)) : step('Approval of the CJ', 'is-next', 'Waiting'),
-          x.status === 'declined' ? null : step(x.status === 'paid' ? 'Paid' : x.paid > 0 ? 'Part paid' : 'Paid', x.status === 'paid' ? 'is-done' : ok ? 'is-next' : '', x.status === 'paid' ? '' : ok ? 'With the Accountant' : '')
+          x.status === 'declined' ? null : step('Transmitted by the CR', x.transmitted ? 'is-done' : ok ? 'is-next' : '', x.transmitted ? day(x.transmitted.at) : ok ? 'With the Chief Registrar' : ''),
+          x.status === 'declined' ? null : step(x.status === 'paid' ? 'Paid' : x.paid > 0 ? 'Part paid' : 'Paid', x.status === 'paid' ? 'is-done' : x.transmitted ? 'is-next' : '', x.status === 'paid' ? '' : x.transmitted ? 'With the Accountant' : '')
         ].filter(Boolean));
         const notice = (cls, title, text, by) => el('div', { class: 'cfx-note cfx-note--' + cls }, [el('div', { class: 'cfx-note__title' }, title), el('div', null, text), by ? el('div', { class: 'cfx-note__by' }, by) : null]);
         const notes = [
           x.status === 'returned' && x.query ? notice('query', '↩ Query from the Hon. Chief Judge', x.query.text, `${x.query.byName}, ${when(x.query.at)}`) : null,
           x.status === 'declined' ? notice('declined', '✕ Not approved', x.decision.note || 'No reason given.', `${x.decision.byName}, ${when(x.decision.at)} · The amount is free to be requested again`) : null,
           ok && x.decision.note ? notice('approved', '✔ Remark of the Hon. Chief Judge', x.decision.note, `${x.decision.byName}, ${when(x.decision.at)}`) : null,
-          x.note ? notice('info', 'Remarks of the DCR Admin and Finance', x.note, '') : null
+          x.note ? notice('info', 'Remarks of the DCR Admin and Finance', x.note, '') : null,
+          x.transmitted && x.transmitted.note ? notice('info', 'Transmitted by the Chief Registrar', x.transmitted.note, `${x.transmitted.byName}, ${when(x.transmitted.at)}`) : null
         ].filter(Boolean);
         const items = el('div', { class: 'cfx-break' }, [el('h4', null, `Items and beneficiaries (${x.items.length})`),
           ...x.items.map(it => el('div', { class: 'cfx-break__sec' }, [
@@ -692,7 +705,7 @@
               el('tbody', null, it.payees.map(p => el('tr', null, [
                 el('td', null, [p.name, p.accountName && p.accountName !== p.name ? el('div', { class: 'muted' }, `Account name: ${p.accountName}`) : null]),
                 el('td', null, p.bank), el('td', null, el('span', { class: 'cf-acct' }, p.accountNo)), el('td', { class: 'num' }, naira(p.amount)),
-                el('td', null, p.paid ? `${naira(p.paid.amount)}, PV ${p.paid.pvNo}, ${day(p.paid.date)}` : ok ? 'To be paid' : '—'),
+                el('td', null, p.paid ? `${naira(p.paid.amount)}, PV ${p.paid.pvNo}, ${day(p.paid.date)}` : ok ? (x.transmitted ? 'To be paid' : 'Awaiting transmission') : '—'),
                 x.can.pay ? el('td', null, p.paid ? null : el('button', { class: 'btn btn--primary btn--small', type: 'button', onclick: () => { dialog.close(); payDialog(x, p, after || payView); } }, 'Record Payment')) : null
               ]))),
               el('tfoot', null, el('tr', null, [el('td', { colspan: '3' }, 'Total for this item'), el('td', { class: 'num' }, naira(it.amount)), el('td'), x.can.pay ? el('td') : null]))
@@ -700,7 +713,7 @@
           ])),
           x.items.length > 1 ? el('div', { class: 'cfx-break__grand' }, [el('span', null, 'Total to release'), el('strong', null, naira(x.total))]) : null
         ]);
-        const TONE = { requested: 'info', answered: 'info', approved: 'ok', paid: 'ok', declined: 'bad', returned: 'warn' };
+        const TONE = { requested: 'info', answered: 'info', approved: 'ok', paid: 'ok', declined: 'bad', returned: 'warn', transmitted: 'info' };
         const timeline = el('div', { class: 'cfx-timeline' }, [el('h4', null, 'History'), el('ol', null, x.history.map(h => el('li', { class: 'cfx-tl cfx-tl--' + (TONE[h.action] || 'info') }, [
           el('div', { class: 'cfx-tl__head' }, [el('strong', null, ACTION[h.action] || h.action), el('span', null, `${h.byName} · ${when(h.at)}`)]),
           h.note ? el('div', { class: 'cfx-tl__note' }, h.note) : null
@@ -729,6 +742,25 @@
           router.refreshBadges(); setTimeout(after, 0); return true;
         } });
       }
+      // The Chief Registrar transmits approved releases to the Accountant.
+      function transmitReleases(list, after) {
+        if (!list.length) return;
+        const total = list.reduce((n, x) => n + x.total, 0);
+        const note = el('input', { type: 'text', maxlength: '500', placeholder: 'Optional, e.g. Pay before Friday' });
+        ui.modal(list.length > 1 ? `Transmit ${list.length} Releases to the Accountant` : `Transmit to the Accountant · ${list[0].refNo}`, el('div', null, [
+          el('div', { class: 'cfa-list' }, list.map(x => el('div', { class: 'cfa-sec' }, [
+            el('div', { class: 'cfa-sec__head cfa-line--plain' }, [el('span'), el('strong', null, `${x.refNo} · ${x.items.map(i => i.name).join('; ')}`), el('span', null, naira(x.total))]),
+            ...x.items.flatMap(i => i.payees.map(p => el('div', { class: 'cfa-line cfa-line--plain' }, [el('span'), el('span', null, `${p.name} · ${p.bank} · ${p.accountNo}`), el('span', { class: 'cfa-line__amt' }, naira(p.amount))])))
+          ]))),
+          el('div', { class: 'cfa-kept' }, `Total: ${naira(total)}`),
+          ui.field('Note to the Accountant (optional)', note)
+        ]), { wide: true, confirmText: list.length > 1 ? `Transmit ${list.length}` : 'Transmit', confirmClass: 'btn--ok', onConfirm: async () => {
+          await api.post('/cashflow/releases/transmit', { ids: list.map(x => x.id), note: note.value });
+          ui.toast(`Transmitted to the Accountant, ${naira(total)}.`, 'success', 6000);
+          router.refreshBadges(); setTimeout(after, 0); return true;
+        } });
+      }
+
       function releaseQuery(x, done) {
         const note = el('textarea', { rows: 3, maxlength: '2000', placeholder: 'What should the DCR Admin and Finance clarify or correct?' });
         ui.modal(`Return with Query · ${x.refNo}`, ui.field('Query', note), { confirmText: 'Return', onConfirm: async () => {
@@ -768,6 +800,7 @@
           <div class="cfp-from"><strong>${esc(x.requestedByName)}</strong><br>Deputy Chief Registrar (Admin and Finance)</div>
           ${ok ? `<div class="doc-sign-wrap"><div class="doc-sign-block"><div class="doc-sig-meta" style="font-weight:700">APPROVED</div>${x.decision.signatureUrl ? `<img class="doc-sig-img" src="${x.decision.signatureUrl}" alt="Signature">` : ''}<div class="doc-sign">${esc([x.decision.title, x.decision.byName].filter(Boolean).join(' '))}<br>Hon. Chief Judge</div><div class="doc-sig-meta">${esc(day(x.decision.at))}${x.decision.note ? `: ${esc(x.decision.note)}` : ''}</div></div></div>`
             : `<p class="muted">Status: ${esc((RSTATUS[x.status] || [x.status])[0])}. Not yet approved: no payment may be made on this memo.</p>`}
+          ${x.transmitted ? `<p style="font-size:9.5pt">Transmitted to the Accountant for payment by ${esc(x.transmitted.byName)}, Chief Registrar, on ${esc(day(x.transmitted.at))}.</p>` : ''}
           ${qr ? `<div class="doc-verify"><img class="doc-qr" src="${qr.qrDataUrl}" alt="Verification QR code"><div class="doc-verify__text">
             <strong>Verification code: ${esc(qr.verifyCode)}</strong><br>Scan the QR code, or visit ${esc(qr.verifyUrl)}, to confirm this release was approved by the Hon. Chief Judge and that the beneficiaries, account numbers and amounts have not been altered.</div></div>` : ''}
           <footer class="doc-footer"><span>Printed ${esc(day(new Date()))}</span><span>Powered by the Directorate of ICT, Gombe State High Court of Justice</span></footer></article>`,

@@ -136,6 +136,15 @@ test('requests, the CJ\'s decisions item by item, payment, and the balance', asy
   r = await u.cj.post(`/api/cashflow/releases/${rel.id}/decide`, { action: 'approve', pin: '1357' });
   assert.equal(r.status, 200, JSON.stringify(r.body));
   const pid = rel.items[0].payees[0].id;
+  // The Chief Registrar transmits it to the Accountant; not before.
+  assert.ok((await u.cr.get('/api/notifications')).body.notifications.some(n => /Transmit it to the Accountant/.test(n.message)), 'the CR is told');
+  assert.equal((await u.acct.get('/api/cashflow/releases')).body.releases.length, 0, 'the Accountant does not see it yet');
+  assert.equal((await u.acct.post(`/api/cashflow/releases/${rel.id}/pay`, { payee: pid, pvNo: 'PV/11/26' })).status, 403, 'not before transmission');
+  assert.equal((await u.dcr.post('/api/cashflow/releases/transmit', { ids: [rel.id] })).status, 403, 'only the CR transmits');
+  r = await u.cr.post('/api/cashflow/releases/transmit', { ids: [rel.id], note: 'Please pay' });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal((await u.cr.post('/api/cashflow/releases/transmit', { ids: [rel.id] })).status, 409, 'not twice');
+  assert.ok((await u.acct.get('/api/notifications')).body.notifications.some(n => /transmitted by the Chief Registrar/.test(n.message)), 'the Accountant is told');
   assert.equal((await u.acct.post(`/api/cashflow/releases/${rel.id}/pay`, { payee: pid, pvNo: '' })).status, 400, 'the PV number');
   // The amount is locked to what the CJ approved, whatever is sent.
   r = await u.acct.post(`/api/cashflow/releases/${rel.id}/pay`, { payee: pid, pvNo: 'PV/11/26', amount: 1000 });
@@ -294,7 +303,8 @@ test('release of funds: several beneficiaries, instalments, queries, a decline f
   r = await u.cj.post('/api/cashflow/releases/decide-many', { ids: [first.id, second.id], pin: '1357' });
   assert.equal(r.status, 200, JSON.stringify(r.body));
   assert.equal(r.body.approved, 2);
-  assert.ok((await u.acct.get('/api/notifications')).body.notifications.some(n => /for payment/.test(n.message)), 'the Accountant is told');
+  r = await u.cr.post('/api/cashflow/releases/transmit', { ids: [first.id, second.id] });
+  assert.equal(r.body.transmitted, 2, 'the CR transmits both at once');
   // The Accountant pays each beneficiary; the item is paid when all is paid.
   const pay = async (rel, i, pv) => u.acct.post(`/api/cashflow/releases/${rel.id}/pay`, { payee: rel.items[0].payees[i].id, pvNo: pv });
   assert.equal((await pay(first, 0, 'PV/1')).status, 200);
@@ -316,6 +326,7 @@ test('release of funds: several beneficiaries, instalments, queries, a decline f
   assert.equal((await u.dcr.get(`/api/cashflow/${toner.id}`)).body.item.toRelease, 90000, 'free again');
   r = await u.dcr.post('/api/cashflow/releases', { items: [{ item: toner.id, payees: [{ name: 'Office Supplies', bank: 'Access Bank', accountNo: '0712345678', amount: 60000 }] }] });
   await u.cj.post(`/api/cashflow/releases/${r.body.release.id}/decide`, { action: 'approve', pin: '1357' });
+  await u.cr.post('/api/cashflow/releases/transmit', { ids: [r.body.release.id] });
   await u.acct.post(`/api/cashflow/releases/${r.body.release.id}/pay`, { payee: r.body.release.items[0].payees[0].id, pvNo: 'PV/4' });
   assert.equal((await u.cr.post(`/api/cashflow/${toner.id}/complete`)).status, 403);
   r = await u.dcr.post(`/api/cashflow/${toner.id}/complete`, { note: 'The rest from store' });
@@ -357,6 +368,7 @@ test('the approved release memo has a QR code that confirms the beneficiaries an
   v = await fetch(`${base}/api/verify/${q.body.verifyCode}`).then(x => x.json());
   assert.equal(v.status, 'tampered');
   await u.cj.post(`/api/cashflow/releases/${waiting.id}/decide`, { action: 'approve', pin: '1357' });
+  await u.cr.post('/api/cashflow/releases/transmit', { ids: [waiting.id] });
   const w = (await u.acct.get(`/api/cashflow/releases/${waiting.id}`)).body.release;
   await CashRelease.updateOne({ _id: waiting.id }, { $set: { 'items.0.payees.0.amount': 90000 } });
   assert.equal((await u.acct.post(`/api/cashflow/releases/${waiting.id}/pay`, { payee: w.items[0].payees[0].id, pvNo: 'PV/9' })).status, 409, 'altered after approval: not paid');
