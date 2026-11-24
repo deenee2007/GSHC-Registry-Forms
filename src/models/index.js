@@ -378,6 +378,18 @@ const CashItemSchema = new Schema({
 }, { timestamps: true });
 CashItemSchema.index({ month: 1, sn: 1 });
 
+// A printed approved cash flow: what was printed, fixed under its own
+// verification code, so its QR code confirms it (and shows if altered).
+const CashSheetSchema = new Schema({
+  month:       { type: String, required: true, index: true },
+  verifyCode:  { type: String, required: true, unique: true },
+  items:       { type: [{ _id: false, sn: Number, item: String, requestedByName: String, amount: Number, approved: Number, approvedBy: String, approvedAt: Date, paid: Boolean, pvNo: String }], default: [] },
+  total:       Number,
+  contentHash: String,
+  printedByName: String,
+  printedAt:   Date
+}, { timestamps: true });
+
 // A member of staff on the Nominal Roll of the Directorate of Personnel,
 // whether or not they sign in. The PSN is unique to each officer. Dates are
 // YYYY-MM-DD. The retirement date is worked out (60 years of age or 35
@@ -535,5 +547,6 @@ module.exports = {
   receiptKey,
   DiaryEntry:   mongoose.model('DiaryEntry', DiaryEntrySchema),
   CashItem:     mongoose.model('CashItem', CashItemSchema),
+  CashSheet:    mongoose.model('CashSheet', CashSheetSchema),
   CASE_STATUSES, DOC_TYPES
 };

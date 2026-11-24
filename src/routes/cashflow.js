@@ -16,7 +16,9 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const multer = require('multer');
-const { CashItem, User, Notification } = require('../models');
+const { CashItem, CashSheet, User, Notification } = require('../models');
+const crypto = require('crypto');
+const verification = require('../services/verification');
 const cf = require('../services/cashflow');
 const fileStore = require('../services/fileStore');
 const store = require('../services/signatureStore');
@@ -38,7 +40,9 @@ const has = (u, roles) => (u.signerRoles || []).some(r => roles.includes(r));
 const isCJ = (u) => has(u, ['chief_judge']);
 const isRequester = (u) => has(u, REQUESTERS);
 const isAccountant = (u) => has(u, ['accountant']);
-const seesAll = (u) => isCJ(u) || isRequester(u);
+// The administrator sees everything (the money too), to oversee; acting is for the officers.
+const seesAll = (u) => isCJ(u) || isRequester(u) || isAdmin(u);
+const seesMoney = (u) => isCJ(u) || isAdmin(u);
 const mine = (u, it) => String(it.requestedBy) === String(u._id);
 const roleOf = (u) => ['cj_aide', 'chief_registrar', 'dcr_admin_finance'].find(r => u.signerRoles.includes(r)) || '';
 const ROLE_NAME = { cj_aide: 'Aide to the Hon. Chief Judge', chief_registrar: 'Chief Registrar', dcr_admin_finance: 'DCR Admin and Finance' };
@@ -118,7 +122,7 @@ function cleanFields(b) {
 // ── Who I am here, and the month ──
 router.get('/me', wrap(async (req, res) => {
   await cf.rollOver();
-  res.json({ month: cf.thisMonth(), monthName: cf.monthName(cf.thisMonth()), cj: isCJ(req.user), requester: isRequester(req.user),
+  res.json({ month: cf.thisMonth(), monthName: cf.monthName(cf.thisMonth()), cj: isCJ(req.user), seesMoney: seesMoney(req.user), requester: isRequester(req.user),
     accountant: isAccountant(req.user), seesAll: seesAll(req.user), admin: isAdmin(req.user) });
 }));
 
@@ -142,7 +146,7 @@ router.get('/', wrap(async (req, res) => {
   const months = (await CashItem.distinct('month')).concat(Object.keys(await cf.releases()), [cf.thisMonth()]);
   res.json({ month, monthName: cf.monthName(month), items: list.map(x => serialize(x, req.user)),
     months: [...new Set(months)].sort().reverse().map(m => ({ month: m, name: cf.monthName(m) })),
-    summary: isCJ(req.user) ? await cf.summary(month) : null });
+    summary: seesMoney(req.user) ? await cf.summary(month) : null });
 }));
 
 // A requester's own items, every month.
@@ -289,6 +293,46 @@ router.get('/:id/signature', wrap(async (req, res) => {
   res.set('Content-Type', img.contentType).set('Cache-Control', 'private, max-age=86400').send(img.buffer);
 }));
 
+// ── The printed approved cash flow, with its QR code ──
+// What is printed is fixed under a verification code; printed again
+// unchanged, the same code. The public check confirms it and its total.
+const sheetHash = (month, items, total) => crypto.createHash('sha256').update(JSON.stringify({ month, items: items.map(i => [i.sn, i.item, i.amount, i.approved, i.approvedBy, new Date(i.approvedAt).toISOString(), !!i.paid, i.pvNo || '']), total })).digest('hex');
+router.post('/sheet', wrap(async (req, res) => {
+  if (!seesAll(req.user)) throw new HttpError(403, 'You do not have access to the cash flow.');
+  const month = cf.MONTH.test(req.body.month || '') ? req.body.month : cf.thisMonth();
+  const list = await CashItem.find({ month, status: { $in: ['approved', 'paid'] } }).sort({ sn: 1 });
+  if (!list.length) throw new HttpError(409, 'Nothing approved on this cash flow yet.');
+  const items = list.map(x => ({ sn: x.sn, item: x.item, requestedByName: x.requestedByName, amount: x.amount, approved: x.decision.amount,
+    approvedBy: [x.decision.title, x.decision.byName].filter(Boolean).join(' '), approvedAt: x.decision.at, paid: x.status === 'paid', pvNo: x.payment ? x.payment.pvNo : '' }));
+  const total = Math.round(items.reduce((n, i) => n + i.approved, 0) * 100) / 100;
+  const hash = sheetHash(month, items, total);
+  let sheet = await CashSheet.findOne({ month, contentHash: hash });
+  if (!sheet) {
+    let code;
+    for (let i = 0; i < 5; i++) { code = verification.newCode(); if (!(await CashSheet.exists({ verifyCode: code }))) break; }
+    sheet = await CashSheet.create({ month, verifyCode: code, items, total, contentHash: hash, printedByName: req.user.fullName, printedAt: new Date() });
+    await audit.log(req, 'cashflow_sheet_printed', { details: { month, verifyCode: code, total, items: items.length } });
+  }
+  const url = `${verification.baseUrl(req)}/verify/${sheet.verifyCode}`;
+  res.json({ verifyCode: sheet.verifyCode, verifyUrl: url, qrDataUrl: await verification.qrDataUrl(url), printedAt: sheet.printedAt, total });
+}));
+// The public check (from verify.js): what a code confirms, or null.
+async function verifySheet(code) {
+  const sh = await CashSheet.findOne({ verifyCode: code });
+  if (!sh) return null;
+  const items = sh.items.map(i => (i.toObject ? i.toObject() : i));
+  const intact = sheetHash(sh.month, items, sh.total) === sh.contentHash;
+  const approvers = [...new Map(items.map(i => [i.approvedBy, i])).values()];
+  return {
+    status: intact ? 'valid' : 'tampered', code: sh.verifyCode,
+    document: `Approved Cash Flow: ${cf.monthName(sh.month)}`,
+    reference: `${items.length} item(s), total approved ${money(sh.total)}`,
+    court: 'Office of the Hon. Chief Judge, Gombe State High Court of Justice',
+    issuedAt: sh.printedAt,
+    signedBy: approvers.map(i => ({ capacity: 'Hon. Chief Judge', name: i.approvedBy, title: null, signedAt: i.approvedAt }))
+  };
+}
+
 // Settings: the amount released each month (the administrator).
 router.get('/admin/releases', wrap(async (req, res) => {
   if (!isAdmin(req.user)) throw new HttpError(403, 'Only an administrator sets the amounts released.');
@@ -303,3 +347,4 @@ router.put('/admin/releases', wrap(async (req, res) => {
 }));
 
 module.exports = router;
+module.exports.verifySheet = verifySheet;

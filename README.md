@@ -618,7 +618,12 @@ query, which the requester answers and sends back. The Accountant records
 the payment (PV number, date, amount) and the balance goes down. A new
 month brings the balance forward, and items still waiting for a decision or
 a payment move into it; an item not approved is carried to the next cash
-flow or dismissed. The approved cash flow prints with the CJ's signature.
+flow or dismissed. The approved cash flow prints with the CJ's signature
+and a QR code: what was printed is fixed under its verification code
+(printed again unchanged, the same code), and the public check confirms the
+month, the number of items and the total, or shows it was altered. The
+administrator sees the whole cash flow, the money included, for oversight,
+but does not request, decide or pay.
 Each step is notified, kept in the item's history and in the audit log.
 
 ## Before going live: clearing test data

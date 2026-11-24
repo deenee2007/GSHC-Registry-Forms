@@ -76,7 +76,7 @@
     const directorate = (user.unitKeys || []).includes('personnel') && (user.privileges || []).some(p => p === 'personnel_view' || p === 'personnel_edit');
     if (approves || directorate) _nav.appendChild(navItem('🌴  Leave', () => loadModule('leave'), { 'data-nav': 'leave' }, 'leave'));
     // The monthly cash flow: the Hon. Chief Judge, those who request items, and the Accountant.
-    if ((user.signerRoles || []).some(r => ['chief_judge', 'cj_aide', 'chief_registrar', 'dcr_admin_finance', 'accountant'].includes(r))) {
+    if (permissions.isAdmin(user) || (user.signerRoles || []).some(r => ['chief_judge', 'cj_aide', 'chief_registrar', 'dcr_admin_finance', 'accountant'].includes(r))) {
       _nav.appendChild(navItem('💵  Cash Flow', () => loadModule('cashflow'), { 'data-nav': 'cashflow' }, 'cashflow'));
     }
 
