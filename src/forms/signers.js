@@ -21,7 +21,13 @@ const SIGNER_ROLES = {
   process_registrar:     'Process Registrar',     // registers new cases and gives the suit number
   staff_officer:         'Staff Officer',         // staff matters pass through them (leave applications)
   director_personnel:    'Director Personnel',    // approves leave (the Chief Registrar for senior officers)
-  marriage_registrar:    'Marriage Registrar'     // signs the notice of marriage; resolves caveats
+  marriage_registrar:    'Marriage Registrar',    // signs the notice of marriage; resolves caveats
+  // The monthly cash flow: requests by the CJ's aide, the Chief Registrar and
+  // the DCR Admin and Finance; approval by the Hon. Chief Judge; payments
+  // recorded by the Accountant.
+  cj_aide:               'Aide to the Hon. Chief Judge',
+  dcr_admin_finance:     'DCR Admin and Finance',
+  accountant:            'Accountant'
 };
 
 const judge = [{ role: 'judge', label: 'Judge' }];

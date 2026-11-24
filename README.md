@@ -1,28 +1,3 @@
-## Before going live: clearing test data
-Training and testing are done on the live site; then everything is cleared
-once, so the system starts fresh. Until it has been used, Home shows
-administrators a **Before Going Live** section with **🗑 Clear Test Data**,
-listing what it will remove. Typing `CLEAR TEST DATA` removes:
-* every form, saved copy and notification;
-* the Process Registry's cases, scanned documents, later processes and
-  Court Diary dates;
-* the nominal roll, staff folders and leave applications;
-* every user account except the administrator clearing it and the built-in
-  administrator, with their signatures, PINs, sign-in sessions and any
-  invitation or reset link not yet used;
-* the whole audit log (the clearing itself is its first new entry);
-* all numbering (suits, invoices, leave letters) and the court rotation,
-  which start again from 1.
-
-Kept, as configuration: units and their forms, signing rules, Process
-Registry settings (case types, fees), leave and personnel settings and the
-email switches. Check them once after clearing; a starting suit number set
-by hand must be set again. A backup of everything is made first; if the
-backup fails, nothing is cleared. It works **once only**: afterwards the
-section disappears and the server refuses it, so it can never touch real
-court records. Training QR codes then show "Not found". Then create the
-real staff accounts and import the real nominal roll.
-
 # GSHC Registry & Units Forms Automation System
 
 Online forms system for the **Gombe State High Court of Justice**.
@@ -627,16 +602,49 @@ unchanged; each entry and decision is in the record's History. The
 Registrar's certificate, the marriage certificate and the marriage register
 are to follow.
 
+## Cash Flow
+**💵 Cash Flow** in the menu, by signing role: the **Aide to the Hon. Chief
+Judge**, the **Chief Registrar** and the **DCR Admin and Finance** request
+items; the **Hon. Chief Judge** decides; the **Accountant** pays. One cash
+flow each month. A request (item, description, amount or quantity and unit
+price, department, justification, attachments) goes straight onto the
+month's cash flow and the CJ is notified. The CJ sees the list (S/No, item,
+amount, submitted by, status, Details) and, alone, the money: brought
+forward, released (entered by the administrator in Settings, Cash Flow),
+available, approved, paid and balance. Item by item the CJ approves (the
+amount requested or less, with the signing PIN), declines (leaving the
+carry forward or dismissal to the requester, or not) or returns it with a
+query, which the requester answers and sends back. The Accountant records
+the payment (PV number, date, amount) and the balance goes down. A new
+month brings the balance forward, and items still waiting for a decision or
+a payment move into it; an item not approved is carried to the next cash
+flow or dismissed. The approved cash flow prints with the CJ's signature.
+Each step is notified, kept in the item's history and in the audit log.
+
 ## Before going live: clearing test data
-Until it has been used, Home shows administrators a **Before Going Live**
-section with **🗑 Clear Test Data**. Typing `CLEAR TEST DATA` removes every
-form, saved copy and notification, and the audit entries about those forms
-(so Reports start from zero). Users, units, form access, signing rules,
-signatures and PINs are kept. A backup of everything is made first; if the
+Training and testing are done on the live site; then everything is cleared
+once, so the system starts fresh. Until it has been used, Home shows
+administrators a **Before Going Live** section with **🗑 Clear Test Data**,
+listing what it will remove. Typing `CLEAR TEST DATA` removes:
+* every form, saved copy and notification;
+* the Process Registry's cases, scanned documents, later processes and
+  Court Diary dates;
+* the nominal roll, staff folders and leave applications;
+* every user account except the administrator clearing it and the built-in
+  administrator, with their signatures, PINs, sign-in sessions and any
+  invitation or reset link not yet used;
+* the whole audit log (the clearing itself is its first new entry);
+* all numbering (suits, invoices, leave letters) and the court rotation,
+  which start again from 1.
+
+Kept, as configuration: units and their forms, signing rules, Process
+Registry settings (case types, fees), leave and personnel settings and the
+email switches. Check them once after clearing; a starting suit number set
+by hand must be set again. A backup of everything is made first; if the
 backup fails, nothing is cleared. It works **once only**: afterwards the
 section disappears and the server refuses it, so it can never touch real
-court records. Test QR codes then show "Not found". Test accounts no longer
-in any document can then be deleted permanently (Settings → Users → More).
+court records. Training QR codes then show "Not found". Then create the
+real staff accounts and import the real nominal roll.
 
 ## Units
 Settings → Units → **+ Add Unit** adds either another **Court Registry**

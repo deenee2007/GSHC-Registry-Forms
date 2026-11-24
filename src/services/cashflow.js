@@ -1,0 +1,82 @@
+/*
+ * src/services/cashflow.js — the monthly cash flow.
+ *
+ * Each month has the amount released (set by the administrator). The
+ * balance carries from month to month: what is available in a month is its
+ * release plus the balance brought forward; the balance goes down as
+ * payments are made. Items still pending, returned with a query, or
+ * approved but not yet paid when a month ends move into the new month's
+ * cash flow by themselves; an item declined waits for the Chief Judge (or
+ * the requester, if left to them) to carry it to the next cash flow or
+ * dismiss it.
+ */
+const mongoose = require('mongoose');
+const { CashItem } = require('../models');
+
+const meta = () => mongoose.connection.collection('appmeta');
+const RELEASES = 'cashflowReleases';
+const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+const thisMonth = (d = new Date()) => d.toISOString().slice(0, 7);
+function nextMonth(m) {
+  const [y, mm] = m.split('-').map(Number);
+  return mm === 12 ? `${y + 1}-01` : `${y}-${String(mm + 1).padStart(2, '0')}`;
+}
+const monthName = (m) => new Date(m + '-15T12:00:00Z').toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+const bad = (status, message) => Object.assign(new Error(message), { status });
+
+async function releases() {
+  const doc = await meta().findOne({ _id: RELEASES });
+  return (doc && doc.months) || {};
+}
+async function setRelease(month, amount, byName) {
+  if (!MONTH.test(month || '')) throw bad(400, 'Choose the month.');
+  const n = Number(amount);
+  if (!(n >= 0) || n > 1e13) throw bad(400, 'Enter the amount released, in naira.');
+  await meta().updateOne({ _id: RELEASES }, { $set: { [`months.${month}`]: Math.round(n * 100) / 100, [`by.${month}`]: { byName, at: new Date() } } }, { upsert: true });
+}
+
+// The next number on a month's list.
+async function nextSn(month) {
+  const r = await meta().findOneAndUpdate({ _id: `cashSeq:${month}` }, { $inc: { seq: 1 } }, { upsert: true, returnDocument: 'after' });
+  return (r && r.value ? r.value : r).seq;
+}
+
+// A new month: what was left waiting moves into it.
+async function rollOver() {
+  const now = thisMonth();
+  const left = await CashItem.find({ month: { $lt: now }, status: { $in: ['pending', 'returned', 'approved'] } });
+  for (const it of left) {
+    const from = it.month;
+    it.carriedFrom = from;
+    it.month = now;
+    it.sn = await nextSn(now);
+    it.history.push({ action: 'moved', byName: 'The system', note: `Moved from the ${monthName(from)} cash flow`, at: new Date() });
+    await it.save();
+  }
+  return left.length;
+}
+
+// The money for a month: brought forward, released, available, approved, paid, balance.
+async function summary(month) {
+  const rel = await releases();
+  const months = new Set(Object.keys(rel).filter(m => m <= month));
+  (await CashItem.distinct('month', { month: { $lte: month } })).forEach(m => months.add(m));
+  months.add(month);
+  const paidBy = Object.fromEntries((await CashItem.aggregate([
+    { $match: { month: { $lte: month }, status: 'paid' } }, { $group: { _id: '$month', n: { $sum: '$payment.amount' } } }
+  ])).map(x => [x._id, x.n]));
+  let brought = 0, out = null;
+  for (const m of [...months].sort()) {
+    const released = rel[m] || 0, paid = paidBy[m] || 0;
+    const available = brought + released;
+    if (m === month) out = { month, broughtForward: brought, released, available, paid, balance: available - paid };
+    brought = available - paid;
+  }
+  const approved = await CashItem.aggregate([{ $match: { month, status: { $in: ['approved', 'paid'] } } }, { $group: { _id: null, n: { $sum: '$decision.amount' } } }]);
+  const asked = await CashItem.aggregate([{ $match: { month, status: { $in: ['pending', 'returned'] } } }, { $group: { _id: null, n: { $sum: '$amount' } } }]);
+  return { ...out, approved: (approved[0] && approved[0].n) || 0, awaitingDecision: (asked[0] && asked[0].n) || 0,
+    approvedUnpaid: ((approved[0] && approved[0].n) || 0) - (await CashItem.aggregate([{ $match: { month, status: 'paid' } }, { $group: { _id: null, n: { $sum: '$decision.amount' } } }]).then(r => (r[0] && r[0].n) || 0)) };
+}
+
+module.exports = { thisMonth, nextMonth, monthName, releases, setRelease, nextSn, rollOver, summary, MONTH };

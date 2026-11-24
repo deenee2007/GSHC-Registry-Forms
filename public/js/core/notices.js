@@ -13,7 +13,7 @@
   const ui = () => window.App.ui;
   const api = () => window.App.api;
 
-  const KIND = { submitted: 'For signature', approved: 'Approved', signed: 'Signed', returned: 'Returned', revoked: 'Revoked', case: 'Case', leave: 'Leave' };
+  const KIND = { submitted: 'For signature', approved: 'Approved', signed: 'Signed', returned: 'Returned', revoked: 'Revoked', case: 'Case', leave: 'Leave', cashflow: 'Cash Flow' };
   let bell = null, badge = null, panel = null, open = false;
 
   // What a notification is about: its document, or the screen of its case or leave.
@@ -21,6 +21,7 @@
     const router = window.App.router;
     if (n.record) return window.App.workflow.openDocument(n.record);
     if (n.kind === 'leave') return router.loadModule('leave');
+    if (n.kind === 'cashflow') return router.loadModule('cashflow');
     if (n.kind === 'case' && n.link) {
       const units = await router.units();
       if (n.link === 'assign' || n.link.startsWith('assign:')) return router.loadModule('assign', n.link === 'assign' ? {} : { tab: n.link.slice(7) });

@@ -153,7 +153,7 @@ const AuditLogSchema = new Schema({
 
 const NotificationSchema = new Schema({
   user:    { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
-  kind:    { type: String, enum: ['submitted', 'approved', 'returned', 'revoked', 'signed', 'case', 'leave'], required: true },
+  kind:    { type: String, enum: ['submitted', 'approved', 'returned', 'revoked', 'signed', 'case', 'leave', 'cashflow'], required: true },
   link:    String, // for a case notice: the screen it opens ("assign", "process" or "register:<unit key>")
   record:  { type: Schema.Types.ObjectId, ref: 'Record' },
   message: String,
@@ -348,6 +348,36 @@ const DiaryEntrySchema = new Schema({
   updatedByName: String
 }, { timestamps: true });
 
+// A request on the monthly cash flow: an item asked for by the CJ's aide,
+// the Chief Registrar or the DCR Admin and Finance; approved (in full or a
+// lower amount), declined or returned with a query by the Hon. Chief Judge,
+// item by item; paid by the Accountant. An item not approved is carried to
+// the next month or dismissed. Each step is kept in its history.
+const CASH_STATUSES = ['pending', 'returned', 'approved', 'declined', 'paid', 'dismissed'];
+const CashItemSchema = new Schema({
+  month:         { type: String, required: true, index: true },        // YYYY-MM: the cash flow it is on
+  sn:            { type: Number, required: true },                      // its number on that month's list
+  item:          { type: String, required: true, trim: true },
+  description:   { type: String, trim: true, default: '' },
+  quantity:      { type: Number, default: null },
+  unitPrice:     { type: Number, default: null },
+  amount:        { type: Number, required: true },                      // requested
+  department:    { type: String, trim: true, default: '' },
+  justification: { type: String, trim: true, default: '' },
+  attachments:   { type: [{ _id: false, name: String, file: FileRef }], default: [] },
+  status:        { type: String, enum: CASH_STATUSES, default: 'pending', index: true },
+  requestedBy:   { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  requestedByName: String,
+  requestedByRole: String,
+  query:         { type: { _id: false, text: String, byName: String, at: Date }, default: null },
+  decision:      { type: { _id: false, kind: String, amount: Number, note: String, by: Schema.Types.ObjectId, byName: String, title: String, at: Date, image: ImageRef }, default: null },
+  requesterDecides: { type: Boolean, default: false },                  // the CJ left carrying or dismissing to the requester
+  payment:       { type: { _id: false, pvNo: String, date: String, amount: Number, byName: String, at: Date }, default: null },
+  carriedFrom:   { type: String, default: '' },                         // the month it came from
+  history:       { type: [{ _id: false, action: String, byName: String, note: String, at: Date }], default: [] }
+}, { timestamps: true });
+CashItemSchema.index({ month: 1, sn: 1 });
+
 // A member of staff on the Nominal Roll of the Directorate of Personnel,
 // whether or not they sign in. The PSN is unique to each officer. Dates are
 // YYYY-MM-DD. The retirement date is worked out (60 years of age or 35
@@ -504,5 +534,6 @@ module.exports = {
   Leave:        mongoose.model('Leave', LeaveSchema),
   receiptKey,
   DiaryEntry:   mongoose.model('DiaryEntry', DiaryEntrySchema),
+  CashItem:     mongoose.model('CashItem', CashItemSchema),
   CASE_STATUSES, DOC_TYPES
 };

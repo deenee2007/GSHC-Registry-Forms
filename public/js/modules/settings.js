@@ -532,6 +532,24 @@
 
       // The Directorate of Personnel: stations, ranks (with their cadre and
       // the other ways they are written, for the import), cadres, documents.
+      // ── CASH FLOW: the amount released each month (seen only by the Hon. Chief Judge) ──
+      async function renderCashflow() {
+        ui.clear(panel);
+        let r;
+        try { r = await api.get('/cashflow/admin/releases'); } catch (e) { panel.appendChild(ui.empty(e.message)); return; }
+        const month = el('input', { type: 'month', value: r.thisMonth });
+        const amount = el('input', { type: 'number', min: '0', step: '0.01', placeholder: 'Amount released, ₦' });
+        const naira = (n) => `₦${Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        panel.append(
+          el('p', { class: 'muted' }, 'The amount released for each month. Only the Hon. Chief Judge sees it on the cash flow, with the balance brought forward from the month before and the payments made. To correct a month, enter it again.'),
+          el('div', { class: 'toolbar' }, [ui.field('Month', month), ui.field('Amount released, ₦', amount),
+            el('button', { class: 'btn btn--primary', onclick: async () => {
+              try { await api.put('/cashflow/admin/releases', { month: month.value, amount: amount.value }); ui.toast('Saved.', 'success'); renderCashflow(); } catch (e) { ui.toast(e.message, 'error'); }
+            } }, 'Save')]),
+          r.releases.length ? ui.table([{ label: 'Month', key: 'name' }, { label: 'Amount released', value: x => naira(x.amount) }], r.releases) : ui.empty('No release entered yet.')
+        );
+      }
+
       async function renderPersonnel() {
         const s = await api.get('/personnel/settings');
         ui.clear(panel);
@@ -608,7 +626,7 @@
 
       const tabDefs = [
         ['Users', renderUsers], ['Units', renderUnits], ['Form Access', renderFormAccess],
-        ['Signing Rules', renderSigning], ['Process Registry', renderProcess], ['Personnel', renderPersonnel], ['Audit Log', renderAudit]
+        ['Signing Rules', renderSigning], ['Process Registry', renderProcess], ['Personnel', renderPersonnel], ['Cash Flow', renderCashflow], ['Audit Log', renderAudit]
       ];
       tabDefs.forEach(([name, fn], i) => {
         const btn = el('button', { class: 'tab' + (i === 0 ? ' is-active' : ''), role: 'tab', onclick: () => {
