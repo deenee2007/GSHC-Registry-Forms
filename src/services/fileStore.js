@@ -32,7 +32,7 @@ function sniff(buffer) {
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
 
 async function save(buffer, originalName, folder = 'receipts') {
-  const doc = folder === 'documents';
+  const doc = folder !== 'receipts'; // documents, cash flow attachments and the like: 10 MB, "document" wording
   if (!buffer || !buffer.length) throw fail('No file received.');
   if (buffer.length > (doc ? DOC_MAX_BYTES : MAX_BYTES)) throw fail(doc
     ? 'The file must be under 10 MB. Scan at 200 dpi in greyscale, or upload a long document in parts.'

@@ -212,7 +212,7 @@ router.post('/:id/decide', wrap(async (req, res) => {
     it.decision = { kind: 'declined', amount: 0, note, by: me._id, byName: me.fullName, title: me.title, at: new Date() };
     it.status = 'declined';
     it.requesterDecides = !!req.body.requesterDecides;
-    it.history.push({ action: 'declined', byName: me.fullName, note: [note, it.requesterDecides ? 'The requester to carry it forward or dismiss it' : ''].filter(Boolean).join('. '), at: new Date() });
+    it.history.push({ action: 'declined', byName: me.fullName, note: [note && note.replace(/[.\s]+$/, ''), it.requesterDecides ? 'The requester to carry it forward or dismiss it' : ''].filter(Boolean).join('. '), at: new Date() });
   } else if (action === 'return') {
     if (!note) throw new HttpError(400, 'Write the query.');
     it.query = { text: note, byName: me.fullName, at: new Date() };
