@@ -160,3 +160,40 @@ test('a new month: the balance is brought forward, and what was left waiting mov
   assert.equal((await u.cj.post(`/api/cashflow/${st.id}/dismiss`)).body.item.status, 'dismissed');
   assert.ok(!(await u.cj.get(`/api/cashflow?month=${now}`)).body.items.some(x => x.item === 'Stationery'), 'off the list');
 });
+
+test('the administrator oversees the cash flow (everything, the money too) but does not act on it', async () => {
+  const r = await admin.get('/api/cashflow');
+  assert.equal(r.status, 200);
+  assert.ok(r.body.items.length >= 1, 'every item');
+  assert.ok(r.body.summary && typeof r.body.balance === 'undefined' && r.body.summary.balance !== undefined, 'the money');
+  const item = r.body.items[0];
+  assert.equal((await admin.get(`/api/cashflow/${item.id}`)).status, 200, 'details');
+  assert.equal((await admin.post('/api/cashflow', { item: 'X', amount: 5 })).status, 403, 'no requests');
+  const pending = r.body.items.find(x => x.status === 'pending');
+  if (pending) assert.equal((await admin.post(`/api/cashflow/${pending.id}/decide`, { action: 'decline' })).status, 403, 'no decisions');
+});
+
+test('the printed approved cash flow has a QR code that confirms it, and shows if it was altered', async () => {
+  const { CashSheet } = require('../src/models');
+  const month = cf.thisMonth();
+  const a = await u.cj.post('/api/cashflow/sheet', { month });
+  assert.equal(a.status, 200, JSON.stringify(a.body));
+  assert.match(a.body.verifyCode, /^GSHC-/);
+  assert.match(a.body.qrDataUrl, /^data:image\/png/);
+  assert.equal((await admin.post('/api/cashflow/sheet', { month })).body.verifyCode, a.body.verifyCode, 'printed again unchanged: the same code');
+  assert.equal((await u.clerk.post('/api/cashflow/sheet', { month })).status, 403);
+  const v = await fetch(`${base}/api/verify/${a.body.verifyCode}`).then(x => x.json());
+  assert.equal(v.status, 'valid');
+  assert.match(v.document, /Approved Cash Flow/);
+  assert.match(v.reference, /total approved ₦350,000\.00/);
+  assert.equal(v.signedBy[0].capacity, 'Hon. Chief Judge');
+  // A new approval: the next print has a new code; the first still checks as it was.
+  const n = (await u.aide.post('/api/cashflow', { item: 'Toner', amount: 90000 })).body.item;
+  await u.cj.post(`/api/cashflow/${n.id}/decide`, { action: 'approve', pin: '1357' });
+  const b = await u.cj.post('/api/cashflow/sheet', { month });
+  assert.notEqual(b.body.verifyCode, a.body.verifyCode);
+  assert.equal((await fetch(`${base}/api/verify/${a.body.verifyCode}`).then(x => x.json())).status, 'valid');
+  // Altered in the database: the check says so.
+  await CashSheet.updateOne({ verifyCode: a.body.verifyCode }, { total: 1 });
+  assert.equal((await fetch(`${base}/api/verify/${a.body.verifyCode}`).then(x => x.json())).status, 'tampered');
+});

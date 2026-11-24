@@ -24,6 +24,9 @@ router.get('/:code', async (req, res, next) => {
       // A case assignment slip from the Process Registry.
       const c = code ? await Case.findOne({ verifyCode: code, assignment: { $ne: null } }) : null;
       if (!c) {
+        // A printed approved cash flow.
+        const sheet = code ? await require('./cashflow').verifySheet(code) : null;
+        if (sheet) return res.json(sheet);
         // The slip of an assignment since replaced by a reassignment.
         const old = code ? await Case.findOne({ 'formerUnits.verifyCode': code }) : null;
         if (!old) return res.status(404).json({ status: 'not_found', code: code || String(req.params.code).slice(0, 40) });

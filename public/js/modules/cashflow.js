@@ -34,6 +34,7 @@
       container.appendChild(el('div', { class: 'page-head' }, [
         el('h1', null, '💵 Cash Flow'),
         el('p', { class: 'muted' }, me.cj ? 'Items placed on the monthly cash flow for your approval. Open Details to approve, decline or return an item with a query.'
+          : me.admin && !me.requester && !me.accountant ? 'The monthly cash flow, for oversight: every item, the money and the balance. Decisions are the Hon. Chief Judge\'s; requests and payments are made by the officers concerned.'
           : me.accountant && !me.seesAll ? 'Items approved by the Hon. Chief Judge, for payment.'
             : 'Items requested on the monthly cash flow, for the approval of the Hon. Chief Judge.')
       ]));
@@ -243,9 +244,12 @@
       }
 
       // ── The month's approved cash flow, signed by the Chief Judge ──
-      function printApproved(r) {
+      async function printApproved(r) {
         const list = r.items.filter(x => ['approved', 'paid'].includes(x.status));
         if (!list.length) { ui.toast('Nothing approved on this cash flow yet.', 'info'); return; }
+        // What is printed is fixed under a verification code, for its QR code.
+        let sheet;
+        try { sheet = await api.post('/cashflow/sheet', { month: r.month }); } catch (e) { ui.toast(e.message, 'error'); return; }
         const total = list.reduce((n, x) => n + x.decision.amount, 0);
         const signer = list.slice().reverse().find(x => x.decision && x.decision.signatureUrl);
         const rows = list.map((x, i) => `<tr><td>${i + 1}</td><td>${esc(x.item)}${x.department ? `<div class="muted">${esc(x.department)}</div>` : ''}</td><td>${esc(x.requestedByName)}</td><td style="text-align:right">${esc(naira(x.amount))}</td><td style="text-align:right">${esc(naira(x.decision.amount))}</td><td>${esc(day(x.decision.at))}</td><td>${x.payment ? `Paid, PV ${esc(x.payment.pvNo)}` : 'To be paid'}</td></tr>`).join('');
@@ -254,6 +258,9 @@
           <table class="doc-table"><thead><tr><th>S/No</th><th>Item</th><th>Requested by</th><th>Requested</th><th>Approved</th><th>Date approved</th><th>Payment</th></tr></thead>
           <tbody>${rows}<tr><td colspan="4" style="text-align:right"><strong>Total approved</strong></td><td style="text-align:right"><strong>${esc(naira(total))}</strong></td><td colspan="2"></td></tr></tbody></table>
           <div class="doc-sign-wrap"><div class="doc-sign-block">${signer ? `<img class="doc-sig-img" src="${signer.decision.signatureUrl}" alt="Signature">` : ''}<div class="doc-sign">${esc([signer && signer.decision.title, signer && signer.decision.byName].filter(Boolean).join(' '))}<br>Hon. Chief Judge</div>${signer ? `<div class="doc-sig-meta">Each item digitally approved on the date shown</div>` : ''}</div></div>
+          <div class="doc-verify"><img class="doc-qr" src="${sheet.qrDataUrl}" alt="Verification QR code"><div class="doc-verify__text">
+            <strong>Verification code: ${esc(sheet.verifyCode)}</strong><br>Scan the QR code, or visit ${esc(sheet.verifyUrl)}, to confirm this cash flow is genuine and unaltered.<br>
+            Total approved ${esc(naira(sheet.total))}, as at ${esc(day(sheet.printedAt))}.</div></div>
           <footer class="doc-footer"><span>Printed ${esc(day(new Date()))}</span><span>Powered by the Directorate of ICT, Gombe State High Court of Justice</span></footer></article>`, '@page { size: A4 landscape; margin: 10mm; }');
       }
     }
