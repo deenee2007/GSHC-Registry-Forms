@@ -145,7 +145,9 @@ router.get('/counts', wrap(async (req, res) => {
   const u = req.user;
   let n = 0;
   if (isCJ(u)) n += await CashItem.countDocuments({ status: 'pending' }) + await CashRelease.countDocuments({ status: 'pending' });
-  if (isAccountant(u)) n += (await CashRelease.aggregate([{ $match: { status: 'approved' } }, { $unwind: '$items' }, { $unwind: '$items.payees' }, { $match: { 'items.payees.paid': null } }, { $count: 'n' }]).then(r => (r[0] && r[0].n) || 0));
+  // The Chief Registrar: approved releases to transmit to the Accountant.
+  if (isCR(u)) n += await CashRelease.countDocuments({ status: 'approved', transmitted: null });
+  if (isAccountant(u)) n += (await CashRelease.aggregate([{ $match: { status: 'approved', transmitted: { $ne: null } } }, { $unwind: '$items' }, { $unwind: '$items.payees' }, { $match: { 'items.payees.paid': null } }, { $count: 'n' }]).then(r => (r[0] && r[0].n) || 0));
   if (isRequester(u)) n += await CashItem.countDocuments({ requestedBy: u._id, status: 'returned' });
   if (isDCR(u)) {
     n += await CashRelease.countDocuments({ requestedBy: u._id, status: 'returned' });
@@ -215,7 +217,7 @@ router.get('/:id', wrap(async (req, res) => {
   const rel = await cf.released([it._id]);
   const releases = (await CashRelease.find({ 'items.item': it._id }).sort({ createdAt: 1 })).map(r => {
     const x = r.items.find(i => String(i.item) === String(it._id));
-    return { id: String(r._id), refNo: r.refNo, status: r.status, at: r.createdAt, decidedAt: r.decision ? r.decision.at : null,
+    return { id: String(r._id), refNo: r.refNo, status: r.status, at: r.createdAt, decidedAt: r.decision ? r.decision.at : null, transmitted: !!r.transmitted,
       amount: x.amount, payees: x.payees.map(p => ({ name: p.name, bank: p.bank, accountNo: p.accountNo, amount: p.amount, paid: p.paid })) };
   });
   // A release still waiting, or a beneficiary still to be paid: not to be closed yet.
@@ -419,4 +421,4 @@ router.put('/admin/releases', wrap(async (req, res) => {
 
 module.exports = router;
 module.exports.verifySheet = verifySheet;
-module.exports.helpers = { isCJ, isDCR, isAccountant, seesAll, tell, holders, money, text, DAY };
+module.exports.helpers = { isCJ, isCR, isDCR, isAccountant, seesAll, tell, holders, money, text, DAY };

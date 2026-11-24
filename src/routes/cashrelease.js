@@ -7,7 +7,9 @@
  *   bank, account number) and the amount for each, in full or in part (an
  *   item may be released in instalments). The Chief Judge approves it with
  *   the signing PIN (several at once if he chooses), returns it with a
- *   query, or declines it. The Accountant then pays each beneficiary and
+ *   query, or declines it. The Chief Registrar then transmits the approved
+ *   release to the Accountant (several at once if he chooses), and only
+ *   then may it be paid. The Accountant pays each beneficiary and
  *   records the payment voucher; the item is paid when all that was
  *   approved has been paid.
  */
@@ -21,7 +23,7 @@ const store = require('../services/signatureStore');
 const audit = require('../services/audit');
 const { verifyPin } = require('./me');
 const { HttpError, requireLogin } = require('../middleware/auth');
-const { isCJ, isDCR, isAccountant, seesAll, tell, holders, money, text, DAY } = require('./cashflow').helpers;
+const { isCJ, isCR, isDCR, isAccountant, seesAll, tell, holders, money, text, DAY } = require('./cashflow').helpers;
 
 const router = express.Router();
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
@@ -39,7 +41,7 @@ async function load(id, u) {
   if (!mongoose.isValidObjectId(id)) throw new HttpError(404, 'Release not found.');
   const r = await CashRelease.findById(id);
   if (!r) throw new HttpError(404, 'Release not found.');
-  if (!seesAll(u) && !(isAccountant(u) && ['approved', 'paid'].includes(r.status))) throw new HttpError(403, 'You do not have access to this release.');
+  if (!seesAll(u) && !(isAccountant(u) && ['approved', 'paid'].includes(r.status) && r.transmitted)) throw new HttpError(403, 'You do not have access to this release.');
   return r;
 }
 
@@ -53,11 +55,13 @@ function serialize(r, u) {
     requestedBy: String(o.requestedBy), requestedByName: o.requestedByName, createdAt: o.createdAt, query: o.query,
     decision: o.decision ? { kind: o.decision.kind, note: o.decision.note, byName: o.decision.byName, title: o.decision.title, at: o.decision.at,
       signatureUrl: o.decision.image ? `/api/cashflow/releases/${o._id}/signature` : null } : null,
+    transmitted: o.transmitted ? { byName: o.transmitted.byName, note: o.transmitted.note, at: o.transmitted.at } : null,
     history: [...(o.history || [])].reverse(),
     can: {
       decide: isCJ(u) && o.status === 'pending',
       answer: String(o.requestedBy) === String(u._id) && o.status === 'returned',
-      pay: isAccountant(u) && o.status === 'approved'
+      transmit: isCR(u) && o.status === 'approved' && !o.transmitted,
+      pay: isAccountant(u) && o.status === 'approved' && !!o.transmitted
     }
   };
 }
@@ -102,7 +106,8 @@ const what = (r) => `${r.refNo} (${r.items.map(x => x.name).join('; ')}, ${money
 router.get('/', wrap(async (req, res) => {
   const u = req.user;
   if (!seesAll(u) && !isAccountant(u)) throw new HttpError(403, 'The release of funds is for the Hon. Chief Judge, the DCR Admin and Finance and the Accountant.');
-  const q = seesAll(u) ? {} : { status: { $in: ['approved', 'paid'] } };
+  // The Accountant: only what the Chief Registrar has transmitted.
+  const q = seesAll(u) ? {} : { status: { $in: ['approved', 'paid'] }, transmitted: { $ne: null } };
   if (['pending', 'returned', 'approved', 'declined', 'paid'].includes(req.query.status)) q.status = req.query.status;
   const list = await CashRelease.find(q).sort({ createdAt: -1 }).limit(300);
   res.json({ releases: list.map(r => serialize(r, u)), dcr: isDCR(u) });
@@ -153,8 +158,29 @@ async function approve(req, r, note) {
   await r.save();
   await audit.log(req, 'cashrelease_approved', { details: { releaseId: String(r._id), refNo: r.refNo, total: r.total } });
   await tell(await User.find({ _id: r.requestedBy, active: true }), `The Hon. Chief Judge approved the release of funds ${what(r)}.`, 'Release of funds: approved');
-  await tell(await holders('accountant'), `Release of funds approved, for payment: ${what(r)}.`, 'Release of funds: for payment');
+  await tell(await holders('chief_registrar'), `The Hon. Chief Judge approved the release of funds ${what(r)}. Transmit it to the Accountant for payment.`, 'Release of funds: to transmit');
 }
+
+// The Chief Registrar transmits approved releases to the Accountant, one or several at once.
+router.post('/transmit', wrap(async (req, res) => {
+  if (!isCR(req.user)) throw new HttpError(403, 'Only the Chief Registrar transmits releases to the Accountant.');
+  const ids = [...new Set((Array.isArray(req.body.ids) ? req.body.ids : []).map(String))].filter(i => mongoose.isValidObjectId(i));
+  if (!ids.length) throw new HttpError(400, 'Select the releases to transmit.');
+  if (ids.length > 100) throw new HttpError(400, 'Transmit up to 100 releases at a time.');
+  const list = await CashRelease.find({ _id: { $in: ids } });
+  if (list.length !== ids.length || list.some(r => r.status !== 'approved' || r.transmitted)) throw new HttpError(409, 'Some of the releases selected are not approved releases waiting to be transmitted. Refresh the list.');
+  const note = text(req.body.note, 1000);
+  const at = new Date();
+  for (const r of list) {
+    r.transmitted = { by: req.user._id, byName: req.user.fullName, note, at };
+    r.history.push({ action: 'transmitted', byName: req.user.fullName, note: ['To the Accountant for payment', note].filter(Boolean).join('. '), at });
+    await r.save();
+    await audit.log(req, 'cashrelease_transmitted', { details: { releaseId: String(r._id), refNo: r.refNo, total: r.total } });
+  }
+  await tell(await holders('accountant'), `For payment, transmitted by the Chief Registrar: ${list.map(what).join('; ')}.${note ? ` ${note}` : ''}`, 'Release of funds: for payment');
+  await tell(await User.find({ _id: { $in: [...new Set(list.map(r => String(r.requestedBy)))] }, active: true }), `The Chief Registrar transmitted to the Accountant: ${list.map(r => r.refNo).join(', ')}.`, 'Release of funds: transmitted');
+  res.json({ transmitted: list.length, total: cf.round(list.reduce((n, r) => n + r.total, 0)) });
+}));
 
 router.get('/:rid', wrap(async (req, res) => {
   res.json({ release: serialize(await load(req.params.rid, req.user), req.user) });
@@ -223,6 +249,7 @@ router.post('/:rid/pay', wrap(async (req, res) => {
   if (!isAccountant(req.user)) throw new HttpError(403, 'Only the Accountant records payments.');
   const r = await load(req.params.rid, req.user);
   if (r.status !== 'approved') throw new HttpError(409, 'Only an approved release can be paid.');
+  if (!r.transmitted) throw new HttpError(409, 'The Chief Registrar has not yet transmitted this release for payment.');
   let line = null, entry = null;
   r.items.forEach(x => x.payees.forEach(p => { if (String(p._id) === String(req.body.payee)) { line = p; entry = x; } }));
   if (!line) throw new HttpError(404, 'Beneficiary not found.');

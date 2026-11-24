@@ -393,7 +393,7 @@ CashItemSchema.index({ month: 1, sn: 1 });
 // to the Hon. Chief Judge for one or more approved cash flow items, each
 // with the beneficiaries to be paid (bank and account), in full or in part.
 // The CJ approves it with the signing PIN (or returns it, or declines it);
-// the Accountant then pays each beneficiary.
+// the Chief Registrar transmits it to the Accountant, who pays each beneficiary.
 const CashReleaseSchema = new Schema({
   refNo:         { type: String, required: true, unique: true },
   items:         { type: [{ _id: false, item: { type: Schema.Types.ObjectId, ref: 'CashItem' }, sn: Number, month: String, name: String, amount: Number,
@@ -410,6 +410,8 @@ const CashReleaseSchema = new Schema({
   // fingerprint of what he approved (beneficiaries, accounts, amounts).
   verifyCode:    { type: String, unique: true, sparse: true },
   contentHash:   { type: String, default: '' },
+  // The Chief Registrar sends the approved release to the Accountant for payment.
+  transmitted:   { type: { _id: false, by: Schema.Types.ObjectId, byName: String, note: String, at: Date }, default: null },
   history:       { type: [{ _id: false, action: String, byName: String, note: String, at: Date }], default: [] }
 }, { timestamps: true });
 CashReleaseSchema.index({ 'items.item': 1 });
