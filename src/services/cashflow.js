@@ -11,7 +11,7 @@
  * dismiss it.
  */
 const mongoose = require('mongoose');
-const { CashItem } = require('../models');
+const { CashItem, CashRelease } = require('../models');
 
 const meta = () => mongoose.connection.collection('appmeta');
 const RELEASES = 'cashflowReleases';
@@ -49,6 +49,9 @@ async function migrate() {
   if (migrated) return;
   const old = await CashItem.find({ $or: [{ sections: { $exists: false } }, { sections: { $size: 0 } }] });
   for (const it of old) await CashItem.updateOne({ _id: it._id }, { $set: { sections: oneLine(it) } });
+  // A payment recorded before releases: into the list of payments.
+  const paid = await CashItem.find({ payment: { $ne: null }, $or: [{ payments: { $exists: false } }, { payments: { $size: 0 } }] });
+  for (const it of paid) await CashItem.updateOne({ _id: it._id }, { $set: { payments: [{ ...it.toObject().payment, month: it.month }] } });
   migrated = true;
 }
 function oneLine(it) {
@@ -87,6 +90,19 @@ function cleanSections(raw) {
 }
 const subtotal = (sec, kept) => round(sec.lines.filter(l => !kept || !l.struck).reduce((n, l) => n + l.amount, 0));
 
+// How much of each approved item is already in a release of funds (waiting,
+// returned with a query, approved or paid; a declined one frees it). A
+// beneficiary paid counts at what was paid. `except` leaves a release out
+// (the one being corrected).
+async function released(itemIds, except) {
+  const ids = itemIds.map(String);
+  const list = await CashRelease.find({ 'items.item': { $in: itemIds }, status: { $in: ['pending', 'returned', 'approved', 'paid'] }, ...(except ? { _id: { $ne: except } } : {}) });
+  const out = Object.fromEntries(ids.map(i => [i, 0]));
+  list.forEach(r => r.items.forEach(x => { const k = String(x.item); if (k in out) out[k] = round(out[k] + x.payees.reduce((n, p) => n + (p.paid ? p.paid.amount : p.amount), 0)); }));
+  return out;
+}
+const paidOf = (it) => round((it.payments || []).reduce((n, p) => n + (p.amount || 0), 0));
+
 // A new month: what was left waiting moves into it.
 async function rollOver() {
   await migrate();
@@ -109,9 +125,11 @@ async function summary(month) {
   const months = new Set(Object.keys(rel).filter(m => m <= month));
   (await CashItem.distinct('month', { month: { $lte: month } })).forEach(m => months.add(m));
   months.add(month);
+  // Paid in a month: every payment made while the item was on that month's cash flow.
   const paidBy = Object.fromEntries((await CashItem.aggregate([
-    { $match: { month: { $lte: month }, status: 'paid' } }, { $group: { _id: '$month', n: { $sum: '$payment.amount' } } }
+    { $unwind: '$payments' }, { $match: { 'payments.month': { $lte: month } } }, { $group: { _id: '$payments.month', n: { $sum: '$payments.amount' } } }
   ])).map(x => [x._id, x.n]));
+  Object.keys(paidBy).forEach(m => months.add(m));
   let brought = 0, out = null;
   for (const m of [...months].sort()) {
     const released = rel[m] || 0, paid = paidBy[m] || 0;
@@ -122,7 +140,7 @@ async function summary(month) {
   const approved = await CashItem.aggregate([{ $match: { month, status: { $in: ['approved', 'paid'] } } }, { $group: { _id: null, n: { $sum: '$decision.amount' } } }]);
   const asked = await CashItem.aggregate([{ $match: { month, status: { $in: ['pending', 'returned'] } } }, { $group: { _id: null, n: { $sum: '$amount' } } }]);
   return { ...out, approved: (approved[0] && approved[0].n) || 0, awaitingDecision: (asked[0] && asked[0].n) || 0,
-    approvedUnpaid: ((approved[0] && approved[0].n) || 0) - (await CashItem.aggregate([{ $match: { month, status: 'paid' } }, { $group: { _id: null, n: { $sum: '$decision.amount' } } }]).then(r => (r[0] && r[0].n) || 0)) };
+    approvedUnpaid: ((approved[0] && approved[0].n) || 0) - (await CashItem.aggregate([{ $match: { month, status: { $in: ['approved', 'paid'] } } }, { $unwind: '$payments' }, { $group: { _id: null, n: { $sum: '$payments.amount' } } }]).then(r => (r[0] && r[0].n) || 0)) };
 }
 
-module.exports = { migrate, oneLine, cleanSections, subtotal, thisMonth, nextMonth, monthName, releases, setRelease, nextSn, rollOver, summary, MONTH };
+module.exports = { released, paidOf, round, migrate, oneLine, cleanSections, subtotal, thisMonth, nextMonth, monthName, releases, setRelease, nextSn, rollOver, summary, MONTH };

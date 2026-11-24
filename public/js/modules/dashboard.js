@@ -192,7 +192,7 @@
         if (cash) {
           let waiting = 0;
           try { waiting = (await api.get('/cashflow/counts')).waiting; } catch (e) { /* offline */ }
-          const label = (user.signerRoles || []).includes('accountant') ? 'Approved, Waiting for Payment' : 'Returned to Me with a Query';
+          const label = (user.signerRoles || []).includes('accountant') ? 'Waiting for Payment' : 'Cash Flow: Waiting for Me';
           dash.appendChild(ui.el('div', { class: 'dash-stats' }, [card(ui, waiting, label, waiting ? 'dash-card--warn' : '', () => router.loadModule('cashflow'))]));
           dash.appendChild(ui.el('div', { class: 'dash-links' }, [ui.el('button', { class: 'btn btn--primary', onclick: () => router.loadModule('cashflow') }, '💵 Open the Cash Flow')]));
         } else dash.appendChild(ui.el('p', { class: 'muted' }, 'No unit is assigned to your account yet. Ask the administrator.'));

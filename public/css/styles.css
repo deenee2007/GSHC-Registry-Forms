@@ -1157,3 +1157,47 @@ button.dash-card:hover { border-color: var(--green-500); }
 .cfa-sec__head span, .cfa-line__amt { text-align: right; font-variant-numeric: tabular-nums; }
 .cfa-line:has(input:not(:checked)) span { color: var(--muted); text-decoration: line-through; }
 .cfa-kept { margin-bottom: .6rem; font-weight: 700; color: var(--green-900); }
+
+/* Cash flow: release of funds */
+.cfx-note--info { background: #f4f7fb; border-color: #d6e0ee; color: #23364f; }
+.cf-all { margin: .2rem 0 .6rem; font-size: .9rem; }
+.cf-tick { width: 1.05rem; height: 1.05rem; }
+.cf-acct { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .04em; }
+.cf-paycard { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem 1rem; padding: .8rem .9rem; margin-bottom: .8rem; border: 1px solid var(--line); border-radius: 10px; background: #fbfdfb; }
+.cf-paycard > div { display: flex; flex-direction: column; min-width: 0; }
+.cf-paycard span { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; }
+.cf-paycard strong { overflow-wrap: anywhere; }
+.cfa-line--plain { cursor: default; }
+.cfr { display: flex; flex-direction: column; gap: .6rem; }
+.cfr-item { border: 1px solid var(--line); border-radius: 10px; padding: .6rem .8rem; }
+.cfr-item.is-on { background: #fbfdfb; border-color: #bfdccb; }
+.cfr-item__head { display: grid; grid-template-columns: 1.4rem minmax(0, 1fr) auto; gap: .5rem; align-items: center; cursor: pointer; }
+.cfr-item__nums { font-size: .85rem; text-align: right; font-variant-numeric: tabular-nums; }
+.cfr-item.is-on .cfr-item__head { margin-bottom: .5rem; }
+.cfr-payee { display: grid; grid-template-columns: 1.4rem minmax(0, 1.4fr) minmax(0, 1fr) 9rem minmax(0, 1fr) 8rem 2rem; gap: .4rem; align-items: center; margin-bottom: .35rem; }
+.cfr-payee input { width: 100%; min-width: 0; padding: .45rem .5rem; border: 1px solid var(--line); border-radius: 7px; font: inherit; }
+.cfr-payee__no { color: var(--muted); font-size: .8rem; text-align: center; }
+.cfr-payee__acct { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.cfr-sum { font-size: .88rem; font-variant-numeric: tabular-nums; }
+.cfr-sum.is-over { color: var(--danger); font-weight: 700; }
+.cfx-rels { border: 1px solid var(--line); border-radius: 12px; padding: .9rem 1rem; background: #fff; }
+.cfx-rels h4 { margin: 0 0 .6rem; font-size: .78rem; letter-spacing: .06em; text-transform: uppercase; color: var(--green-700); }
+.cfx-rel + .cfx-rel { margin-top: .7rem; padding-top: .7rem; border-top: 1px solid var(--line); }
+.cfx-rel__head { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-bottom: .4rem; }
+.cfx-rel__amt { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
+.cfx-payee { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto; gap: .6rem; align-items: center; padding: .3rem 0 .3rem .6rem; border-left: 3px solid #e3ece6; font-size: .88rem; }
+.cfx-payee__name { font-weight: 600; }
+.cfx-payee__amt { font-variant-numeric: tabular-nums; text-align: right; }
+@media (max-width: 760px) {
+  .cfr-payee { grid-template-columns: 1.4rem minmax(0, 1fr) minmax(0, 1fr) 2rem; padding-bottom: .4rem; border-bottom: 1px dashed var(--line); }
+  .cfr-payee__name { grid-column: 2 / 4; }
+  .cfr-payee__bank { grid-column: 2 / 4; }
+  .cfr-payee__acct { grid-column: 2; }
+  .cfr-payee__aname { grid-column: 3; }
+  .cfr-payee__amt { grid-column: 2 / 4; }
+  .cfr-payee .cfb-line__del { grid-row: 1; grid-column: 4; }
+  .cfr-item__head { grid-template-columns: 1.4rem minmax(0, 1fr); }
+  .cfr-item__nums { grid-column: 2; text-align: left; }
+  .cf-paycard { grid-template-columns: minmax(0, 1fr); }
+  .cfx-payee { grid-template-columns: minmax(0, 1fr) auto; }
+}
