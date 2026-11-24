@@ -27,6 +27,9 @@ router.get('/:code', async (req, res, next) => {
         // A printed approved cash flow.
         const sheet = code ? await require('./cashflow').verifySheet(code) : null;
         if (sheet) return res.json(sheet);
+        // An approved request for the release of funds.
+        const release = code ? await require('./cashrelease').verifyRelease(code) : null;
+        if (release) return res.json(release);
         // The slip of an assignment since replaced by a reassignment.
         const old = code ? await Case.findOne({ 'formerUnits.verifyCode': code }) : null;
         if (!old) return res.status(404).json({ status: 'not_found', code: code || String(req.params.code).slice(0, 40) });

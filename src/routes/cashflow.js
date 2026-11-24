@@ -11,7 +11,8 @@
  *
  * Who sees what: the Chief Judge, the CJ's aide, the Chief Registrar and
  * the DCR Admin and Finance see every item; the Accountant, the approved
- * ones; only the Chief Judge sees the money (released, balance).
+ * ones. The money (overhead received, balance): the Chief Judge, the Chief
+ * Registrar (who enters the overhead each month) and the administrator.
  */
 const express = require('express');
 const mongoose = require('mongoose');
@@ -43,7 +44,11 @@ const isAccountant = (u) => has(u, ['accountant']);
 const isDCR = (u) => has(u, ['dcr_admin_finance']);
 // The administrator sees everything (the money too), to oversee; acting is for the officers.
 const seesAll = (u) => isCJ(u) || isRequester(u) || isAdmin(u);
-const seesMoney = (u) => isCJ(u) || isAdmin(u);
+// The money: the Chief Judge, the administrator, and the Chief Registrar,
+// who enters the overhead received from the government each month.
+const isCR = (u) => has(u, ['chief_registrar']);
+const seesMoney = (u) => isCJ(u) || isAdmin(u) || isCR(u);
+const setsOverhead = (u) => isAdmin(u) || isCR(u);
 const mine = (u, it) => String(it.requestedBy) === String(u._id);
 const roleOf = (u) => ['cj_aide', 'chief_registrar', 'dcr_admin_finance'].find(r => u.signerRoles.includes(r)) || '';
 const ROLE_NAME = { cj_aide: 'Aide to the Hon. Chief Judge', chief_registrar: 'Chief Registrar', dcr_admin_finance: 'DCR Admin and Finance' };
@@ -132,7 +137,7 @@ function cleanFields(b) {
 router.get('/me', wrap(async (req, res) => {
   await cf.rollOver();
   res.json({ month: cf.thisMonth(), monthName: cf.monthName(cf.thisMonth()), cj: isCJ(req.user), seesMoney: seesMoney(req.user), requester: isRequester(req.user),
-    accountant: isAccountant(req.user), seesAll: seesAll(req.user), admin: isAdmin(req.user) });
+    accountant: isAccountant(req.user), seesAll: seesAll(req.user), admin: isAdmin(req.user), setsOverhead: setsOverhead(req.user) });
 }));
 
 // Waiting for this person: the CJ's decisions, the Accountant's payments, a requester's queries.
@@ -398,14 +403,17 @@ async function verifySheet(code) {
 
 // Settings: the amount released each month (the administrator).
 router.get('/admin/releases', wrap(async (req, res) => {
-  if (!isAdmin(req.user)) throw new HttpError(403, 'Only an administrator sets the amounts released.');
+  if (!setsOverhead(req.user)) throw new HttpError(403, 'Only the Chief Registrar or an administrator enters the overhead received.');
   const r = await cf.releases();
-  res.json({ releases: Object.entries(r).sort((a, b) => b[0].localeCompare(a[0])).map(([month, amount]) => ({ month, name: cf.monthName(month), amount })), thisMonth: cf.thisMonth() });
+  const by = await cf.releasesBy();
+  res.json({ releases: Object.entries(r).sort((a, b) => b[0].localeCompare(a[0])).map(([month, amount]) => ({ month, name: cf.monthName(month), amount,
+    byName: by[month] ? by[month].byName : '', at: by[month] ? by[month].at : null })), thisMonth: cf.thisMonth() });
 }));
 router.put('/admin/releases', wrap(async (req, res) => {
-  if (!isAdmin(req.user)) throw new HttpError(403, 'Only an administrator sets the amounts released.');
+  if (!setsOverhead(req.user)) throw new HttpError(403, 'Only the Chief Registrar or an administrator enters the overhead received.');
   try { await cf.setRelease(String(req.body.month || ''), req.body.amount, req.user.fullName); } catch (e) { throw new HttpError(e.status || 500, e.message); }
   await audit.log(req, 'cashflow_release_set', { details: { month: req.body.month, amount: Number(req.body.amount) } });
+  if (!isCJ(req.user)) await tell(await holders('chief_judge', req.user._id), `${req.user.fullName} entered the overhead received for ${cf.monthName(req.body.month)}: ${money(req.body.amount)}.`, 'Cash flow: overhead received');
   res.json({ ok: true });
 }));
 

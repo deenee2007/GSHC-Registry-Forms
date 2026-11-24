@@ -406,6 +406,10 @@ const CashReleaseSchema = new Schema({
   requestedByName: String,
   query:         { type: { _id: false, text: String, byName: String, at: Date }, default: null },
   decision:      { type: { _id: false, kind: String, note: String, by: Schema.Types.ObjectId, byName: String, title: String, at: Date, image: ImageRef }, default: null },
+  // Fixed when the CJ approves: the code behind the memo's QR code, and a
+  // fingerprint of what he approved (beneficiaries, accounts, amounts).
+  verifyCode:    { type: String, unique: true, sparse: true },
+  contentHash:   { type: String, default: '' },
   history:       { type: [{ _id: false, action: String, byName: String, note: String, at: Date }], default: [] }
 }, { timestamps: true });
 CashReleaseSchema.index({ 'items.item': 1 });
