@@ -1201,3 +1201,7 @@ button.dash-card:hover { border-color: var(--green-500); }
   .cf-paycard { grid-template-columns: minmax(0, 1fr); }
   .cfx-payee { grid-template-columns: minmax(0, 1fr) auto; }
 }
+
+/* Mandatories: the spreadsheet import buttons */
+.cfm-import { align-items: center; flex-wrap: wrap; margin: .2rem 0 .4rem; }
+.cfm-import a.btn { text-decoration: none; }
