@@ -1,20 +1,18 @@
 /*
  * modules/cashflow.js — the monthly cash flow.
  *
- * The Hon. Chief Judge: the month's money (released, brought forward,
- * approved, paid, balance) and the list of items (S/No, item, amount, who
- * submitted it, status), each with Details: approve (in full or less, with
- * the PIN), decline, or return with a query; carry forward or dismiss an
- * item not approved. Requesters (the CJ's aide, the Chief Registrar, the
- * DCR Admin and Finance): New Request, their own requests (answering a
- * query), and the month's list. The Accountant: the approved items, to
- * record each payment. Print: the month's approved cash flow, with the
- * Chief Judge's signature.
- *
- * Release of funds: for approved items, the DCR Admin and Finance requests
- * the release of funds (beneficiaries with their bank and account numbers,
- * in full or in instalments); the Chief Judge approves it with the PIN
- * (several at once if he wishes); the Accountant pays each beneficiary.
+ * Requesters (the CJ's aide, the Chief Registrar, the DCR Admin and
+ * Finance) request items; each goes to the DCR Admin and Finance, who may
+ * correct it or return it with a query, enters its beneficiaries (bank,
+ * account number, amount: the request for the release of funds), and
+ * submits it to the Hon. Chief Judge (the month's cash flow, selected
+ * items, or a supplementary submission). The Chief Judge approves (all,
+ * part, or a lower amount, with the PIN; several at once), declines, or
+ * returns an item to the DCR with a query. The DCR transmits the approved
+ * item to the Chief Registrar (all, or in instalments), who sends it to the
+ * Chief Accountant, who pays each beneficiary. The monthly mandatories have
+ * their own tab. Print: the submission memo, an item, the month's approved
+ * cash flow with the Chief Judge's signature and a QR code.
  */
 (function () {
   window.App = window.App || {};
@@ -22,12 +20,11 @@
 
   const naira = (n) => `₦${Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const esc = (v) => String(v == null ? '' : v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  const STATUS = { pending: ['Awaiting the CJ', 'pending'], returned: ['Returned with a query', 'returned'], approved: ['Approved', 'final'],
+  const STATUS = { with_dcr: ['With the DCR', 'pending'], pending: ['Awaiting the CJ', 'pending'], returned: ['Returned with a query', 'returned'], approved: ['Approved', 'final'],
     declined: ['Not approved', 'declined'], paid: ['Paid', 'final'], dismissed: ['Dismissed', 'draft'] };
   const ACTION = { requested: 'Requested', answered: 'Query answered', approved: 'Approved', declined: 'Not approved', returned: 'Returned with a query',
-    paid: 'Paid', carried: 'Carried forward', dismissed: 'Dismissed', moved: 'Moved to the new month', completed: 'Closed as paid', transmitted: 'Transmitted to the Accountant' };
-  const RSTATUS = { pending: ['Awaiting the CJ', 'pending'], returned: ['Returned with a query', 'returned'], approved: ['Approved for payment', 'final'],
-    declined: ['Not approved', 'declined'], paid: ['Paid', 'final'] };
+    paid: 'Paid', carried: 'Carried forward', dismissed: 'Dismissed', moved: 'Moved to the new month', completed: 'Closed as paid', transmitted: 'Transmitted to the Chief Registrar',
+    prepared: 'Prepared by the DCR', submitted: 'Submitted to the Hon. Chief Judge', sent: 'Sent to the Chief Accountant' };
   // Nigerian banks, as suggestions (any name may be typed).
   const BANKS = ['Access Bank', 'Citibank Nigeria', 'Ecobank Nigeria', 'Fidelity Bank', 'First Bank of Nigeria', 'First City Monument Bank (FCMB)', 'Globus Bank',
     'Guaranty Trust Bank (GTBank)', 'Jaiz Bank', 'Keystone Bank', 'Lotus Bank', 'Optimus Bank', 'Parallex Bank', 'Polaris Bank', 'PremiumTrust Bank', 'Providus Bank',
@@ -41,25 +38,27 @@
       let me;
       try { me = await api.get('/cashflow/me'); } catch (e) { container.appendChild(ui.empty(e.offline ? 'The cash flow needs the internet.' : e.message)); return; }
       const badge = (s) => { const [t, c] = STATUS[s] || [s, 'draft']; return el('span', { class: 'badge badge--' + c }, t); };
-      const rbadge = (s) => { const [t, c] = RSTATUS[s] || [s, 'draft']; return el('span', { class: 'badge badge--' + c }, t); };
-      // A release: approved but still with the Chief Registrar, or with the Accountant.
-      const relBadge = (x) => x.status === 'approved' && !x.transmitted ? el('span', { class: 'badge badge--pending' }, 'To transmit')
-        : x.status === 'approved' && x.paid > 0 ? el('span', { class: 'badge badge--final' }, 'Part paid')
-          : x.status === 'approved' ? el('span', { class: 'badge badge--final' }, 'With the Accountant') : rbadge(x.status);
-      // An approved item: whether its funds are released and paid yet.
+      const pill = (t, c) => el('span', { class: 'badge badge--' + c }, t);
+      // Where an item is: with the DCR, the CJ, the Chief Registrar, the Chief Accountant…
       const itemBadge = (x) => {
+        if (x.status === 'returned') return pill('Returned to the requester', 'returned');
         if (x.status !== 'approved') return badge(x.status);
-        if (x.paid > 0) return el('span', { class: 'badge badge--final' }, 'Part paid');
-        if (x.released > 0) return el('span', { class: 'badge badge--pending' }, 'Release requested');
-        return badge('approved');
+        const t = x.tranches || [];
+        if (t.some(y => !y.sent)) return pill('With the Chief Registrar', 'pending');
+        if (t.some(y => y.payees.some(p => !p.paid))) return pill(x.paid > 0 ? 'Part paid' : 'With the Chief Accountant', 'final');
+        if (x.paid > 0) return pill('Part paid', 'final');
+        return pill('Approved, to transmit', 'final');
       };
+      // The beneficiaries of an item, in a few words.
+      const payeesNote = (x) => !x.payees.length ? 'Not entered' : x.ready ? `${x.payees.length}, ${naira(x.payeesTotal)}` : `${x.payees.length}, ${naira(x.payeesTotal)} of ${naira(x.amount)}`;
       const day = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
 
       container.appendChild(el('div', { class: 'page-head' }, [
         el('h1', null, '💵 Cash Flow'),
         el('p', { class: 'muted' }, me.cj ? 'Items placed on the monthly cash flow for your approval. Open Details to approve, decline or return an item with a query.'
           : me.admin && !me.requester && !me.accountant ? 'The monthly cash flow, for oversight: every item, the money and the balance. Decisions are the Hon. Chief Judge\'s; requests and payments are made by the officers concerned.'
-          : me.accountant && !me.seesAll ? 'Prepare the monthly mandatories, and pay what the Chief Registrar transmits (releases of funds and mandatories approved by the Hon. Chief Judge), recording each payment voucher.'
+          : me.accountant && !me.seesAll ? 'Prepare the monthly mandatories, and pay what the Chief Registrar sends (cash flow items and mandatories approved by the Hon. Chief Judge), recording each payment voucher.'
+          : me.dcr ? 'Items requested come to you: check them, enter who is to be paid, and submit them to the Hon. Chief Judge. Once approved, transmit them to the Chief Registrar for payment.'
             : 'Items requested on the monthly cash flow, for the approval of the Hon. Chief Judge.')
       ]));
       const tabsBar = el('div', { class: 'tabs', role: 'tablist' });
@@ -68,7 +67,9 @@
       const TABS = [
         me.seesAll ? ['month', me.cj ? 'This Month\'s Cash Flow' : 'The Cash Flow', monthView] : null,
         me.requester ? ['mine', 'My Requests', mineView] : null,
-        me.seesAll ? ['releases', 'Release of Funds', releasesView] : null,
+        me.dcr ? ['submit', 'To Submit to the CJ', submitView] : null,
+        me.dcr ? ['transmit', 'To Transmit', transmitView] : null,
+        me.cr ? ['send', 'Send for Payment', sendView] : null,
         me.mandatories ? ['mandatories', 'Mandatories', mandatoriesView] : null,
         me.accountant ? ['pay', 'For Payment', payView] : null
       ].filter(Boolean);
@@ -132,25 +133,161 @@
           el('div', { class: 'toolbar' }, [el('button', { class: 'btn btn--primary', onclick: () => requestForm() }, '+ New Request')]),
           r.items.length ? ui.table([
             { label: 'Month', value: x => x.monthName }, { label: 'S/No', value: x => String(x.sn) }, { label: 'Item', value: x => x.item, primary: true },
-            { label: 'Amount', value: x => naira(x.amount) }, { label: 'Status', node: x => badge(x.status) }
+            { label: 'Amount', value: x => naira(x.amount) }, { label: 'Status', node: itemBadge }
           ], r.items, [{ label: x => x.can.answer ? 'Answer Query' : x.can.carry ? 'Carry or Dismiss' : 'Details', onClick: x => details(x.id, mineView) }]) : ui.empty('You have not requested anything yet. Use + New Request.')
         );
       }
 
-      // ── The Accountant: the beneficiaries of approved releases, to pay ──
+      // A list with tick boxes and one action for those ticked (approve, submit, transmit, send).
+      function tickTable(rows, can, word, act, cols, actions, allLabel) {
+        const ok = rows.filter(can);
+        const picked = new Set();
+        const btn = el('button', { class: 'btn btn--ok', disabled: 'disabled', onclick: () => act(rows.filter(x => picked.has(x.id))) }, word);
+        const set = () => { btn.disabled = !picked.size; btn.textContent = picked.size ? `${word} (${picked.size})` : word; };
+        const tick = (x) => can(x) ? el('input', { type: 'checkbox', class: 'cf-tick', 'aria-label': `Select ${x.item}`, onchange: (e) => { e.target.checked ? picked.add(x.id) : picked.delete(x.id); set(); } }) : el('span');
+        const box = el('div');
+        const all = ok.length > 1 ? el('label', { class: 'check check--plain cf-all' }, [el('input', { type: 'checkbox', onchange: (e) => {
+          box.querySelectorAll('.cf-tick').forEach(b => { b.checked = e.target.checked; }); ok.forEach(x => e.target.checked ? picked.add(x.id) : picked.delete(x.id)); set();
+        } }), ` ${allLabel || 'Select all'} (${ok.length})`]) : null;
+        box.appendChild(ui.table([...(ok.length ? [{ label: '', node: tick }] : []), ...cols], rows, actions));
+        return { button: ok.length ? btn : null, all, table: box };
+      }
+      const desk = async () => api.get('/cashflow/desk');
+
+      // ── The DCR: items to check, prepare and submit to the CJ ──
+      async function submitView() {
+        show(el('p', { class: 'muted' }, 'Loading…'));
+        let r;
+        try { r = await desk(); } catch (e) { show(ui.empty(e.message)); return; }
+        const t = tickTable(r.toSubmit, x => x.can.submit, '➜ Submit Selected to the CJ', (list) => submitDialog(list, submitView), [
+          { label: 'Month', value: x => x.monthName }, { label: 'S/No', value: x => String(x.sn) },
+          { label: 'Item', value: x => x.item, primary: true }, { label: 'Amount', value: x => naira(x.amount), num: true },
+          { label: 'Requested by', value: x => `${x.requestedByName}${x.requestedByRole ? `, ${x.requestedByRole}` : ''}` },
+          { label: 'Beneficiaries', node: x => el('span', { class: x.ready ? '' : 'cf-warn' }, payeesNote(x)) },
+          { label: 'Status', node: x => el('span', null, [itemBadge(x), x.query && x.status === 'with_dcr' && x.query.by === 'Hon. Chief Judge' ? el('div', { class: 'cash-from' }, 'Query from the CJ') : null]) }
+        ], [{ label: x => x.can.prepare ? (x.payees.length ? 'Prepare' : 'Enter Beneficiaries') : 'Details', class: '', onClick: x => x.can.prepare ? prepareForm(x, submitView) : details(x.id, submitView) }],
+        'Select all ready to submit');
+        show(
+          el('p', { class: 'muted' }, 'Items requested come here. Check each, correct it or return it to the requester with a query, and enter who is to be paid (their amounts must add up to the item). Then submit to the Hon. Chief Judge: the month\'s cash flow at once, selected items, or later a supplementary submission.'),
+          el('div', { class: 'toolbar' }, [me.requester ? el('button', { class: 'btn btn--primary', onclick: () => requestForm() }, '+ New Request') : null, t.button]), t.all,
+          r.toSubmit.length ? t.table : ui.empty('Nothing waiting for you to submit.')
+        );
+      }
+      function submitDialog(list, after) {
+        const total = list.reduce((n, x) => n + x.amount, 0);
+        const note = el('textarea', { rows: 2, maxlength: '3000', placeholder: 'Optional, e.g. The cash flow for November' });
+        ui.modal(`Submit ${list.length} Item${list.length > 1 ? 's' : ''} to the Hon. Chief Judge`, el('div', null, [
+          el('p', null, 'The items go up with their beneficiaries: the request for the release of funds. Once the Hon. Chief Judge approves an item, no separate request is needed.'),
+          el('div', { class: 'cfa-list' }, list.map(x => el('div', { class: 'cfa-line cfa-line--plain' }, [el('span', null, String(x.sn)), el('span', null, `${x.item} · ${x.payees.length} beneficiar${x.payees.length === 1 ? 'y' : 'ies'}`), el('span', { class: 'cfa-line__amt' }, naira(x.amount))]))),
+          el('div', { class: 'cfa-kept' }, `Total: ${naira(total)}`),
+          ui.field('Remarks to the Hon. Chief Judge (optional)', note)
+        ]), { wide: true, confirmText: `Submit ${list.length}`, confirmClass: 'btn--ok', onConfirm: async () => {
+          const r = await api.post('/cashflow/submit', { ids: list.map(x => x.id), note: note.value });
+          ui.toast(`${r.submission.refNo}${r.submission.supplementary ? ' (supplementary)' : ''} submitted to the Hon. Chief Judge.`, 'success', 6000);
+          router.refreshBadges(); setTimeout(after, 0);
+          if (confirm(`Print the submission memo ${r.submission.refNo} now?`)) printSubmission(r.submission.id);
+          return true;
+        } });
+      }
+
+      // ── The DCR: approved items to transmit to the Chief Registrar ──
+      async function transmitView() {
+        show(el('p', { class: 'muted' }, 'Loading…'));
+        let r;
+        try { r = await desk(); } catch (e) { show(ui.empty(e.message)); return; }
+        const t = tickTable(r.toTransmit, x => x.can.transmit, '➜ Transmit Selected to the CR', (list) => transmitDialog(list, transmitView), [
+          { label: 'Month', value: x => x.monthName }, { label: 'Item', value: x => x.item, primary: true },
+          { label: 'Approved', value: x => naira(x.decision.amount), num: true }, { label: 'Left to transmit', value: x => naira(x.leftToTransmit), num: true },
+          { label: 'Beneficiaries', value: x => String(x.payees.length) }, { label: 'Status', node: itemBadge }
+        ], [{ label: 'Instalment', onClick: x => instalmentDialog(x, transmitView) }, { label: 'Details', onClick: x => details(x.id, transmitView) }], 'Select all');
+        show(
+          el('p', { class: 'muted' }, 'Items approved by the Hon. Chief Judge, with the release of their funds. Transmit them to the Chief Registrar, who sends them to the Chief Accountant: in full (tick and transmit), or an instalment when an item is paid in parts.'),
+          el('div', { class: 'toolbar' }, [t.button]), t.all,
+          r.toTransmit.length ? t.table : ui.empty('Nothing waiting to be transmitted.')
+        );
+      }
+      function transmitDialog(list, after) {
+        const total = list.reduce((n, x) => n + x.leftToTransmit, 0);
+        const note = el('input', { type: 'text', maxlength: '500', placeholder: 'Optional' });
+        ui.modal(`Transmit ${list.length} Item${list.length > 1 ? 's' : ''} to the Chief Registrar`, el('div', null, [
+          el('p', null, 'Each item in full: all that is left to transmit, to each beneficiary. For part of an item, use Instalment instead.'),
+          el('div', { class: 'cfa-list' }, list.map(x => el('div', { class: 'cfa-line cfa-line--plain' }, [el('span'), el('span', null, `${x.item} · ${x.payees.length} beneficiar${x.payees.length === 1 ? 'y' : 'ies'}`), el('span', { class: 'cfa-line__amt' }, naira(x.leftToTransmit))]))),
+          el('div', { class: 'cfa-kept' }, `Total: ${naira(total)}`), ui.field('Note to the Chief Registrar (optional)', note)
+        ]), { wide: true, confirmText: `Transmit ${list.length}`, confirmClass: 'btn--ok', onConfirm: async () => {
+          await api.post('/cashflow/transmit', { items: list.map(x => ({ id: x.id })), note: note.value });
+          ui.toast(`Transmitted to the Chief Registrar, ${naira(total)}.`, 'success', 6000); router.refreshBadges(); setTimeout(after, 0); return true;
+        } });
+      }
+      // Part of an approved item: the amount for each beneficiary this time.
+      function instalmentDialog(x, after) {
+        const rows = x.payees.map(p => {
+          const left = Math.round(((p.approved || 0) - (p.transmitted || 0)) * 100) / 100;
+          return { p, left, input: el('input', { type: 'number', min: '0', step: '0.01', max: String(left), value: '', placeholder: `Up to ${naira(left)}`, disabled: left > 0 ? null : 'disabled' }) };
+        });
+        const sum = el('div', { class: 'cfa-kept' });
+        const sync = () => { sum.textContent = `This instalment: ${naira(rows.reduce((n, r) => n + (Number(r.input.value) || 0), 0))} of ${naira(x.leftToTransmit)} left`; };
+        rows.forEach(r => r.input.addEventListener('input', sync)); sync();
+        const note = el('input', { type: 'text', maxlength: '500', placeholder: 'Optional, e.g. First instalment, on mobilisation' });
+        ui.modal(`Instalment · ${x.item}`, el('div', null, [
+          el('p', null, `Approved: ${naira(x.decision.amount)}. Already transmitted: ${naira(x.decision.amount - x.leftToTransmit)}. Enter the amount for each beneficiary this time.`),
+          ui.table([{ label: 'Beneficiary', value: r => `${r.p.name} · ${r.p.bank} · ${r.p.accountNo}` }, { label: 'Approved', value: r => naira(r.p.approved), num: true },
+            { label: 'Left', value: r => naira(r.left), num: true }, { label: 'This time, ₦', node: r => r.input }], rows),
+          sum, ui.field('Note to the Chief Registrar (optional)', note)
+        ]), { wide: true, confirmText: 'Transmit the Instalment', confirmClass: 'btn--ok', onConfirm: async () => {
+          const parts = rows.map(r => ({ id: r.p.id, amount: Number(r.input.value) || 0 })).filter(r => r.amount > 0);
+          if (!parts.length) throw new Error('Enter the amount for at least one beneficiary.');
+          for (const r of rows) if ((Number(r.input.value) || 0) > r.left + 0.004) throw new Error(`${r.p.name}: no more than ${naira(r.left)}.`);
+          await api.post('/cashflow/transmit', { items: [{ id: x.id, payees: parts }], note: note.value });
+          ui.toast('Instalment transmitted to the Chief Registrar.', 'success'); router.refreshBadges(); setTimeout(after, 0); return true;
+        } });
+      }
+
+      // ── The Chief Registrar: transmitted items to send to the Chief Accountant ──
+      async function sendView() {
+        show(el('p', { class: 'muted' }, 'Loading…'));
+        let r;
+        try { r = await desk(); } catch (e) { show(ui.empty(e.message)); return; }
+        const waiting = (x) => x.tranches.filter(t => !t.sent).reduce((n, t) => n + t.amount, 0);
+        const t = tickTable(r.toSend, x => x.can.send, '➜ Send Selected to the Chief Accountant', (list) => sendDialog(list, sendView), [
+          { label: 'Month', value: x => x.monthName }, { label: 'Item', value: x => x.item, primary: true },
+          { label: 'Approved', value: x => naira(x.decision.amount), num: true }, { label: 'To send now', value: x => naira(waiting(x)), num: true },
+          { label: 'Beneficiaries', value: x => [...new Set(x.tranches.filter(t => !t.sent).flatMap(t => t.payees.map(p => p.name)))].join(', ') },
+          { label: 'Transmitted by', value: x => { const last = x.tranches.filter(t => !t.sent).pop(); return last ? `${last.byName}, ${day(last.at)}` : ''; } }
+        ], [{ label: 'Details', onClick: x => details(x.id, sendView) }], 'Select all');
+        show(
+          el('p', { class: 'muted' }, 'Items approved by the Hon. Chief Judge and transmitted by the DCR Admin and Finance. Send them to the Chief Accountant for payment.'),
+          el('div', { class: 'toolbar' }, [t.button]), t.all,
+          r.toSend.length ? t.table : ui.empty('Nothing waiting to be sent.')
+        );
+      }
+      function sendDialog(list, after) {
+        const waiting = (x) => x.tranches.filter(t => !t.sent).reduce((n, t) => n + t.amount, 0);
+        const total = list.reduce((n, x) => n + waiting(x), 0);
+        const note = el('input', { type: 'text', maxlength: '500', placeholder: 'Optional, e.g. Pay before Friday' });
+        ui.modal(`Send ${list.length} Item${list.length > 1 ? 's' : ''} to the Chief Accountant`, el('div', null, [
+          el('div', { class: 'cfa-list' }, list.flatMap(x => x.tranches.filter(t => !t.sent).flatMap(t => t.payees.map(p => el('div', { class: 'cfa-line cfa-line--plain' }, [el('span'), el('span', null, `${x.item}: ${p.name} · ${p.bank} · ${p.accountNo}`), el('span', { class: 'cfa-line__amt' }, naira(p.amount))]))))),
+          el('div', { class: 'cfa-kept' }, `Total: ${naira(total)}`), ui.field('Note to the Chief Accountant (optional)', note)
+        ]), { wide: true, confirmText: `Send ${list.length}`, confirmClass: 'btn--ok', onConfirm: async () => {
+          await api.post('/cashflow/send', { ids: list.map(x => x.id), note: note.value });
+          ui.toast(`Sent to the Chief Accountant, ${naira(total)}.`, 'success', 6000); router.refreshBadges(); setTimeout(after, 0); return true;
+        } });
+      }
+
+      // ── The Chief Accountant: the beneficiaries sent for payment ──
       async function payView() {
-        panel.replaceChildren(el('p', { class: 'muted' }, 'Loading…'));
+        show(el('p', { class: 'muted' }, 'Loading…'));
         let r, mand;
-        try { [r, mand] = await Promise.all([api.get('/cashflow/releases'), api.get('/cashflow/mandatories')]); } catch (e) { panel.replaceChildren(ui.empty(e.message)); return; }
+        try { [r, mand] = await Promise.all([desk(), api.get('/cashflow/mandatories')]); } catch (e) { show(ui.empty(e.message)); return; }
         const lines = [];
-        r.releases.filter(x => ['approved', 'paid'].includes(x.status)).forEach(rel => rel.items.forEach(it => it.payees.forEach(p => lines.push({ rel, it, p }))));
+        (r.payments || []).forEach(x => x.tranches.filter(t => t.sent).forEach(t => t.payees.forEach(p =>
+          lines.push({ owner: x, kind: 'item', ref: `${x.monthName}, item ${x.sn}${x.tranches.length > 1 ? `, instalment ${t.no}` : ''}`, what: x.item, p }))));
         // The mandatories transmitted by the Chief Registrar, the same way.
         mand.lists.filter(x => ['approved', 'paid'].includes(x.status) && x.transmitted).forEach(m => m.items.filter(it => !it.struck).forEach(it => it.payees.forEach(p =>
-          lines.push({ rel: m, mandatory: true, it: { name: it.title, monthName: m.monthName, sn: null }, p }))));
+          lines.push({ owner: m, kind: 'mandatory', ref: `${m.refNo} (${m.monthName} mandatories)`, what: it.title, p }))));
         const todo = lines.filter(l => !l.p.paid), done = lines.filter(l => l.p.paid).slice(0, 100);
         const cols = [
-          { label: 'Release', value: l => l.rel.refNo },
-          { label: 'Item', value: l => l.mandatory ? `${l.it.name} (${l.it.monthName} mandatories)` : `${l.it.name} (${l.it.monthName}, item ${l.it.sn})` },
+          { label: 'Reference', value: l => l.ref },
+          { label: 'Item', value: l => l.what },
           { label: 'Beneficiary', value: l => l.p.name, primary: true },
           { label: 'Bank', value: l => l.p.bank },
           { label: 'Account No.', node: l => el('span', { class: 'cf-acct' }, l.p.accountNo) },
@@ -158,46 +295,12 @@
           { label: 'Amount', value: l => naira(l.p.amount), num: true }
         ];
         const total = todo.reduce((n, l) => n + l.p.amount, 0);
+        const open = (l) => l.kind === 'mandatory' ? mandatoryDetails(l.owner.id, payView) : details(l.owner.id, payView);
         show(
           el('h3', { class: 'settings-group' }, `To pay (${todo.length})${todo.length ? ` · ${naira(total)}` : ''}`),
-          todo.length ? ui.table(cols, todo, [{ label: 'Record Payment', class: 'btn--primary', onClick: l => payDialog(l.rel, l.p, payView, l.mandatory) }, { label: 'Open', onClick: l => l.mandatory ? mandatoryDetails(l.rel.id, payView) : releaseDetails(l.rel.id, payView) }]) : ui.empty('Nothing waiting for payment.'),
+          todo.length ? ui.table(cols, todo, [{ label: 'Record Payment', class: 'btn--primary', onClick: l => payDialog(l.owner, l.p, payView, l.kind) }, { label: 'Open', onClick: open }]) : ui.empty('Nothing waiting for payment.'),
           el('h3', { class: 'settings-group' }, `Paid (${done.length})`),
-          done.length ? ui.table([...cols.slice(0, 3), { label: 'Paid', value: l => `${naira(l.p.paid.amount)}, PV ${l.p.paid.pvNo}, ${day(l.p.paid.date)}` }], done, [{ label: 'Open', onClick: l => l.mandatory ? mandatoryDetails(l.rel.id, payView) : releaseDetails(l.rel.id, payView) }]) : ui.empty('Nothing paid yet.')
-        );
-      }
-
-      // ── Release of funds: the list ──
-      async function releasesView() {
-        panel.replaceChildren(el('p', { class: 'muted' }, 'Loading…'));
-        let r;
-        try { r = await api.get('/cashflow/releases'); } catch (e) { panel.replaceChildren(ui.empty(e.message)); return; }
-        // The CJ ticks releases to approve; the Chief Registrar, approved ones to transmit.
-        const send = r.releases.some(x => x.can.transmit);
-        const pend = r.releases.filter(x => send ? x.can.transmit : x.can.decide);
-        const word = send ? '➜ Transmit Selected to the Accountant' : '✔ Approve Selected';
-        const picked = new Set();
-        const many = el('button', { class: 'btn btn--ok', disabled: 'disabled', onclick: () => {
-          const list = r.releases.filter(x => picked.has(x.id));
-          send ? transmitReleases(list, releasesView) : approveReleases(list, releasesView);
-        } }, word);
-        const setMany = () => { many.disabled = !picked.size; many.textContent = picked.size ? `${word} (${picked.size})` : word; };
-        const tick = (x) => pend.includes(x) ? el('input', { type: 'checkbox', class: 'cf-tick', 'aria-label': `Select ${x.refNo}`, onchange: (e) => { e.target.checked ? picked.add(x.id) : picked.delete(x.id); setMany(); } }) : el('span');
-        const all = pend.length > 1 ? el('label', { class: 'check check--plain cf-all' }, [el('input', { type: 'checkbox', onchange: (e) => { panel.querySelectorAll('.cf-tick').forEach(b => { b.checked = e.target.checked; }); pend.forEach(x => e.target.checked ? picked.add(x.id) : picked.delete(x.id)); setMany(); } }), ` Select all ${pend.length} ${send ? 'to transmit' : 'awaiting you'}`]) : null;
-        show(
-          el('p', { class: 'muted' }, 'After the Hon. Chief Judge approves items on the cash flow, the DCR Admin and Finance requests the release of funds for them, naming the beneficiaries and their accounts. Once the Chief Judge approves a release, the Chief Registrar transmits it to the Accountant, who pays.'),
-          el('div', { class: 'toolbar' }, [
-            r.dcr ? el('button', { class: 'btn btn--primary', onclick: () => releaseForm() }, '+ Request Release of Funds') : null,
-            pend.length ? many : null
-          ]), all,
-          r.releases.length ? ui.table([
-            ...(pend.length ? [{ label: '', node: tick }] : []),
-            { label: 'Reference', value: x => x.refNo },
-            { label: 'Date', value: x => day(x.createdAt) },
-            { label: 'Items', value: x => x.items.map(i => i.name).join('; '), primary: true },
-            { label: 'Beneficiaries', value: x => String(x.items.reduce((n, i) => n + i.payees.length, 0)) },
-            { label: 'Total', value: x => naira(x.total), num: true },
-            { label: 'Status', node: relBadge }
-          ], r.releases, [{ label: x => x.can.answer ? 'Answer Query' : 'Details', onClick: x => releaseDetails(x.id, releasesView) }]) : ui.empty('No release of funds has been requested yet.')
+          done.length ? ui.table([...cols.slice(0, 3), { label: 'Paid', value: l => `${naira(l.p.paid.amount)}, PV ${l.p.paid.pvNo}, ${day(l.p.paid.date)}` }], done, [{ label: 'Open', onClick: open }]) : ui.empty('Nothing paid yet.')
         );
       }
 
@@ -205,8 +308,10 @@
       // The breakdown: sections (Roofing, Painting…) with their lines; a
       // simple item is one section with no heading. Quantity and unit price
       // on every line; the line, section and item totals are worked out.
-      function requestForm(x) {
+      // A new request; the answer to a query (the requester); or the DCR's preparation (mode 'prepare'): correcting it and entering its beneficiaries.
+      function requestForm(x, mode, after) {
         const v = x || {};
+        const prep = mode === 'prepare';
         const item = el('input', { type: 'text', value: v.item || '', maxlength: '200', placeholder: 'e.g. Renovation of High Court No. II' });
         const desc = el('textarea', { rows: 2, maxlength: '3000' }); desc.value = v.description || '';
         const dept = el('input', { type: 'text', value: v.department || '', placeholder: 'e.g. Works, High Court No. III, Registry' });
@@ -255,17 +360,50 @@
           totals();
         }
         draw();
-        ui.modal(x ? `Answer the Query · ${v.item}` : 'New Request', el('div', { class: 'form-grid' }, [
-          x ? el('div', { class: 'notice notice--warn form-field--full' }, [el('strong', null, 'Query from the Hon. Chief Judge: '), v.query ? v.query.text : '']) : null,
-          x ? el('div', { class: 'form-field--full' }, ui.field('Your answer', answer)) : null,
+        // The beneficiaries (the DCR): who is to be paid, adding up to the item.
+        const blankPayee = (amount) => ({ name: '', bank: '', accountNo: '', accountName: '', amount: amount ? String(amount) : '' });
+        const payees = (v.payees || []).map(p => ({ name: p.name, bank: p.bank, accountNo: p.accountNo, accountName: p.accountName === p.name ? '' : (p.accountName || ''), amount: String(p.amount) }));
+        if (prep && !payees.length) payees.push(blankPayee(v.amount));
+        const payeeBox = el('div', { class: 'cfr' });
+        const payeeSum = el('div', { class: 'cfb-grand' });
+        const itemTotal = () => sections.reduce((n, sec) => n + secAmt(sec), 0);
+        const payTotals = () => {
+          const t = payees.reduce((n, p) => n + (Number(p.amount) || 0), 0), it = itemTotal();
+          payeeSum.classList.toggle('cfb-grand--off', Math.abs(t - it) > 0.004);
+          payeeSum.replaceChildren(el('span', null, Math.abs(t - it) > 0.004 ? `Beneficiaries: ${naira(t)}, the item is ${naira(it)}. They must add up to it before it can be submitted.` : 'Beneficiaries: they add up to the item'), el('strong', null, naira(t)));
+        };
+        function drawPayees() {
+          const input = (p, key, attrs) => { const n = el('input', { ...attrs, value: p[key] }); n.addEventListener('input', () => { p[key] = n.value; payTotals(); }); return n; };
+          payeeBox.replaceChildren(el('div', { class: 'cfr-item is-on' }, [
+            ...payees.map((p, j) => el('div', { class: 'cfr-payee' }, [
+              el('span', { class: 'cfr-payee__no' }, String(j + 1)),
+              input(p, 'name', { type: 'text', maxlength: '150', placeholder: 'Beneficiary', 'aria-label': 'Beneficiary', class: 'cfr-payee__name' }),
+              input(p, 'bank', { type: 'text', maxlength: '100', placeholder: 'Bank', list: 'cf-banks-i', 'aria-label': 'Bank', class: 'cfr-payee__bank' }),
+              input(p, 'accountNo', { type: 'text', inputmode: 'numeric', maxlength: '10', placeholder: 'Account no. (10 digits)', 'aria-label': 'Account number', class: 'cfr-payee__acct' }),
+              input(p, 'accountName', { type: 'text', maxlength: '150', placeholder: 'Account name, if different', 'aria-label': 'Account name', class: 'cfr-payee__aname' }),
+              input(p, 'amount', { type: 'number', min: '0', step: '0.01', placeholder: 'Amount ₦', 'aria-label': 'Amount', class: 'cfr-payee__amt' }),
+              el('button', { class: 'cfb-line__del', type: 'button', title: 'Remove this beneficiary', 'aria-label': 'Remove this beneficiary', disabled: payees.length === 1 ? 'disabled' : null, onclick: () => { payees.splice(j, 1); drawPayees(); } }, '✕')
+            ])),
+            el('div', { class: 'cfb-sec__foot' }, [el('button', { class: 'btn btn--ghost btn--small', type: 'button', onclick: () => { payees.push(blankPayee()); drawPayees(); } }, '+ Add a beneficiary')])
+          ]));
+          payTotals();
+        }
+        if (prep) { drawPayees(); breakdown.addEventListener('input', payTotals); }
+        const queryBy = v.query && v.query.by ? v.query.by : 'Hon. Chief Judge';
+        ui.modal(prep ? `Prepare for the Hon. Chief Judge · ${v.item}` : x ? `Answer the Query · ${v.item}` : 'New Request', el('div', { class: 'form-grid' }, [
+          prep ? el('datalist', { id: 'cf-banks-i' }, BANKS.map(b => el('option', { value: b }))) : null,
+          prep ? el('p', { class: 'muted form-field--full' }, `Requested by ${v.requestedByName}${v.requestedByRole ? `, ${v.requestedByRole}` : ''}. Correct the item if need be, and enter who is to be paid: the request for the release of funds goes up with it.`) : null,
+          x && v.query && (!prep || v.query.by === 'Hon. Chief Judge') ? el('div', { class: 'notice notice--warn form-field--full' }, [el('strong', null, `Query from the ${queryBy}: `), v.query.text]) : null,
+          x && !prep ? el('div', { class: 'form-field--full' }, ui.field('Your answer', answer)) : null,
           el('div', { class: 'form-field--full' }, ui.field('Item', item, 'As it will appear on the cash flow')),
           el('div', { class: 'form-field--full' }, ui.field('Description', desc)),
           el('div', { class: 'form-field--full' }, [el('div', { class: 'cfb-label' }, 'Breakdown'), el('p', { class: 'muted cfb-hint' }, 'Quantity and unit price on every line; the amounts and totals are worked out. For an item with parts, add a section for each part (e.g. Roofing, Painting), each with its own lines and subtotal.'), breakdown, grand]),
           ui.field('Department or purpose', dept),
           el('div', { class: 'form-field--full' }, ui.field('Justification', just)),
-          el('div', { class: 'form-field--full' }, ui.field('Attachments (optional)', files, 'Memo, invoice or quotation: PDF or photo, up to 5 files of 10 MB'))
+          el('div', { class: 'form-field--full' }, ui.field('Attachments (optional)', files, 'Memo, invoice or quotation: PDF or photo, up to 5 files of 10 MB')),
+          prep ? el('div', { class: 'form-field--full' }, [el('div', { class: 'cfb-label' }, 'Beneficiaries (the release of funds)'), el('p', { class: 'muted cfb-hint' }, 'Who is to be paid: name, bank, 10 digit account number and amount. If the Hon. Chief Judge approves less, each is reduced in the same proportion.'), payeeBox, payeeSum]) : null
         ]), {
-          wide: true, confirmText: x ? 'Send Back to the CJ' : 'Submit to the Cash Flow',
+          wide: true, confirmText: prep ? 'Save' : x ? 'Send Back to the DCR' : 'Submit to the Cash Flow',
           onConfirm: async () => {
             if (!item.value.trim()) throw new Error('Enter the item requested.');
             const many = sections.length > 1;
@@ -278,18 +416,31 @@
                 if (!(Number(l.unitPrice) > 0)) throw new Error(`Enter the unit price for ${where}.`);
               }
             }
-            if (x && !answer.value.trim()) throw new Error('Answer the query.');
+            if (x && !prep && !answer.value.trim()) throw new Error('Answer the query.');
+            if (prep) for (const [j, p] of payees.entries()) {
+              const where = `beneficiary ${j + 1}`;
+              if (!p.name.trim()) throw new Error(`Enter the name of ${where}.`);
+              if (!p.bank.trim()) throw new Error(`Enter the bank of ${where}.`);
+              if (!/^\d{10}$/.test(String(p.accountNo).replace(/\s/g, ''))) throw new Error(`The account number of ${where} must be 10 digits.`);
+              if (!(Number(p.amount) > 0)) throw new Error(`Enter the amount for ${where}.`);
+            }
             const f = new FormData();
+            if (prep) f.append('payees', JSON.stringify(payees.map(p => ({ ...p, name: p.name.trim(), accountNo: String(p.accountNo).replace(/\s/g, '') }))));
             Object.entries({ item: item.value.trim(), description: desc.value, department: dept.value, justification: just.value, answer: answer.value,
               sections: JSON.stringify(sections.map(sec => ({ title: sec.title.trim(), lines: sec.lines.map(l => ({ description: l.description.trim(), quantity: l.quantity, unitPrice: l.unitPrice })) }))) })
               .forEach(([k, val]) => f.append(k, val));
             [...files.files].forEach(file => f.append('files', file));
-            if (x) await api.put(`/cashflow/${x.id}`, f); else await api.post('/cashflow', f);
-            ui.toast(x ? 'Sent back to the Hon. Chief Judge.' : 'Placed on this month\'s cash flow. The Hon. Chief Judge is notified.', 'success', 6000);
-            router.refreshBadges(); TABS.length && TABS[0][2](); return true;
+            if (prep) {
+              const r = await api.put(`/cashflow/${x.id}/prepare`, f);
+              ui.toast(r.item.ready ? 'Saved. It is ready to submit to the Hon. Chief Judge.' : 'Saved. The beneficiaries must add up to the item before it can be submitted.', r.item.ready ? 'success' : 'info', 6000);
+            } else if (x) await api.put(`/cashflow/${x.id}`, f); else await api.post('/cashflow', f);
+            if (!prep) ui.toast(x ? 'Sent back to the DCR Admin and Finance.' : 'Placed on this month\'s cash flow. The DCR Admin and Finance is notified.', 'success', 6000);
+            router.refreshBadges(); setTimeout(after || (TABS.length ? TABS[0][2] : () => {}), 0); return true;
           }
         });
       }
+
+      const prepareForm = (x, after) => requestForm(x, 'prepare', after);
 
       // The breakdown of an item, to read: sections, lines, subtotals; lines
       // the CJ struck out shown as not approved.
@@ -336,6 +487,8 @@
             ${ok ? `<tr><td><strong>Amount approved</strong></td><td style="text-align:right"><strong>${esc(naira(x.decision.amount))}</strong></td></tr>` : ''}
             ${(x.payments || []).map(pm => `<tr><td>Paid to ${esc(pm.payee || '')}, PV ${esc(pm.pvNo)}, ${esc(day(pm.date))}</td><td style="text-align:right">${esc(naira(pm.amount))}</td></tr>`).join('')}
           </tbody></table>
+          ${x.payees.length ? `<h3 class="cfp-sec">Beneficiaries (the release of funds)</h3><table class="doc-table"><thead><tr><th>Beneficiary</th><th>Bank</th><th>Account No.</th><th style="text-align:right">Requested</th>${ok ? '<th style="text-align:right">Approved</th>' : ''}</tr></thead><tbody>${
+            x.payees.map(p => `<tr><td>${esc(p.name)}</td><td>${esc(p.bank)}</td><td>${esc(p.accountNo)}</td><td style="text-align:right">${esc(naira(p.amount))}</td>${ok ? `<td style="text-align:right">${esc(naira(p.approved))}</td>` : ''}</tr>`).join('')}</tbody></table>` : ''}
           ${x.justification ? `<p><strong>Justification:</strong> ${esc(x.justification)}</p>` : ''}
           ${ok ? `<div class="doc-sign-wrap"><div class="doc-sign-block">${x.decision.signatureUrl ? `<img class="doc-sig-img" src="${x.decision.signatureUrl}" alt="Signature">` : ''}<div class="doc-sign">${esc([x.decision.title, x.decision.byName].filter(Boolean).join(' '))}<br>Hon. Chief Judge</div><div class="doc-sig-meta">Approved ${esc(day(x.decision.at))}${x.decision.note ? `: ${esc(x.decision.note)}` : ''}</div></div></div>`
             : `<p class="muted">Status: ${esc((STATUS[x.status] || [x.status])[0])}</p>`}
@@ -355,10 +508,16 @@
           x.can.decide ? btn('✔  Approve', 'btn--ok', () => approve(x, done)) : null,
           x.can.decide ? btn('↩  Return with Query', 'btn--ghost', () => query(x, done)) : null,
           x.can.decide ? btn('✕  Decline', 'btn--danger', () => decline(x, done)) : null,
-          x.can.answer ? btn('Answer Query', 'btn--primary', () => { dialog.close(); requestForm(x); }) : null,
+          x.can.prepare ? btn(x.payees.length ? '✎  Prepare' : '✎  Enter Beneficiaries', 'btn--primary', () => { dialog.close(); prepareForm(x, after); }) : null,
+          x.can.submit ? btn('➜  Submit to the CJ', 'btn--ok', () => { dialog.close(); submitDialog([x], after); }) : null,
+          x.can.returnToRequester ? btn('↩  Return to the Requester', 'btn--ghost', () => askNote(`Return to ${x.requestedByName} · ${x.item}`, 'Query to the requester', 'Return', async (n) => { await api.post(`/cashflow/${x.id}/return`, { note: n }); ui.toast(`Returned to ${x.requestedByName} with your query.`, 'info'); }, done)) : null,
+          x.can.answer ? btn('Answer Query', 'btn--primary', () => { dialog.close(); requestForm(x, null, after); }) : null,
+          x.can.transmit ? btn('➜  Transmit All to the CR', 'btn--ok', () => { dialog.close(); transmitDialog([x], after); }) : null,
+          x.can.transmit ? btn('Transmit an Instalment', 'btn--ghost', () => { dialog.close(); instalmentDialog(x, after); }) : null,
+          x.can.send ? btn('➜  Send to the Chief Accountant', 'btn--ok', () => { dialog.close(); sendDialog([x], after); }) : null,
+          x.submission ? btn('🖨  Submission Memo', 'btn--ghost', () => printSubmission(x.submission.id)) : null,
           x.can.carry ? btn('➜  Carry to Next Cash Flow', 'btn--primary', async () => { try { await api.post(`/cashflow/${x.id}/carry`); ui.toast('Carried to the next cash flow.', 'success'); done(); } catch (e) { ui.toast(e.message, 'error'); } }) : null,
           x.can.carry ? btn('Dismiss', 'btn--danger', async () => { if (!confirm(`Dismiss ${x.item}? It leaves the cash flow for good.`)) return; try { await api.post(`/cashflow/${x.id}/dismiss`); ui.toast('Dismissed.', 'info'); done(); } catch (e) { ui.toast(e.message, 'error'); } }) : null,
-          x.can.release ? btn('Request Release of Funds', 'btn--primary', () => { dialog.close(); releaseForm(null, x.id, after); }) : null,
           x.can.complete ? btn('Close as Paid', 'btn--ghost', () => complete(x, done)) : null
         ]);
         // ── The item, laid out: header, progress, notices, cards, attachments, timeline ──
@@ -370,7 +529,7 @@
           el('div', { class: 'cfx-hero__main' }, [
             el('div', { class: 'cfx-hero__over' }, `Item ${x.sn} · ${x.monthName} cash flow${x.carriedFrom ? ` · carried from ${x.carriedFrom}` : ''}`),
             el('div', { class: 'cfx-hero__title' }, x.item),
-            el('div', { class: 'cfx-hero__by' }, [badge(x.status), el('span', null, `Requested by ${x.requestedByName}${x.requestedByRole ? `, ${x.requestedByRole}` : ''}`)])
+            el('div', { class: 'cfx-hero__by' }, [itemBadge(x), el('span', null, `Requested by ${x.requestedByName}${x.requestedByRole ? `, ${x.requestedByRole}` : ''}`)])
           ]),
           el('div', { class: 'cfx-hero__money' }, [
             el('div', { class: 'cfx-hero__label' }, 'Amount requested'),
@@ -379,27 +538,29 @@
             x.paid > 0 ? el('div', { class: 'cfx-hero__paid' }, x.status === 'paid' ? `Paid ${naira(x.paid)}` : `Paid so far ${naira(x.paid)}`) : null
           ])
         ]);
-        // Progress: requested, the Chief Judge's decision, payment.
-        const decided = x.decision ? x.decision.kind : (x.status === 'returned' ? 'query' : null);
+        // Progress: requested, the DCR's submission, the Chief Judge's decision, transmission, payment.
+        const decided = x.decision ? x.decision.kind : null;
         const step = (name, state, sub) => el('li', { class: 'cd-step ' + state }, [
           el('span', { class: 'cd-dot' }, state === 'is-done' ? '✓' : state === 'is-stop' ? '✕' : ''),
           el('span', { class: 'cd-step__name' }, name), sub ? el('span', { class: 'cd-step__date' }, sub) : null]);
+        const tr = x.tranches || [];
         const steps = el('ol', { class: 'cd-steps cfx-steps' }, [
           step('Requested', 'is-done', day(x.createdAt)),
-          x.status === 'returned' ? step('Query from the CJ', 'is-next', x.query ? day(x.query.at) : '')
-            : decided === 'approved' ? step('Approved by the CJ', 'is-done', day(x.decision.at))
-              : decided === 'declined' ? step('Not approved', 'is-stop', day(x.decision.at))
-                : step('Decision of the CJ', 'is-next', 'Waiting'),
-          decided === 'declined' ? step(x.status === 'dismissed' ? 'Dismissed' : 'Carry or dismiss', x.status === 'dismissed' ? 'is-stop' : 'is-next', '')
-            : null,
-          decided === 'declined' ? null : step('Release of funds', x.released > 0 ? 'is-done' : decided === 'approved' ? 'is-next' : '',
-            x.released > 0 ? (x.releases && x.releases.length ? day(x.releases[0].at) : naira(x.released)) : decided === 'approved' ? 'With the DCR Admin and Finance' : ''),
+          x.status === 'returned' ? step('DCR Admin and Finance', 'is-next', 'Returned to the requester')
+            : x.status === 'with_dcr' ? step('DCR Admin and Finance', 'is-next', x.query && x.query.by === 'Hon. Chief Judge' ? 'Query from the CJ' : x.ready ? 'Ready to submit' : 'Preparing')
+              : step('Submitted by the DCR', 'is-done', x.submission ? day(x.submission.at) : ''),
+          decided === 'approved' ? step('Approved by the CJ', 'is-done', day(x.decision.at))
+            : decided === 'declined' ? step('Not approved', 'is-stop', day(x.decision.at))
+              : step('Decision of the CJ', x.status === 'pending' ? 'is-next' : '', x.status === 'pending' ? 'Waiting' : ''),
+          decided === 'declined' ? step(x.status === 'dismissed' ? 'Dismissed' : 'Carry or dismiss', x.status === 'dismissed' ? 'is-stop' : 'is-next', '') : null,
+          decided === 'declined' ? null : step('Transmitted and sent', tr.length && x.leftToTransmit === 0 && tr.every(t => t.sent) ? 'is-done' : decided === 'approved' ? 'is-next' : '',
+            tr.length ? (tr.some(t => !t.sent) ? 'With the Chief Registrar' : x.leftToTransmit > 0 ? `${naira(x.decision.amount - x.leftToTransmit)} of ${naira(x.decision.amount)}` : day(tr[tr.length - 1].sent.at)) : decided === 'approved' ? 'With the DCR' : ''),
           decided === 'declined' ? null : step(x.status === 'paid' ? 'Paid' : x.paid > 0 ? 'Part paid' : 'Paid', x.status === 'paid' ? 'is-done' : x.paid > 0 ? 'is-next' : '',
-            x.status === 'paid' && x.payments.length ? day(x.payments[x.payments.length - 1].date) : x.paid > 0 ? `${naira(x.paid)} of ${naira(approved)}` : x.released > 0 ? 'With the Accountant' : '')
+            x.status === 'paid' && x.payments.length ? day(x.payments[x.payments.length - 1].date) : x.paid > 0 ? `${naira(x.paid)} of ${naira(approved)}` : tr.some(t => t.sent) ? 'With the Chief Accountant' : '')
         ].filter(Boolean));
         const notice = (cls, title, text, by) => el('div', { class: 'cfx-note cfx-note--' + cls }, [el('div', { class: 'cfx-note__title' }, title), el('div', null, text), by ? el('div', { class: 'cfx-note__by' }, by) : null]);
         const notes = [
-          x.status === 'returned' && x.query ? notice('query', '↩ Query from the Hon. Chief Judge', x.query.text, `${x.query.byName}, ${when(x.query.at)}`) : null,
+          (x.status === 'returned' || x.status === 'with_dcr') && x.query ? notice('query', `↩ Query from the ${x.query.by || 'Hon. Chief Judge'}`, x.query.text, `${x.query.byName}, ${when(x.query.at)}`) : null,
           decided === 'declined' ? notice('declined', '✕ Not approved', x.decision.note || 'No reason given.',
             `${x.decision.byName}, ${when(x.decision.at)}${x.status === 'declined' ? (x.requesterDecides ? ' · Left to the requester to carry forward or dismiss' : ' · The Hon. Chief Judge carries it forward or dismisses it') : ''}`) : null,
           decided === 'approved' && x.decision.note ? notice('approved', '✔ Remark of the Hon. Chief Judge', x.decision.note, `${x.decision.byName}, ${when(x.decision.at)}`) : null
@@ -413,7 +574,7 @@
             field('Requested', naira(x.amount)),
             field('Breakdown', `${x.sections.length > 1 ? `${x.sections.length} sections, ` : ''}${x.sections.reduce((n, sec) => n + sec.lines.length, 0)} line(s)`),
             field('Approved', approved !== null ? naira(approved) + (lower ? ` (${naira(x.amount - approved)} less)` : '') : decided === 'declined' ? 'Not approved' : 'Awaiting decision'),
-            approved !== null ? field('Released', x.released != null ? naira(x.released) + (x.toRelease > 0 && x.status === 'approved' ? ` (${naira(x.toRelease)} still to release)` : '') : '—') : null,
+            approved !== null ? field('Transmitted', naira(approved - (x.leftToTransmit || 0)) + (x.leftToTransmit > 0 && x.status === 'approved' ? ` (${naira(x.leftToTransmit)} still to transmit)` : '')) : null,
             field('Paid', x.paid > 0 ? naira(x.paid) : approved !== null ? 'Not yet' : '—')
           ])])
         ]);
@@ -422,22 +583,43 @@
         const files = x.attachments.length ? el('div', { class: 'cfx-files' }, [el('h4', null, `Attachments (${x.attachments.length})`),
           el('div', { class: 'cfx-files__list' }, x.attachments.map(a => el('a', { class: 'cfx-file', href: a.url, target: '_blank', rel: 'noopener' }, [
             el('span', { class: 'cfx-file__icon' }, fileIcon(a.name)), el('span', { class: 'cfx-file__name' }, a.name), el('span', { class: 'cfx-file__open' }, 'Open')])))]) : null;
-        const TONE = { requested: 'info', answered: 'info', approved: 'ok', paid: 'ok', declined: 'bad', dismissed: 'bad', returned: 'warn', carried: 'info', moved: 'info' };
+        const TONE = { requested: 'info', answered: 'info', approved: 'ok', paid: 'ok', declined: 'bad', dismissed: 'bad', returned: 'warn', carried: 'info', moved: 'info',
+          prepared: 'info', submitted: 'info', transmitted: 'info', sent: 'info', completed: 'ok' };
         const timeline = el('div', { class: 'cfx-timeline' }, [el('h4', null, 'History'), el('ol', null, x.history.map(h => el('li', { class: 'cfx-tl cfx-tl--' + (TONE[h.action] || 'info') }, [
           el('div', { class: 'cfx-tl__head' }, [el('strong', null, ACTION[h.action] || h.action), el('span', null, `${h.byName} · ${when(h.at)}`)]),
           h.note ? el('div', { class: 'cfx-tl__note' }, h.note) : null
         ])))]);
-        // The releases of funds for this item, and the payments made.
-        const rels = x.releases && x.releases.length ? el('div', { class: 'cfx-rels' }, [el('h4', null, `Release of funds and payments (${x.releases.length})`),
-          ...x.releases.map(rl => el('div', { class: 'cfx-rel' }, [
-            el('div', { class: 'cfx-rel__head' }, [el('strong', null, rl.refNo), rbadge(rl.status), el('span', { class: 'muted' }, day(rl.at)), el('span', { class: 'cfx-rel__amt' }, naira(rl.amount)),
-              el('button', { class: 'btn btn--ghost btn--small', type: 'button', onclick: () => { dialog.close(); releaseDetails(rl.id, after); } }, 'Open')]),
-            el('div', { class: 'cfx-rel__payees' }, rl.payees.map(p => el('div', { class: 'cfx-payee' }, [
+        // Who is to be paid: as requested, as approved, transmitted, paid.
+        const payeesPanel = x.payees.length ? el('div', { class: 'cfx-break' }, [el('h4', null, `Beneficiaries: the release of funds (${x.payees.length})`),
+          el('div', { class: 'table-scroll' }, el('table', { class: 'cfx-break__table' }, [
+            el('thead', null, el('tr', null, [el('th', null, 'Beneficiary'), el('th', null, 'Bank'), el('th', null, 'Account No.'), el('th', { class: 'num' }, 'Requested'),
+              approved !== null ? el('th', { class: 'num' }, 'Approved') : null, approved !== null ? el('th', { class: 'num' }, 'Transmitted') : null, approved !== null ? el('th', { class: 'num' }, 'Paid') : null])),
+            el('tbody', null, x.payees.map(p => el('tr', null, [
+              el('td', null, [p.name, p.accountName && p.accountName !== p.name ? el('div', { class: 'muted' }, `Account name: ${p.accountName}`) : null]),
+              el('td', null, p.bank), el('td', null, el('span', { class: 'cf-acct' }, p.accountNo)), el('td', { class: 'num' + (p.approved != null && p.approved < p.amount ? ' cd-struck' : '') }, naira(p.amount)),
+              approved !== null ? el('td', { class: 'num' }, el('strong', null, naira(p.approved))) : null,
+              approved !== null ? el('td', { class: 'num' }, naira(p.transmitted)) : null, approved !== null ? el('td', { class: 'num' }, naira(p.paid)) : null
+            ]))),
+            el('tfoot', null, el('tr', null, [el('td', { colspan: '3' }, x.ready || approved !== null ? 'Total' : `Total (the item is ${naira(x.amount)})`), el('td', { class: 'num' }, naira(x.payeesTotal)),
+              approved !== null ? el('td', { class: 'num' }, naira(approved)) : null, approved !== null ? el('td', { class: 'num' }, naira(approved - (x.leftToTransmit || 0))) : null, approved !== null ? el('td', { class: 'num' }, naira(x.paid)) : null]))
+          ])),
+          lower ? el('p', { class: 'muted' }, `The Hon. Chief Judge approved ${naira(approved)} of ${naira(x.amount)}: each beneficiary was reduced in the same proportion.`) : null
+        ]) : (x.can.prepare ? el('div', { class: 'cfx-note cfx-note--query' }, [el('div', { class: 'cfx-note__title' }, 'Beneficiaries not entered'), el('div', null, 'Enter who is to be paid before submitting to the Hon. Chief Judge.')]) : null);
+        // Each transmission (in full, or an instalment): sent by the Chief Registrar, paid by the Chief Accountant.
+        const trPanel = tr.length ? el('div', { class: 'cfx-rels' }, [el('h4', null, tr.length > 1 ? `Instalments (${tr.length})` : 'Transmission and payment'),
+          ...tr.map(t => el('div', { class: 'cfx-rel' }, [
+            el('div', { class: 'cfx-rel__head' }, [el('strong', null, tr.length > 1 ? `Instalment ${t.no}` : 'Transmitted'), el('span', { class: 'muted' }, `by ${t.byName}, ${day(t.at)}`),
+              t.sent ? pill(`Sent to the Chief Accountant, ${day(t.sent.at)}`, 'final') : pill('With the Chief Registrar', 'pending'), el('span', { class: 'cfx-rel__amt' }, naira(t.amount))]),
+            t.note ? el('div', { class: 'muted' }, t.note) : null,
+            el('div', { class: 'cfx-rel__payees' }, t.payees.map(p => el('div', { class: 'cfx-payee' }, [
               el('span', { class: 'cfx-payee__name' }, p.name), el('span', { class: 'muted' }, `${p.bank} · ${p.accountNo}`), el('span', { class: 'cfx-payee__amt' }, naira(p.amount)),
-              p.paid ? el('span', { class: 'badge badge--final' }, `Paid, PV ${p.paid.pvNo}`) : el('span', { class: 'badge badge--draft' }, rl.status === 'approved' ? (rl.transmitted ? 'To be paid' : 'Awaiting transmission') : rl.status === 'declined' ? 'Not approved' : 'Awaiting approval')
+              p.paid ? pill(`Paid, PV ${p.paid.pvNo}`, 'final')
+                : x.can.pay && t.sent ? el('button', { class: 'btn btn--primary btn--small', type: 'button', onclick: () => { dialog.close(); payDialog(x, p, after || payView, 'item'); } }, 'Record Payment')
+                  : pill(t.sent ? 'To be paid' : 'Awaiting the Chief Registrar', 'draft')
             ])))
           ]))]) : null;
-        const body = el('div', { class: 'cfx' }, [actions, hero, steps, ...notes, cards, x.sections.length ? breakdownView(x) : null, rels,
+        const submitted = x.submission ? el('p', { class: 'muted' }, `Submitted to the Hon. Chief Judge by ${x.submission.byName}, ${day(x.submission.at)}, in ${x.submission.refNo}.`) : null;
+        const body = el('div', { class: 'cfx' }, [actions, hero, steps, ...notes, cards, payeesPanel, trPanel, submitted, x.sections.length ? breakdownView(x) : null,
           (x.description || x.justification) ? el('div', { class: 'cfx-texts' }, [text('Description', x.description), text('Justification', x.justification)]) : null,
           files, timeline]);
         ui.modal('Cash Flow Item', body, { noFooter: true, wide: true, onOpen: (o) => { dialog = o; } });
@@ -483,12 +665,21 @@
           ui.toast('Approved. The Accountant is notified.', 'success'); setTimeout(done, 0); return true;
         } });
       }
+      // The CJ returns an item to the DCR Admin and Finance with a query.
       function query(x, done) {
-        const note = el('textarea', { rows: 3, maxlength: '2000', placeholder: 'What should the requester clarify or correct?' });
-        ui.modal(`Return with Query · ${x.item}`, ui.field('Query', note), { confirmText: 'Return', onConfirm: async () => {
+        const note = el('textarea', { rows: 3, maxlength: '2000', placeholder: 'What should the DCR Admin and Finance clarify or correct?' });
+        ui.modal(`Return with Query · ${x.item}`, el('div', null, [el('p', { class: 'muted' }, 'It goes back to the DCR Admin and Finance, who answers it (or asks the requester) and submits it again.'), ui.field('Query', note)]), { confirmText: 'Return', onConfirm: async () => {
           if (!note.value.trim()) throw new Error('Write the query.');
           await api.post(`/cashflow/${x.id}/decide`, { action: 'return', note: note.value.trim() });
-          ui.toast(`Returned to ${x.requestedByName} with your query.`, 'info'); setTimeout(done, 0); return true;
+          ui.toast('Returned to the DCR Admin and Finance with your query.', 'info'); setTimeout(done, 0); return true;
+        } });
+      }
+      // A short note, then an action (the DCR returning an item to its requester).
+      function askNote(title, label, confirmText, fn, done) {
+        const note = el('textarea', { rows: 3, maxlength: '2000' });
+        ui.modal(title, ui.field(label, note), { confirmText, onConfirm: async () => {
+          if (!note.value.trim()) throw new Error('Write the query.');
+          await fn(note.value.trim()); setTimeout(done, 0); return true;
         } });
       }
       function decline(x, done) {
@@ -504,7 +695,9 @@
         } });
       }
       // The Accountant pays one beneficiary of an approved release.
-      function payDialog(rel, p, after, mandatory) {
+      // The Chief Accountant pays one beneficiary: of a cash flow item (an instalment sent) or of the mandatories.
+      function payDialog(owner, p, after, kind) {
+        const mandatory = kind === true || kind === 'mandatory';
         const pv = el('input', { type: 'text', maxlength: '60', placeholder: 'e.g. PV/112/2026' });
         const date = el('input', { type: 'date', value: new Date().toISOString().slice(0, 10) });
         ui.modal(`Record Payment · ${p.name}`, el('div', null, [
@@ -514,13 +707,14 @@
             el('div', null, [el('span', { class: 'muted' }, 'Account number'), el('strong', { class: 'cf-acct' }, p.accountNo)]),
             el('div', null, [el('span', { class: 'muted' }, 'Account name'), el('strong', null, p.accountName || p.name)]),
             el('div', null, [el('span', { class: 'muted' }, 'Amount to pay (as approved)'), el('strong', null, naira(p.amount))]),
-            el('div', null, [el('span', { class: 'muted' }, mandatory ? 'Mandatories' : 'Release'), el('strong', null, rel.refNo)])
+            el('div', null, [el('span', { class: 'muted' }, mandatory ? 'Mandatories' : 'Cash flow item'), el('strong', null, mandatory ? owner.refNo : `${owner.item} (${owner.monthName}, item ${owner.sn})`)])
           ]),
           el('p', { class: 'muted' }, 'The amount is fixed: it is what the Hon. Chief Judge approved for this beneficiary.'),
           ui.field('Payment voucher number', pv), ui.field('Date paid', date)
         ]), { confirmText: `Record Payment of ${naira(p.amount)}`, onConfirm: async () => {
           if (!pv.value.trim()) throw new Error('Enter the payment voucher number.');
-          await api.post(`/cashflow/${mandatory ? 'mandatories' : 'releases'}/${rel.id}/pay`, { payee: p.id, pvNo: pv.value.trim(), date: date.value });
+          await (mandatory ? api.post(`/cashflow/mandatories/${owner.id}/pay`, { payee: p.id, pvNo: pv.value.trim(), date: date.value })
+            : api.post(`/cashflow/${owner.id}/pay`, { line: p.id, pvNo: pv.value.trim(), date: date.value }));
           ui.toast('Payment recorded. The Hon. Chief Judge is notified.', 'success'); router.refreshBadges(); setTimeout(after, 0); return true;
         } });
       }
@@ -573,245 +767,6 @@
           ui.toast(`${r.approved} item(s) approved, ${naira(r.total)}. The DCR Admin and Finance is notified.`, 'success', 6000);
           router.refreshBadges(); setTimeout(after, 0); return true;
         } });
-      }
-
-      // ── A request for the release of funds (or the answer to a query) ──
-      // The DCR chooses approved items; for each, the beneficiaries with
-      // their bank and account, and the amount (all that is left, or part).
-      async function releaseForm(rel, preselect, after) {
-        let open;
-        try { open = (await api.get(`/cashflow/releases/open-items${rel ? `?except=${rel.id}` : ''}`)).items; } catch (e) { ui.toast(e.message, 'error'); return; }
-        if (!open.length) { ui.toast('No approved item is waiting for the release of funds.', 'info'); return; }
-        const blank = (amount) => ({ name: '', bank: '', accountNo: '', accountName: '', amount: amount ? String(amount) : '' });
-        // The choice: each open item, ticked or not, with its beneficiaries.
-        const state = open.map(it => {
-          const had = rel && rel.items.find(x => x.item === it.id);
-          return { it, on: !!had || it.id === preselect, payees: had ? had.payees.map(p => ({ name: p.name, bank: p.bank, accountNo: p.accountNo, accountName: p.accountName === p.name ? '' : (p.accountName || ''), amount: String(p.amount) })) : [blank(it.left)] };
-        });
-        const banks = el('datalist', { id: 'cf-banks' }, BANKS.map(b => el('option', { value: b })));
-        const wrap = el('div', { class: 'cfr' });
-        const grand = el('div', { class: 'cfb-grand' });
-        const sumOf = (st) => st.payees.reduce((n, p) => n + (Number(p.amount) || 0), 0);
-        const totals = () => {
-          wrap.querySelectorAll('[data-sum]').forEach(n => { const st = state[Number(n.dataset.sum)]; const v = sumOf(st); n.textContent = `${naira(v)} of ${naira(st.it.left)} left to release`; n.classList.toggle('is-over', v > st.it.left + 0.004); });
-          const t = state.filter(st => st.on).reduce((n, st) => n + sumOf(st), 0);
-          grand.replaceChildren(el('span', null, `Total to release (${state.filter(st => st.on).length} item${state.filter(st => st.on).length === 1 ? '' : 's'})`), el('strong', null, naira(t)));
-        };
-        function draw() {
-          wrap.replaceChildren(...state.map((st, i) => {
-            const head = el('label', { class: 'cfr-item__head' }, [
-              el('input', { type: 'checkbox', checked: st.on ? 'checked' : null, onchange: (e) => { st.on = e.target.checked; draw(); } }),
-              el('span', { class: 'cfr-item__name' }, [el('strong', null, st.it.item), el('span', { class: 'muted' }, ` · ${st.it.monthName}, item ${st.it.sn} · requested by ${st.it.requestedByName}`)]),
-              el('span', { class: 'cfr-item__nums' }, [`Approved ${naira(st.it.approved)}`, st.it.released ? el('span', { class: 'muted' }, ` · released ${naira(st.it.released)}`) : null])
-            ]);
-            if (!st.on) return el('div', { class: 'cfr-item' }, [head]);
-            const input = (p, key, attrs) => { const n = el('input', { ...attrs, value: p[key] }); n.addEventListener('input', () => { p[key] = n.value; totals(); }); return n; };
-            return el('div', { class: 'cfr-item is-on' }, [head,
-              ...st.payees.map((p, j) => el('div', { class: 'cfr-payee' }, [
-                el('span', { class: 'cfr-payee__no' }, String(j + 1)),
-                input(p, 'name', { type: 'text', maxlength: '150', placeholder: 'Beneficiary, e.g. Bauchi Roofing Works', 'aria-label': 'Beneficiary', class: 'cfr-payee__name' }),
-                input(p, 'bank', { type: 'text', maxlength: '100', placeholder: 'Bank', list: 'cf-banks', 'aria-label': 'Bank', class: 'cfr-payee__bank' }),
-                input(p, 'accountNo', { type: 'text', inputmode: 'numeric', maxlength: '10', placeholder: 'Account no. (10 digits)', 'aria-label': 'Account number', class: 'cfr-payee__acct' }),
-                input(p, 'accountName', { type: 'text', maxlength: '150', placeholder: 'Account name, if different', 'aria-label': 'Account name', class: 'cfr-payee__aname' }),
-                input(p, 'amount', { type: 'number', min: '0', step: '0.01', placeholder: 'Amount ₦', 'aria-label': 'Amount', class: 'cfr-payee__amt' }),
-                el('button', { class: 'cfb-line__del', type: 'button', title: 'Remove this beneficiary', 'aria-label': 'Remove this beneficiary', disabled: st.payees.length === 1 ? 'disabled' : null, onclick: () => { st.payees.splice(j, 1); draw(); } }, '✕')
-              ])),
-              el('div', { class: 'cfb-sec__foot' }, [
-                el('button', { class: 'btn btn--ghost btn--small', type: 'button', onclick: () => { st.payees.push(blank()); draw(); } }, '+ Add a beneficiary'),
-                el('span', { class: 'cfr-sum', 'data-sum': String(i) })
-              ])
-            ]);
-          }));
-          totals();
-        }
-        draw();
-        const note = el('textarea', { rows: 3, maxlength: '3000', placeholder: 'e.g. The work has started; the contractors are to be paid the first instalment.' }); note.value = rel ? rel.note : '';
-        const answer = el('textarea', { rows: 3, maxlength: '2000' });
-        ui.modal(rel ? `Answer the Query · ${rel.refNo}` : 'Request Release of Funds', el('div', null, [banks,
-          rel ? el('div', { class: 'notice notice--warn' }, [el('strong', null, 'Query from the Hon. Chief Judge: '), rel.query ? rel.query.text : '']) : null,
-          rel ? ui.field('Your answer', answer) : null,
-          el('p', { class: 'muted' }, 'Tick the approved items to release funds for. For each, name who is to be paid, their bank and 10 digit account number, and the amount: all that is left, or part of it (an instalment). An item can be paid to more than one beneficiary.'),
-          wrap, grand,
-          ui.field('Remarks to the Hon. Chief Judge (optional)', note)
-        ]), {
-          wide: true, confirmText: rel ? 'Send Back to the CJ' : 'Send to the Hon. Chief Judge',
-          onConfirm: async () => {
-            const on = state.filter(st => st.on);
-            if (!on.length) throw new Error('Tick at least one item.');
-            for (const st of on) for (const [j, p] of st.payees.entries()) {
-              const where = `${st.it.item}, beneficiary ${j + 1}`;
-              if (!p.name.trim()) throw new Error(`Enter the name of ${where}.`);
-              if (!p.bank.trim()) throw new Error(`Enter the bank of ${where}.`);
-              if (!/^\d{10}$/.test(p.accountNo.replace(/\s/g, ''))) throw new Error(`The account number of ${where} must be 10 digits.`);
-              if (!(Number(p.amount) > 0)) throw new Error(`Enter the amount for ${where}.`);
-            }
-            for (const st of on) if (sumOf(st) > st.it.left + 0.004) throw new Error(`${st.it.item}: more than the ${naira(st.it.left)} left to release.`);
-            if (rel && !answer.value.trim()) throw new Error('Answer the query.');
-            const body = { note: note.value, answer: answer.value, items: on.map(st => ({ item: st.it.id, payees: st.payees.map(p => ({ ...p, accountNo: p.accountNo.replace(/\s/g, '') })) })) };
-            const r = rel ? await api.put(`/cashflow/releases/${rel.id}`, body) : await api.post('/cashflow/releases', body);
-            ui.toast(rel ? 'Sent back to the Hon. Chief Judge.' : `${r.release.refNo} sent to the Hon. Chief Judge.`, 'success', 6000);
-            router.refreshBadges(); setTimeout(after || releasesView, 0); return true;
-          }
-        });
-      }
-
-      // ── A release of funds: its details and actions ──
-      async function releaseDetails(id, after) {
-        let x;
-        try { x = (await api.get(`/cashflow/releases/${id}`)).release; } catch (e) { ui.toast(e.message, 'error'); return; }
-        let dialog;
-        const done = () => { dialog.close(); router.refreshBadges(); (after || releasesView)(); };
-        const btn = (label, cls, fn) => el('button', { class: 'btn ' + cls, type: 'button', onclick: fn }, label);
-        const when = (d) => d ? new Date(d).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
-        const actions = el('div', { class: 'doc-preview__actions' }, [
-          btn('✕  Close', 'btn--ghost', () => dialog.close()),
-          btn('🖨  Print Memo', 'btn--ghost', () => printRelease(x)),
-          x.can.decide ? btn('✔  Approve', 'btn--ok', () => approveReleases([x], done)) : null,
-          x.can.decide ? btn('↩  Return with Query', 'btn--ghost', () => releaseQuery(x, done)) : null,
-          x.can.decide ? btn('✕  Decline', 'btn--danger', () => releaseDecline(x, done)) : null,
-          x.can.answer ? btn('Answer Query', 'btn--primary', () => { dialog.close(); releaseForm(x, null, after); }) : null,
-          x.can.transmit ? btn('➜  Transmit to the Accountant', 'btn--primary', () => transmitReleases([x], done)) : null
-        ]);
-        const hero = el('div', { class: 'cfx-hero cfx-hero--' + (x.status === 'approved' ? 'approved' : x.status) }, [
-          el('div', { class: 'cfx-hero__main' }, [
-            el('div', { class: 'cfx-hero__over' }, `Release of funds · ${x.refNo}`),
-            el('div', { class: 'cfx-hero__title' }, x.items.map(i => i.name).join('; ')),
-            el('div', { class: 'cfx-hero__by' }, [relBadge(x), el('span', null, `Requested by ${x.requestedByName}, DCR Admin and Finance · ${day(x.createdAt)}`)])
-          ]),
-          el('div', { class: 'cfx-hero__money' }, [
-            el('div', { class: 'cfx-hero__label' }, 'Amount to release'),
-            el('div', { class: 'cfx-hero__amount' }, naira(x.total)),
-            x.paid > 0 ? el('div', { class: 'cfx-hero__paid' }, x.status === 'paid' ? `Paid ${naira(x.paid)}` : `Paid so far ${naira(x.paid)}`) : null
-          ])
-        ]);
-        const step = (name, state, sub) => el('li', { class: 'cd-step ' + state }, [
-          el('span', { class: 'cd-dot' }, state === 'is-done' ? '✓' : state === 'is-stop' ? '✕' : ''),
-          el('span', { class: 'cd-step__name' }, name), sub ? el('span', { class: 'cd-step__date' }, sub) : null]);
-        const ok = x.decision && x.decision.kind === 'approved';
-        const steps = el('ol', { class: 'cd-steps cfx-steps' }, [
-          step('Requested', 'is-done', day(x.createdAt)),
-          x.status === 'returned' ? step('Query from the CJ', 'is-next', x.query ? day(x.query.at) : '')
-            : ok ? step('Approved by the CJ', 'is-done', day(x.decision.at))
-              : x.status === 'declined' ? step('Not approved', 'is-stop', day(x.decision.at)) : step('Approval of the CJ', 'is-next', 'Waiting'),
-          x.status === 'declined' ? null : step('Transmitted by the CR', x.transmitted ? 'is-done' : ok ? 'is-next' : '', x.transmitted ? day(x.transmitted.at) : ok ? 'With the Chief Registrar' : ''),
-          x.status === 'declined' ? null : step(x.status === 'paid' ? 'Paid' : x.paid > 0 ? 'Part paid' : 'Paid', x.status === 'paid' ? 'is-done' : x.transmitted ? 'is-next' : '', x.status === 'paid' ? '' : x.transmitted ? 'With the Accountant' : '')
-        ].filter(Boolean));
-        const notice = (cls, title, text, by) => el('div', { class: 'cfx-note cfx-note--' + cls }, [el('div', { class: 'cfx-note__title' }, title), el('div', null, text), by ? el('div', { class: 'cfx-note__by' }, by) : null]);
-        const notes = [
-          x.status === 'returned' && x.query ? notice('query', '↩ Query from the Hon. Chief Judge', x.query.text, `${x.query.byName}, ${when(x.query.at)}`) : null,
-          x.status === 'declined' ? notice('declined', '✕ Not approved', x.decision.note || 'No reason given.', `${x.decision.byName}, ${when(x.decision.at)} · The amount is free to be requested again`) : null,
-          ok && x.decision.note ? notice('approved', '✔ Remark of the Hon. Chief Judge', x.decision.note, `${x.decision.byName}, ${when(x.decision.at)}`) : null,
-          x.note ? notice('info', 'Remarks of the DCR Admin and Finance', x.note, '') : null,
-          x.transmitted && x.transmitted.note ? notice('info', 'Transmitted by the Chief Registrar', x.transmitted.note, `${x.transmitted.byName}, ${when(x.transmitted.at)}`) : null
-        ].filter(Boolean);
-        const items = el('div', { class: 'cfx-break' }, [el('h4', null, `Items and beneficiaries (${x.items.length})`),
-          ...x.items.map(it => el('div', { class: 'cfx-break__sec' }, [
-            el('div', { class: 'cfx-break__title' }, `${it.name} · ${it.monthName} cash flow, item ${it.sn}`),
-            el('div', { class: 'table-scroll' }, el('table', { class: 'cfx-break__table' }, [
-              el('thead', null, el('tr', null, [el('th', null, 'Beneficiary'), el('th', null, 'Bank'), el('th', null, 'Account No.'), el('th', { class: 'num' }, 'Amount'), el('th', null, 'Payment'), x.can.pay ? el('th') : null])),
-              el('tbody', null, it.payees.map(p => el('tr', null, [
-                el('td', null, [p.name, p.accountName && p.accountName !== p.name ? el('div', { class: 'muted' }, `Account name: ${p.accountName}`) : null]),
-                el('td', null, p.bank), el('td', null, el('span', { class: 'cf-acct' }, p.accountNo)), el('td', { class: 'num' }, naira(p.amount)),
-                el('td', null, p.paid ? `${naira(p.paid.amount)}, PV ${p.paid.pvNo}, ${day(p.paid.date)}` : ok ? (x.transmitted ? 'To be paid' : 'Awaiting transmission') : '—'),
-                x.can.pay ? el('td', null, p.paid ? null : el('button', { class: 'btn btn--primary btn--small', type: 'button', onclick: () => { dialog.close(); payDialog(x, p, after || payView); } }, 'Record Payment')) : null
-              ]))),
-              el('tfoot', null, el('tr', null, [el('td', { colspan: '3' }, 'Total for this item'), el('td', { class: 'num' }, naira(it.amount)), el('td'), x.can.pay ? el('td') : null]))
-            ]))
-          ])),
-          x.items.length > 1 ? el('div', { class: 'cfx-break__grand' }, [el('span', null, 'Total to release'), el('strong', null, naira(x.total))]) : null
-        ]);
-        const TONE = { requested: 'info', answered: 'info', approved: 'ok', paid: 'ok', declined: 'bad', returned: 'warn', transmitted: 'info' };
-        const timeline = el('div', { class: 'cfx-timeline' }, [el('h4', null, 'History'), el('ol', null, x.history.map(h => el('li', { class: 'cfx-tl cfx-tl--' + (TONE[h.action] || 'info') }, [
-          el('div', { class: 'cfx-tl__head' }, [el('strong', null, ACTION[h.action] || h.action), el('span', null, `${h.byName} · ${when(h.at)}`)]),
-          h.note ? el('div', { class: 'cfx-tl__note' }, h.note) : null
-        ])))]);
-        ui.modal('Release of Funds', el('div', { class: 'cfx' }, [actions, hero, steps, ...notes, items, timeline]), { noFooter: true, wide: true, onOpen: (o) => { dialog = o; } });
-      }
-
-      // The Hon. Chief Judge approves one release, or several at once, with the PIN.
-      function approveReleases(list, after) {
-        if (!list.length) return;
-        const total = list.reduce((n, x) => n + x.total, 0);
-        const note = el('input', { type: 'text', maxlength: '500', placeholder: 'Optional' });
-        const pin = el('input', { type: 'password', inputmode: 'numeric', autocomplete: 'off', maxlength: '8', placeholder: 'Signing PIN' });
-        ui.modal(list.length > 1 ? `Approve ${list.length} Releases of Funds` : `Approve Release · ${list[0].refNo}`, el('div', null, [
-          el('div', { class: 'cfa-list' }, list.map(x => el('div', { class: 'cfa-sec' }, [
-            el('div', { class: 'cfa-sec__head cfa-line--plain' }, [el('span'), el('strong', null, `${x.refNo} · ${x.items.map(i => i.name).join('; ')}`), el('span', null, naira(x.total))]),
-            ...x.items.flatMap(i => i.payees.map(p => el('div', { class: 'cfa-line cfa-line--plain' }, [el('span'), el('span', null, `${p.name} · ${p.bank} · ${p.accountNo}`), el('span', { class: 'cfa-line__amt' }, naira(p.amount))])))
-          ]))),
-          el('div', { class: 'cfa-kept' }, `Total: ${naira(total)}`),
-          ui.field('Remark (optional)', note), ui.field('Your signing PIN', pin)
-        ]), { wide: true, confirmText: list.length > 1 ? `Approve ${list.length}` : 'Approve', confirmClass: 'btn--ok', onConfirm: async () => {
-          if (!pin.value) throw new Error('Enter your signing PIN.');
-          if (list.length > 1) await api.post('/cashflow/releases/decide-many', { ids: list.map(x => x.id), pin: pin.value, note: note.value });
-          else await api.post(`/cashflow/releases/${list[0].id}/decide`, { action: 'approve', pin: pin.value, note: note.value });
-          ui.toast(`Approved, ${naira(total)}. The Accountant is notified.`, 'success', 6000);
-          router.refreshBadges(); setTimeout(after, 0); return true;
-        } });
-      }
-      // The Chief Registrar transmits approved releases to the Accountant.
-      function transmitReleases(list, after) {
-        if (!list.length) return;
-        const total = list.reduce((n, x) => n + x.total, 0);
-        const note = el('input', { type: 'text', maxlength: '500', placeholder: 'Optional, e.g. Pay before Friday' });
-        ui.modal(list.length > 1 ? `Transmit ${list.length} Releases to the Accountant` : `Transmit to the Accountant · ${list[0].refNo}`, el('div', null, [
-          el('div', { class: 'cfa-list' }, list.map(x => el('div', { class: 'cfa-sec' }, [
-            el('div', { class: 'cfa-sec__head cfa-line--plain' }, [el('span'), el('strong', null, `${x.refNo} · ${x.items.map(i => i.name).join('; ')}`), el('span', null, naira(x.total))]),
-            ...x.items.flatMap(i => i.payees.map(p => el('div', { class: 'cfa-line cfa-line--plain' }, [el('span'), el('span', null, `${p.name} · ${p.bank} · ${p.accountNo}`), el('span', { class: 'cfa-line__amt' }, naira(p.amount))])))
-          ]))),
-          el('div', { class: 'cfa-kept' }, `Total: ${naira(total)}`),
-          ui.field('Note to the Accountant (optional)', note)
-        ]), { wide: true, confirmText: list.length > 1 ? `Transmit ${list.length}` : 'Transmit', confirmClass: 'btn--ok', onConfirm: async () => {
-          await api.post('/cashflow/releases/transmit', { ids: list.map(x => x.id), note: note.value });
-          ui.toast(`Transmitted to the Accountant, ${naira(total)}.`, 'success', 6000);
-          router.refreshBadges(); setTimeout(after, 0); return true;
-        } });
-      }
-
-      function releaseQuery(x, done) {
-        const note = el('textarea', { rows: 3, maxlength: '2000', placeholder: 'What should the DCR Admin and Finance clarify or correct?' });
-        ui.modal(`Return with Query · ${x.refNo}`, ui.field('Query', note), { confirmText: 'Return', onConfirm: async () => {
-          if (!note.value.trim()) throw new Error('Write the query.');
-          await api.post(`/cashflow/releases/${x.id}/decide`, { action: 'return', note: note.value.trim() });
-          ui.toast(`Returned to ${x.requestedByName} with your query.`, 'info'); setTimeout(done, 0); return true;
-        } });
-      }
-      function releaseDecline(x, done) {
-        const note = el('input', { type: 'text', maxlength: '500', placeholder: 'Optional' });
-        ui.modal(`Decline · ${x.refNo}`, el('div', null, [ui.field('Reason (optional)', note), el('p', { class: 'muted' }, 'The amount becomes free to be requested again.')]),
-          { confirmText: 'Decline', confirmClass: 'btn--danger', onConfirm: async () => {
-            await api.post(`/cashflow/releases/${x.id}/decide`, { action: 'decline', note: note.value });
-            ui.toast('Not approved.', 'info'); setTimeout(done, 0); return true;
-          } });
-      }
-
-      // The request for the release of funds as a memo, with the Chief Judge's approval.
-      async function printRelease(x) {
-        const ok = x.decision && x.decision.kind === 'approved';
-        let qr = null;
-        if (ok) { try { qr = await api.get(`/cashflow/releases/${x.id}/qr`); } catch (e) { ui.toast(e.message, 'error'); return; } }
-        let n = 0;
-        const rows = x.items.map(it => it.payees.map((p, j) => `<tr><td>${++n}</td><td>${j ? '' : `${esc(it.name)}<div class="muted">${esc(it.monthName)} cash flow, item ${esc(it.sn)}</div>`}</td><td>${esc(p.name)}${p.accountName && p.accountName !== p.name ? `<div class="muted">A/C name: ${esc(p.accountName)}</div>` : ''}</td><td>${esc(p.bank)}</td><td>${esc(p.accountNo)}</td><td style="text-align:right">${esc(naira(p.amount))}</td></tr>`).join('')).join('');
-        window.App.processUi.printPage(`<article class="court-doc report-print">
-          <header class="doc-masthead"><img class="doc-emblem" src="/assets/highcourt.png" alt=""><div class="doc-titleblock"><div class="doc-line1">THE JUDICIARY</div><div class="doc-line2">GOMBE STATE HIGH COURT OF JUSTICE</div><div class="doc-line3">INTERNAL MEMO</div></div><img class="doc-emblem" src="/assets/coat.png" alt=""></header><div class="doc-rule"></div>
-          <table class="cfp-memo"><tbody>
-            <tr><td>From:</td><td>The Deputy Chief Registrar (Admin and Finance)</td><td>Ref:</td><td>${esc(x.refNo)}</td></tr>
-            <tr><td>To:</td><td>The Hon. Chief Judge</td><td>Date:</td><td>${esc(day(x.createdAt))}</td></tr>
-          </tbody></table>
-          <h3 style="text-align:center;text-decoration:underline;margin:10px 0">REQUEST FOR RELEASE OF FUNDS</h3>
-          <p>I write to request the release of funds for the following item(s) approved on the cash flow, to be paid to the beneficiaries named below:</p>
-          <table class="doc-table"><thead><tr><th>S/No</th><th>Item</th><th>Beneficiary</th><th>Bank</th><th>Account No.</th><th style="text-align:right">Amount</th></tr></thead>
-          <tbody>${rows}<tr><td colspan="5" style="text-align:right"><strong>Total</strong></td><td style="text-align:right"><strong>${esc(naira(x.total))}</strong></td></tr></tbody></table>
-          ${x.note ? `<p>${esc(x.note)}</p>` : ''}
-          <p>Submitted for your kind consideration and approval, please.</p>
-          <div class="cfp-from"><strong>${esc(x.requestedByName)}</strong><br>Deputy Chief Registrar (Admin and Finance)</div>
-          ${ok ? `<div class="doc-sign-wrap"><div class="doc-sign-block"><div class="doc-sig-meta" style="font-weight:700">APPROVED</div>${x.decision.signatureUrl ? `<img class="doc-sig-img" src="${x.decision.signatureUrl}" alt="Signature">` : ''}<div class="doc-sign">${esc([x.decision.title, x.decision.byName].filter(Boolean).join(' '))}<br>Hon. Chief Judge</div><div class="doc-sig-meta">${esc(day(x.decision.at))}${x.decision.note ? `: ${esc(x.decision.note)}` : ''}</div></div></div>`
-            : `<p class="muted">Status: ${esc((RSTATUS[x.status] || [x.status])[0])}. Not yet approved: no payment may be made on this memo.</p>`}
-          ${x.transmitted ? `<p style="font-size:9.5pt">Transmitted to the Accountant for payment by ${esc(x.transmitted.byName)}, Chief Registrar, on ${esc(day(x.transmitted.at))}.</p>` : ''}
-          ${qr ? `<div class="doc-verify"><img class="doc-qr" src="${qr.qrDataUrl}" alt="Verification QR code"><div class="doc-verify__text">
-            <strong>Verification code: ${esc(qr.verifyCode)}</strong><br>Scan the QR code, or visit ${esc(qr.verifyUrl)}, to confirm this release was approved by the Hon. Chief Judge and that the beneficiaries, account numbers and amounts have not been altered.</div></div>` : ''}
-          <footer class="doc-footer"><span>Printed ${esc(day(new Date()))}</span><span>Powered by the Directorate of ICT, Gombe State High Court of Justice</span></footer></article>`,
-          '@page { size: A4; margin: 12mm; } .cfp-memo { width: 100%; border-collapse: collapse; margin: 6px 0; } .cfp-memo td { padding: 3px 6px; vertical-align: top; } .cfp-memo td:nth-child(odd) { font-weight: 700; width: 4.5em; } .cfp-from { margin: 18px 0 8px; }');
       }
 
       // ── The monthly mandatories ──
@@ -1101,6 +1056,36 @@
       }
 
       // ── The month's approved cash flow, signed by the Chief Judge ──
+      // The DCR's submission to the Hon. Chief Judge, with the request for the
+      // release of funds: each item with its beneficiaries, and, once decided,
+      // the CJ's decision on each.
+      async function printSubmission(id) {
+        let r;
+        try { r = await api.get(`/cashflow/submissions/${id}`); } catch (e) { ui.toast(e.message, 'error'); return; }
+        const sub = r.submission;
+        let n = 0;
+        const decision = (x) => !x.decision ? 'Awaiting decision' : x.decision.kind === 'approved' ? `Approved ${naira(x.decision.amount)}, ${day(x.decision.at)}` : 'Not approved';
+        const rows = r.items.map(x => {
+          const ps = x.payees.length ? x.payees : [{ name: '', bank: '', accountNo: '', amount: x.amount }];
+          return ps.map((p, j) => `<tr><td>${j ? '' : ++n}</td><td>${j ? '' : `${esc(x.item)}<div class="muted">Item ${esc(x.sn)} · ${esc(x.requestedByName)}</div>`}</td><td>${esc(p.name)}</td><td>${esc(p.bank)}</td><td>${esc(p.accountNo)}</td><td style="text-align:right">${esc(naira(p.amount))}</td><td style="text-align:right">${j ? '' : `<strong>${esc(naira(x.amount))}</strong>`}</td><td>${j ? '' : esc(decision(x))}</td></tr>`).join('');
+        }).join('');
+        window.App.processUi.printPage(`<article class="court-doc report-print">
+          <header class="doc-masthead"><img class="doc-emblem" src="/assets/highcourt.png" alt=""><div class="doc-titleblock"><div class="doc-line1">THE JUDICIARY</div><div class="doc-line2">GOMBE STATE HIGH COURT OF JUSTICE</div><div class="doc-line3">INTERNAL MEMO</div></div><img class="doc-emblem" src="/assets/coat.png" alt=""></header><div class="doc-rule"></div>
+          <table class="cfp-memo"><tbody>
+            <tr><td>From:</td><td>The Deputy Chief Registrar (Admin and Finance)</td><td>Ref:</td><td>${esc(sub.refNo)}</td></tr>
+            <tr><td>To:</td><td>The Hon. Chief Judge</td><td>Date:</td><td>${esc(day(sub.at))}</td></tr>
+          </tbody></table>
+          <h3 style="text-align:center;text-decoration:underline;margin:10px 0">${sub.supplementary ? 'SUPPLEMENTARY ' : ''}CASH FLOW FOR ${esc(sub.monthName.toUpperCase())} AND REQUEST FOR RELEASE OF FUNDS</h3>
+          <p>I submit the following item(s) on the ${esc(sub.monthName)} cash flow for your kind approval, together with the release of funds to the beneficiaries named below:</p>
+          <table class="doc-table"><thead><tr><th>S/No</th><th>Item</th><th>Beneficiary</th><th>Bank</th><th>Account No.</th><th style="text-align:right">Amount</th><th style="text-align:right">Item total</th><th>Decision</th></tr></thead>
+          <tbody>${rows}<tr><td colspan="6" style="text-align:right"><strong>Total</strong></td><td style="text-align:right"><strong>${esc(naira(sub.total))}</strong></td><td></td></tr></tbody></table>
+          ${sub.note ? `<p>${esc(sub.note)}</p>` : ''}
+          <p>Submitted for your kind consideration and approval, please.</p>
+          <div class="cfp-from"><strong>${esc(sub.byName)}</strong><br>Deputy Chief Registrar (Admin and Finance)</div>
+          <footer class="doc-footer"><span>Printed ${esc(day(new Date()))}</span><span>Powered by the Directorate of ICT, Gombe State High Court of Justice</span></footer></article>`,
+          '@page { size: A4 landscape; margin: 10mm; } .cfp-memo { width: 100%; border-collapse: collapse; margin: 6px 0; } .cfp-memo td { padding: 3px 6px; vertical-align: top; } .cfp-memo td:nth-child(odd) { font-weight: 700; width: 4.5em; } .cfp-from { margin: 18px 0 8px; }');
+      }
+
       async function printApproved(r) {
         const list = r.items.filter(x => ['approved', 'paid'].includes(x.status));
         if (!list.length) { ui.toast('Nothing approved on this cash flow yet.', 'info'); return; }
@@ -1109,10 +1094,11 @@
         try { sheet = await api.post('/cashflow/sheet', { month: r.month }); } catch (e) { ui.toast(e.message, 'error'); return; }
         const total = list.reduce((n, x) => n + x.decision.amount, 0);
         const signer = list.slice().reverse().find(x => x.decision && x.decision.signatureUrl);
-        const rows = list.map((x, i) => `<tr><td>${i + 1}</td><td>${esc(x.item)}${x.department ? `<div class="muted">${esc(x.department)}</div>` : ''}</td><td>${esc(x.requestedByName)}</td><td style="text-align:right">${esc(naira(x.amount))}</td><td style="text-align:right">${esc(naira(x.decision.amount))}</td><td>${esc(day(x.decision.at))}</td><td>${x.status === 'paid' ? `Paid${x.payments.length ? `, PV ${esc(x.payments.map(pm => pm.pvNo).join(', '))}` : ''}` : x.paid > 0 ? `Part paid, ${esc(naira(x.paid))}` : 'To be paid'}</td></tr>`).join('');
+        const who = (x) => x.payees.length ? `<div class="muted" style="font-size:8.5pt">${x.payees.map(p => `${esc(p.name)}, ${esc(p.bank)} ${esc(p.accountNo)}: ${esc(naira(p.approved))}`).join('<br>')}</div>` : '';
+        const rows = list.map((x, i) => `<tr><td>${i + 1}</td><td>${esc(x.item)}${x.department ? `<div class="muted">${esc(x.department)}</div>` : ''}${who(x)}</td><td>${esc(x.requestedByName)}</td><td style="text-align:right">${esc(naira(x.amount))}</td><td style="text-align:right">${esc(naira(x.decision.amount))}</td><td>${esc(day(x.decision.at))}</td><td>${x.status === 'paid' ? `Paid${x.payments.length ? `, PV ${esc(x.payments.map(pm => pm.pvNo).join(', '))}` : ''}` : x.paid > 0 ? `Part paid, ${esc(naira(x.paid))}` : 'To be paid'}</td></tr>`).join('');
         window.App.processUi.printPage(`<article class="court-doc report-print">
           <header class="doc-masthead"><img class="doc-emblem" src="/assets/highcourt.png" alt=""><div class="doc-titleblock"><div class="doc-line1">THE JUDICIARY</div><div class="doc-line2">GOMBE STATE HIGH COURT OF JUSTICE</div><div class="doc-line3">APPROVED CASH FLOW · ${esc(r.monthName.toUpperCase())}</div></div><img class="doc-emblem" src="/assets/coat.png" alt=""></header><div class="doc-rule"></div>
-          <table class="doc-table"><thead><tr><th>S/No</th><th>Item</th><th>Requested by</th><th>Requested</th><th>Approved</th><th>Date approved</th><th>Payment</th></tr></thead>
+          <table class="doc-table"><thead><tr><th>S/No</th><th>Item and beneficiaries</th><th>Requested by</th><th>Requested</th><th>Approved</th><th>Date approved</th><th>Payment</th></tr></thead>
           <tbody>${rows}<tr><td colspan="4" style="text-align:right"><strong>Total approved</strong></td><td style="text-align:right"><strong>${esc(naira(total))}</strong></td><td colspan="2"></td></tr></tbody></table>
           <div class="doc-sign-wrap"><div class="doc-sign-block">${signer ? `<img class="doc-sig-img" src="${signer.decision.signatureUrl}" alt="Signature">` : ''}<div class="doc-sign">${esc([signer && signer.decision.title, signer && signer.decision.byName].filter(Boolean).join(' '))}<br>Hon. Chief Judge</div>${signer ? `<div class="doc-sig-meta">Each item digitally approved on the date shown</div>` : ''}</div></div>
           <div class="doc-verify"><img class="doc-qr" src="${sheet.qrDataUrl}" alt="Verification QR code"><div class="doc-verify__text">

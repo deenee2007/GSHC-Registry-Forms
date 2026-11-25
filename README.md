@@ -253,7 +253,7 @@ Cloudinary (no public address; only the server can read it):
 * one compressed file with **every collection of the system**, exact to
   the second: units, users, signing rules, records, cases, the Court
   Diary, the nominal roll, staff folders, leave, the cash flow (items,
-  releases of funds, mandatories, printed sheets, the overhead received),
+  submissions to the CJ, mandatories, printed sheets, the overhead received),
   notifications, settings and the audit log. The list is taken from the
   system itself, so a new feature is never left out; only short lived
   sign in links and the list of backups are not kept (a test checks this);
@@ -661,30 +661,40 @@ Home, Cash Flow and My Account.
 * **Cash flow items:** the Aide to the Hon. Chief Judge, the Chief
   Registrar and the DCR Admin and Finance request items. Each item has its
   lines (quantity × unit price, worked out), in sections where it has parts
-  (for example Roofing, Painting, each with a subtotal). The Hon. Chief
-  Judge approves (all, part of the lines, or a lower amount, with the
-  signing PIN; several items at once if he chooses), declines, or returns
-  an item with a query. Items left waiting move to the next month; an item
-  not approved is carried forward or dismissed.
-* **Release of funds:** for approved items, the DCR Admin and Finance
-  requests the release of funds, naming the beneficiaries (bank, 10 digit
-  account number, amount), in full or in instalments. The Hon. Chief Judge
-  approves it with the PIN (several at once if he chooses), returns it or
-  declines it. The **Chief Registrar transmits** the approved release to
-  the **Chief Accountant**, who pays each beneficiary at the approved
-  amount and records the PV. The release prints as a memo with a QR code.
+  (for example Roofing, Painting, each with a subtotal).
+* **The DCR Admin and Finance** receives every request: corrects it if need
+  be, or returns it to the requester with a query, and enters who is to be
+  paid (beneficiaries, bank, 10 digit account number, amount, adding up to
+  the item). That is the request for the release of funds, and it goes up
+  with the item. The DCR submits to the Hon. Chief Judge the month's cash
+  flow at once, selected items, or later a supplementary submission; each
+  submission prints as a memo.
+* **The Hon. Chief Judge** approves an item (all, part of its lines, or a
+  lower amount, with the signing PIN; several at once if he chooses), and
+  so approves the release of its funds: if he approves less, each
+  beneficiary is reduced in the same proportion, and both the requested
+  and the approved amounts are shown. Or he declines it, or returns it to
+  the DCR with a query. Items left waiting move to the next month; an item
+  not approved is carried forward (back to the DCR) or dismissed.
+* **Payment:** the DCR transmits the approved item to the **Chief
+  Registrar**, all at once or in instalments (the amount for each
+  beneficiary each time; no new approval). The Chief Registrar sends it to
+  the **Chief Accountant** (several at once if he chooses), who pays each
+  beneficiary at the amount transmitted and records the PV. When all that
+  was approved is paid, the item is paid; when less is enough, the CJ or
+  the DCR closes it as paid.
 * **Monthly mandatories:** the standing payments made every month (casual
   staff, subscriptions, allowances…). The Chief Accountant prepares the
   month's list (a copy of last month's, or imported from a spreadsheet);
   the Chief Registrar approves it and sends it to the Hon. Chief Judge, who
   approves it with the PIN (all, or without some mandatories); the Chief
-  Registrar transmits it; the Chief Accountant pays. No release of funds is
-  needed. The list prints with a QR code.
-* **Printing and checking:** the approved cash flow, each release memo and
-  each list of mandatories print with the Chief Judge's signature and a QR
-  code. The public check confirms what was approved, and says if anything
-  (an account number, an amount) was altered since; an altered release or
-  list cannot be paid.
+  Registrar transmits it; the Chief Accountant pays. They do not pass
+  through the DCR Admin and Finance. The list prints with a QR code.
+* **Printing and checking:** the approved cash flow (with each item's
+  beneficiaries) and each list of mandatories print with the Chief Judge's
+  signature and a QR code. The public check confirms what was approved,
+  with the account numbers masked, and says if anything was altered since;
+  an item or list altered after approval cannot be transmitted or paid.
 
 Each step is notified, kept in the history and in the audit log.
 
@@ -756,7 +766,7 @@ listing what it will remove. Typing `CLEAR TEST DATA` removes:
 * the Process Registry's cases, scanned documents, later processes and
   Court Diary dates;
 * the nominal roll, staff folders and leave applications;
-* the whole cash flow: items, releases of funds, mandatories, printed
+* the whole cash flow: items, submissions to the CJ, mandatories, printed
   sheets, the overhead entered, and their numbering;
 * every user account except the administrator clearing it and the built-in
   administrator, with their signatures, PINs, sign-in sessions and any

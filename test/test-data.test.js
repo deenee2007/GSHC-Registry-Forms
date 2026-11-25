@@ -72,7 +72,7 @@ test('administrators only, and the confirmation word is required', async () => {
   assert.equal((await clerk.post('/api/admin/test-data/clear', { confirm: 'CLEAR TEST DATA' })).status, 403);
   const st = await admin.get('/api/admin/test-data');
   assert.equal(st.body.available, true);
-  assert.deepEqual(st.body.counts, { records: 2, signed: 1, copies: 1, notifications: 1, cases: 0, users: 1, staff: 0, leave: 0, cashItems: 0, cashReleases: 0, cashMandatories: 0 });
+  assert.deepEqual(st.body.counts, { records: 2, signed: 1, copies: 1, notifications: 1, cases: 0, users: 1, staff: 0, leave: 0, cashItems: 0, cashSubmissions: 0, cashMandatories: 0 });
   const wrong = await admin.post('/api/admin/test-data/clear', { confirm: 'yes' });
   assert.equal(wrong.status, 400);
   assert.equal(await Record.countDocuments(), 2, 'nothing cleared');
@@ -112,14 +112,14 @@ test('clearing removes everything made in training, accounts included, keeps the
   const { Case } = require('../src/models');
   await Case.create({ caseType: 'civil', suitNumber: 'GM/5/2026', status: 'assigned', assignedUnit: 'hc2' });
   await mongoose.connection.collection('appmeta').insertMany([{ _id: 'caseSeq:civil:2026', seq: 5 }, { _id: 'rotation:ordinary', unitKey: 'hc2' }]);
-  // The cash flow in training: an item, a release, mandatories, a printed sheet, the overhead and the numbering.
-  const { CashItem, CashRelease, CashMandatory, CashSheet } = require('../src/models');
+  // The cash flow in training: an item, a submission, mandatories, a printed sheet, the overhead and the numbering.
+  const { CashItem, CashSubmission, CashMandatory, CashSheet } = require('../src/models');
   const oid = new mongoose.Types.ObjectId();
   await CashItem.collection.insertOne({ month: '2026-11', sn: 1, item: 'Training diesel', amount: 5000, status: 'approved' });
-  await CashRelease.collection.insertOne({ refNo: 'GSHC/CF/REL/2026/0001', total: 5000, items: [], status: 'approved', requestedBy: oid });
+  await CashSubmission.collection.insertOne({ refNo: 'GSHC/CF/SUB/2026/0001', month: '2026-11', total: 5000, items: [], by: oid });
   await CashMandatory.collection.insertOne({ refNo: 'GSHC/CF/MAN/2026/0001', month: '2026-11', total: 1000, items: [], status: 'paid', preparedBy: oid });
   await CashSheet.collection.insertOne({ month: '2026-11', verifyCode: 'GSHC-TRAI-NING-0001', total: 5000 });
-  await mongoose.connection.collection('appmeta').insertMany([{ _id: 'cashSeq:2026-11', seq: 1 }, { _id: 'cashRelSeq:2026', seq: 1 }, { _id: 'cashManSeq:2026', seq: 1 },
+  await mongoose.connection.collection('appmeta').insertMany([{ _id: 'cashSeq:2026-11', seq: 1 }, { _id: 'cashSubSeq:2026', seq: 1 }, { _id: 'cashManSeq:2026', seq: 1 },
     { _id: 'cashflowReleases', months: { '2026-11': 15000000 } }]);
   const r = await ict.post('/api/admin/test-data/clear', { confirm: 'clear test data' });
   assert.equal(r.status, 200, JSON.stringify(r.body));
@@ -142,8 +142,8 @@ test('clearing removes everything made in training, accounts included, keeps the
   assert.equal(await Leave.countDocuments(), 0, 'no training leave carries over');
   assert.equal(await PasswordToken.countDocuments({ user: { $nin: (await User.find({}, '_id')).map(u => u._id) } }), 0, 'no link left for a deleted account');
   assert.equal(await mongoose.connection.collection('appmeta').countDocuments({ _id: 'leaveSeq:2026' }), 0, 'leave letters number from 1');
-  assert.equal(await CashItem.countDocuments() + await CashRelease.countDocuments() + await CashMandatory.countDocuments() + await CashSheet.countDocuments(), 0, 'no training cash flow carries over');
-  assert.equal(await mongoose.connection.collection('appmeta').countDocuments({ _id: { $in: ['cashSeq:2026-11', 'cashRelSeq:2026', 'cashManSeq:2026', 'cashflowReleases'] } }), 0, 'cash flow numbering and the training overhead gone');
+  assert.equal(await CashItem.countDocuments() + await CashSubmission.countDocuments() + await CashMandatory.countDocuments() + await CashSheet.countDocuments(), 0, 'no training cash flow carries over');
+  assert.equal(await mongoose.connection.collection('appmeta').countDocuments({ _id: { $in: ['cashSeq:2026-11', 'cashSubSeq:2026', 'cashManSeq:2026', 'cashflowReleases'] } }), 0, 'cash flow numbering and the training overhead gone');
   assert.equal(r.body.counts.cashItems, 1);
   // Every collection of the system is either cleared or kept on purpose.
   const { CLEARED, KEPT } = require('../src/services/testData');

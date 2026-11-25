@@ -81,8 +81,8 @@
           ui.el('li', null, `${c.cases} Process Registry case(s), with their documents, processes and Court Diary dates`),
           ui.el('li', null, `${c.users} user account(s): everyone except you and the built-in administrator, with their signatures and PINs`),
           ui.el('li', null, `The nominal roll (${c.staff} staff), staff folders and ${c.leave} leave application(s)`),
-          ui.el('li', null, `The cash flow: ${c.cashItems || 0} item(s), ${c.cashReleases || 0} release(s) of funds, ${c.cashMandatories || 0} list(s) of mandatories, the printed sheets and the overhead entered`),
-          ui.el('li', null, 'The audit log, pending invitation and reset emails, and all numbering (suits, invoices, leave letters, cash flow items, releases and mandatories), which start again from 1')
+          ui.el('li', null, `The cash flow: ${c.cashItems || 0} item(s), ${c.cashSubmissions || 0} submission(s) to the Hon. Chief Judge, ${c.cashMandatories || 0} list(s) of mandatories, the printed sheets and the overhead entered`),
+          ui.el('li', null, 'The audit log, pending invitation and reset emails, and all numbering (suits, invoices, leave letters, cash flow items, submissions and mandatories), which start again from 1')
         ]),
         ui.el('p', null, 'Kept: units and their forms, signing rules, Process Registry settings (case types, fees), leave and personnel settings and email switches. A backup of everything is made first; if it fails, nothing is cleared.'),
         ui.el('p', null, 'QR codes on printed training documents will then show "Not found". Afterwards, create the real staff accounts and import the real nominal roll.'),

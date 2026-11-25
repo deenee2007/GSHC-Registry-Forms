@@ -353,7 +353,10 @@ const DiaryEntrySchema = new Schema({
 // lower amount), declined or returned with a query by the Hon. Chief Judge,
 // item by item; paid by the Accountant. An item not approved is carried to
 // the next month or dismissed. Each step is kept in its history.
-const CASH_STATUSES = ['pending', 'returned', 'approved', 'declined', 'paid', 'dismissed'];
+// with_dcr: with the DCR Admin and Finance (new, answered, or returned by the CJ);
+// returned: returned to the requester with a query; pending: with the CJ.
+const CASH_STATUSES = ['with_dcr', 'pending', 'returned', 'approved', 'declined', 'paid', 'dismissed'];
+const CashPayee = { name: String, bank: String, accountNo: String, accountName: String, amount: Number, approved: { type: Number, default: null } };
 const CashItemSchema = new Schema({
   month:         { type: String, required: true, index: true },        // YYYY-MM: the cash flow it is on
   sn:            { type: Number, required: true },                      // its number on that month's list
@@ -370,17 +373,30 @@ const CashItemSchema = new Schema({
   department:    { type: String, trim: true, default: '' },
   justification: { type: String, trim: true, default: '' },
   attachments:   { type: [{ _id: false, name: String, file: FileRef }], default: [] },
-  status:        { type: String, enum: CASH_STATUSES, default: 'pending', index: true },
+  status:        { type: String, enum: CASH_STATUSES, default: 'with_dcr', index: true },
+  // Who is to be paid, entered by the DCR Admin and Finance with the item
+  // (the request for the release of funds goes up with it). `amount` is as
+  // requested; `approved`, after the CJ's decision (scaled down with it).
+  payees:        { type: [CashPayee], default: [] },
+  // The DCR's submission to the CJ (the month's cash flow, selected items, or supplementary).
+  submission:    { type: { _id: false, id: Schema.Types.ObjectId, refNo: String, byName: String, at: Date }, default: null },
+  // After approval, the DCR transmits to the Chief Registrar (all at once, or
+  // in instalments); the Chief Registrar sends each to the Chief Accountant.
+  tranches:      { type: [{ no: Number, amount: Number, byName: String, note: String, at: Date,
+    sent: { type: { _id: false, byName: String, note: String, at: Date }, default: null },
+    payees: [{ payee: Schema.Types.ObjectId, name: String, bank: String, accountNo: String, accountName: String, amount: Number,
+      paid: { type: { _id: false, pvNo: String, date: String, amount: Number, byName: String, at: Date }, default: null } }] }], default: [] },
+  contentHash:   { type: String, default: '' },                         // fixed at approval: what the CJ approved
   requestedBy:   { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   requestedByName: String,
   requestedByRole: String,
-  query:         { type: { _id: false, text: String, byName: String, at: Date }, default: null },
+  query:         { type: { _id: false, text: String, byName: String, by: String, at: Date }, default: null },
   decision:      { type: { _id: false, kind: String, amount: Number, note: String, by: Schema.Types.ObjectId, byName: String, title: String, at: Date, image: ImageRef }, default: null },
   requesterDecides: { type: Boolean, default: false },                  // the CJ left carrying or dismissing to the requester
   payment:       { type: { _id: false, pvNo: String, date: String, amount: Number, byName: String, at: Date }, default: null },  // (earlier items)
   // Payments, made through approved releases of funds: one per beneficiary
   // paid, with the cash flow month it was paid in.
-  payments:      { type: [{ _id: false, release: Schema.Types.ObjectId, refNo: String, payee: String, bank: String, accountNo: String,
+  payments:      { type: [{ _id: false, release: Schema.Types.ObjectId, refNo: String, payee: String, payeeId: Schema.Types.ObjectId, bank: String, accountNo: String,
     pvNo: String, date: String, amount: Number, month: String, byName: String, at: Date }], default: [] },
   carriedFrom:   { type: String, default: '' },                         // the month it came from
   history:       { type: [{ _id: false, action: String, byName: String, note: String, at: Date }], default: [] }
@@ -389,32 +405,19 @@ CashItemSchema.index({ month: 1, sn: 1 });
 
 // A printed approved cash flow: what was printed, fixed under its own
 // verification code, so its QR code confirms it (and shows if altered).
-// A request for the release of funds, written by the DCR Admin and Finance
-// to the Hon. Chief Judge for one or more approved cash flow items, each
-// with the beneficiaries to be paid (bank and account), in full or in part.
-// The CJ approves it with the signing PIN (or returns it, or declines it);
-// the Chief Registrar transmits it to the Accountant, who pays each beneficiary.
-const CashReleaseSchema = new Schema({
+// The DCR Admin and Finance's submission of cash flow items to the Hon.
+// Chief Judge, with their beneficiaries (the request for the release of
+// funds): the month's cash flow, selected items, or a supplementary one.
+const CashSubmissionSchema = new Schema({
   refNo:         { type: String, required: true, unique: true },
-  items:         { type: [{ _id: false, item: { type: Schema.Types.ObjectId, ref: 'CashItem' }, sn: Number, month: String, name: String, amount: Number,
-    payees: [{ name: String, bank: String, accountNo: String, accountName: String, amount: Number,
-      paid: { type: { _id: false, pvNo: String, date: String, amount: Number, byName: String, at: Date }, default: null } }] }], default: [] },
-  total:         { type: Number, required: true },
+  month:         { type: String, required: true, index: true },
+  items:         { type: [{ type: Schema.Types.ObjectId, ref: 'CashItem' }], default: [] },
+  total:         { type: Number, default: 0 },
+  supplementary: { type: Boolean, default: false },
   note:          { type: String, trim: true, default: '' },
-  status:        { type: String, enum: ['pending', 'returned', 'approved', 'declined', 'paid'], default: 'pending', index: true },
-  requestedBy:   { type: Schema.Types.ObjectId, ref: 'User', required: true },
-  requestedByName: String,
-  query:         { type: { _id: false, text: String, byName: String, at: Date }, default: null },
-  decision:      { type: { _id: false, kind: String, note: String, by: Schema.Types.ObjectId, byName: String, title: String, at: Date, image: ImageRef }, default: null },
-  // Fixed when the CJ approves: the code behind the memo's QR code, and a
-  // fingerprint of what he approved (beneficiaries, accounts, amounts).
-  verifyCode:    { type: String, unique: true, sparse: true },
-  contentHash:   { type: String, default: '' },
-  // The Chief Registrar sends the approved release to the Accountant for payment.
-  transmitted:   { type: { _id: false, by: Schema.Types.ObjectId, byName: String, note: String, at: Date }, default: null },
-  history:       { type: [{ _id: false, action: String, byName: String, note: String, at: Date }], default: [] }
+  by:            { type: Schema.Types.ObjectId, ref: 'User' },
+  byName:        String
 }, { timestamps: true });
-CashReleaseSchema.index({ 'items.item': 1 });
 
 // The monthly mandatories: the standing payments made every month (casual
 // staff, subscriptions, allowances to heads of units and directors…),
@@ -448,7 +451,8 @@ const CashMandatorySchema = new Schema({
 const CashSheetSchema = new Schema({
   month:       { type: String, required: true, index: true },
   verifyCode:  { type: String, required: true, unique: true },
-  items:       { type: [{ _id: false, sn: Number, item: String, requestedByName: String, amount: Number, approved: Number, approvedBy: String, approvedAt: Date, paid: Boolean, pvNo: String }], default: [] },
+  items:       { type: [{ _id: false, sn: Number, item: String, requestedByName: String, amount: Number, approved: Number, approvedBy: String, approvedAt: Date, paid: Boolean, pvNo: String,
+    payees: { type: [{ _id: false, name: String, bank: String, accountNo: String, amount: Number }], default: undefined } }], default: [] },
   total:       Number,
   contentHash: String,
   printedByName: String,
@@ -613,7 +617,7 @@ module.exports = {
   DiaryEntry:   mongoose.model('DiaryEntry', DiaryEntrySchema),
   CashItem:     mongoose.model('CashItem', CashItemSchema),
   CashSheet:    mongoose.model('CashSheet', CashSheetSchema),
-  CashRelease:  mongoose.model('CashRelease', CashReleaseSchema),
+  CashSubmission: mongoose.model('CashSubmission', CashSubmissionSchema),
   CashMandatory: mongoose.model('CashMandatory', CashMandatorySchema),
   CASE_STATUSES, DOC_TYPES
 };
