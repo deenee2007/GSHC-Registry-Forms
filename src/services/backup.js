@@ -1,9 +1,10 @@
 /*
  * src/services/backup.js — the automatic daily backup.
  *
- * Once a day the server writes one compressed file holding the units,
- * users, signing rules, records, notifications, settings and audit log
- * (dates and ids kept exactly, as MongoDB Extended JSON), and copies every
+ * Once a day the server writes one compressed file holding every
+ * collection of the system (units, users, records, cases, the nominal
+ * roll, leave, the cash flow, settings, audit log…; dates and ids kept
+ * exactly, as MongoDB Extended JSON), and copies every
  * saved copy of a signed document that has not been copied yet, one file
  * each (they never change). Data files older than BACKUP_KEEP_DAYS are
  * removed; the newest is always kept. scripts/restore-backup.js puts a
@@ -17,7 +18,15 @@ const storeFactory = require('./backupStore');
 const mail = require('./mail');
 const { Backup, DocumentCopy, User } = require('../models');
 
-const COLLECTIONS = ['units', 'users', 'formconfigs', 'records', 'cases', 'casedocuments', 'caseprocesses', 'diaryentries', 'notifications', 'auditlogs', 'appmeta'];
+// Every collection of the system is backed up, found from the models, so a
+// new feature is never left out; only these are not:
+//   passwordtokens  one-time sign in links, short lived (and not to be reused)
+//   backups         the list of backups itself
+//   documentcopies  saved copies of signed documents, backed up file by file
+// appmeta (settings, counters, the overhead received…) has no model and is added.
+const NOT_BACKED_UP = ['passwordtokens', 'backups', 'documentcopies'];
+const COLLECTIONS = [...new Set([...Object.values(mongoose.models).map(m => m.collection.collectionName), 'appmeta'])]
+  .filter(c => !NOT_BACKED_UP.includes(c)).sort();
 const SKIP_META = ['backupLock', 'backupAlert']; // working state, not data
 const DAY = 24 * 60 * 60 * 1000;
 const LOCK_MINUTES = 30;
@@ -157,4 +166,4 @@ async function read(entry) {
 
 const status = () => { const s = getStore(); return { enabled: !!s && config.backupEnabled, where: s ? s.where : '', keepDays: config.backupKeepDays }; };
 
-module.exports = { run, due, tick, start, stop, read, status, COLLECTIONS, _reset: () => { store = undefined; } };
+module.exports = { run, due, tick, start, stop, read, status, COLLECTIONS, NOT_BACKED_UP, _reset: () => { store = undefined; } };

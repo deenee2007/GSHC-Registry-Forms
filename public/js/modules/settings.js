@@ -57,6 +57,22 @@
         } catch (e) { ui.toast(e.message, 'error'); }
       }
 
+      // A test email: shows Brevo's reason, in plain words, if it fails.
+      function testEmail() {
+        const to = el('input', { type: 'email', value: (window.App.auth.current() || {}).email || '', placeholder: 'name@example.com' });
+        const result = el('div', { class: 'notice notice--warn', hidden: 'hidden', role: 'alert' });
+        ui.modal('Send a Test Email', el('div', null, [
+          el('p', { class: 'muted' }, 'Checks that the server can send email. If it cannot, the reason is shown here, with what to put right.'),
+          ui.field('Send it to', to), result
+        ]), { confirmText: 'Send', onConfirm: async () => {
+          result.hidden = true;
+          try {
+            const r = await api.post('/admin/test-email', { to: to.value.trim() });
+            ui.toast(`Test email sent to ${r.to}. Check the inbox (and the spam folder).`, 'success', 8000); return true;
+          } catch (e) { result.textContent = e.message; result.hidden = false; return false; }
+        } });
+      }
+
       // ── USERS ──
       async function renderUsers() {
         ui.clear(panel);
@@ -76,7 +92,8 @@
         panel.appendChild(el('div', { class: 'toolbar' }, [
           el('button', { class: 'btn btn--primary', onclick: () => userForm(null, units) }, '+ Add User'),
           el('label', { class: 'check check--plain alert-switch' }, [globalAlerts,
-            meta.mailEnabled ? ' Send email alerts to all users' : ' Email alerts (email is not set up on the server)'])
+            meta.mailEnabled ? ' Send email alerts to all users' : ' Email alerts (email is not set up on the server)']),
+          meta.mailEnabled ? el('button', { class: 'btn btn--ghost', title: 'Check that the server can send email', onclick: testEmail }, '✉ Send a Test Email') : null
         ]));
         // Five tidy columns; the less used actions sit behind More.
         const small = (text, cls) => el('div', { class: 'cell-sub' + (cls ? ' ' + cls : '') }, text);

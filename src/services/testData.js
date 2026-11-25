@@ -5,7 +5,9 @@
  *
  * Removed: every form, saved copy and notification; the Process Registry's
  * cases, documents, later processes and diary dates; the nominal roll,
- * staff folders and leave applications; every user account except the
+ * staff folders and leave applications; the whole cash flow (items,
+ * releases of funds, mandatories, printed sheets, the overhead entered and
+ * their numbering); every user account except the
  * administrator clearing it and the built-in administrator, with their
  * sign-in sessions and invitation or reset links; the whole audit log; and
  * all numbering (suits, invoices, leave letters) and the court rotation,
@@ -20,23 +22,30 @@
  */
 const mongoose = require('mongoose');
 const backup = require('./backup');
-const { Record, DocumentCopy, Notification, AuditLog, Case, CaseDocument, CaseProcess, DiaryEntry, User, PasswordToken, Staff, StaffDocument, Leave } = require('../models');
+const { Record, DocumentCopy, Notification, AuditLog, Case, CaseDocument, CaseProcess, DiaryEntry, User, PasswordToken, Staff, StaffDocument, Leave,
+  CashItem, CashSheet, CashRelease, CashMandatory } = require('../models');
 const config = require('../config');
 
 const CONFIRM = 'CLEAR TEST DATA';
+// Every collection of the system is either cleared (users and links: all
+// but the administrators kept) or kept as configuration. A test checks that
+// a new collection is never left out of both.
+const CLEARED = ['records', 'documentcopies', 'notifications', 'cases', 'casedocuments', 'caseprocesses', 'diaryentries', 'staffs', 'staffdocuments', 'leaves',
+  'users', 'passwordtokens', 'auditlogs', 'cashitems', 'cashsheets', 'cashreleases', 'cashmandatories'];
+const KEPT = ['units', 'formconfigs', 'backups'];
 const KEY = 'testDataCleared';
 const meta = () => mongoose.connection.collection('appmeta');
 
 // The accounts that stay: the administrator clearing it, and the built-in one.
 const kept = (keepUserId) => ({ $or: [{ _id: keepUserId }, { username: config.adminUsername }] });
 async function counts(keepUserId) {
-  const [records, signed, copies, notifications, cases, users, staff, leave] = await Promise.all([
+  const [records, signed, copies, notifications, cases, users, staff, leave, cashItems, cashReleases, cashMandatories] = await Promise.all([
     Record.countDocuments(), Record.countDocuments({ status: { $in: ['final', 'revoked'] } }),
     DocumentCopy.countDocuments(), Notification.countDocuments(), Case.countDocuments(),
     keepUserId ? User.countDocuments({ $nor: [kept(keepUserId)] }) : User.countDocuments({ username: { $ne: config.adminUsername } }),
-    Staff.countDocuments(), Leave.countDocuments()
+    Staff.countDocuments(), Leave.countDocuments(), CashItem.countDocuments(), CashRelease.countDocuments(), CashMandatory.countDocuments()
   ]);
-  return { records, signed, copies, notifications, cases, users, staff, leave };
+  return { records, signed, copies, notifications, cases, users, staff, leave, cashItems, cashReleases, cashMandatories };
 }
 
 async function status(keepUserId) {
@@ -74,13 +83,17 @@ async function clear({ confirm, by, keepUserId }) {
     Case.deleteMany({}), CaseDocument.deleteMany({}), CaseProcess.deleteMany({}), DiaryEntry.deleteMany({}), // the scanned files stay in the backup's store
     // Personnel: the roll, staff folders and leave (a new roll is imported for real use).
     Staff.deleteMany({}), StaffDocument.deleteMany({}), Leave.deleteMany({}),
+    // The cash flow: items, releases of funds, mandatories and printed sheets (their attachments stay in the backup's store).
+    CashItem.deleteMany({}), CashSheet.deleteMany({}), CashRelease.deleteMany({}), CashMandatory.deleteMany({}),
     // Every account but the administrators kept, their links and their sessions.
     User.deleteMany({ _id: { $nin: stay } }), PasswordToken.deleteMany({ user: { $nin: stay } }),
     mongoose.connection.collection('sessions').deleteMany({ $nor: stay.map(id => ({ session: { $regex: `"userId":"${id}"` } })) }),
     AuditLog.deleteMany({}),
-    meta().deleteMany({ _id: { $in: [/^hearingDigest:/, /^caseSeq:/, /^invoiceSeq:/, /^rotation:/, /^leaveSeq:/] } })
+    meta().deleteMany({ _id: { $in: [/^hearingDigest:/, /^caseSeq:/, /^invoiceSeq:/, /^rotation:/, /^leaveSeq:/,
+      // The cash flow's numbering (items, releases, mandatories) and the overhead entered in training.
+      /^cashSeq:/, /^cashRelSeq:/, /^cashManSeq:/, 'cashflowReleases'] } })
   ]);
   return { counts: before, backupFile: saved.file };
 }
 
-module.exports = { status, clear, CONFIRM };
+module.exports = { status, clear, CONFIRM, CLEARED, KEPT };
