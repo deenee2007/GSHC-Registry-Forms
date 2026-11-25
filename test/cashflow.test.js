@@ -431,3 +431,39 @@ test('the monthly mandatories: Chief Accountant, Chief Registrar, Hon. Chief Jud
   const t = (await u.acct.get('/api/cashflow/mandatories/template')).body;
   assert.deepEqual(t.items.map(x => x.title), ['Casual staff', 'Starlink subscription'], 'what was approved last month');
 });
+
+test('mandatories: beneficiaries imported from a spreadsheet (Excel or CSV)', async () => {
+  const { xlsx } = require('./helpers/xlsx');
+  const send = (c, buf, name) => { const f = new FormData(); f.append('file', new Blob([buf]), name); return c.upload('/api/cashflow/mandatories/import', f); };
+  // Excel: headings on the second row, columns in any order, numbers for account numbers (the leading zero lost).
+  const book = xlsx([
+    ['Mandatories for December'],
+    ['S/N', 'Amount', 'Name', 'Bank', 'Account No', 'Mandatory'],
+    [1, 30000, 'Musa Ali', 'Jaiz Bank', 11223344, 'Casual staff'],
+    [2, 30000, 'Aisha Bello', 'Zenith Bank', 2011223344, 'Casual staff'],
+    [3, 38000, 'Starlink Internet Services Nigeria', 'Access Bank', 711223344, 'Starlink subscription'],
+    [4, '', 'No Amount', 'Wema Bank', 1234567890, 'Casual staff'],
+    [5, 5000, 'Bad Account', 'Wema Bank', 12345, 'Casual staff']
+  ]);
+  assert.equal((await send(u.cr, book, 'm.xlsx')).status, 403, 'the Chief Accountant only');
+  let r = await send(u.acct, book, 'December.xlsx');
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.hasMandatory, true);
+  assert.deepEqual(r.body.payees.map(p => [p.mandatory, p.name, p.accountNo, p.amount]), [
+    ['Casual staff', 'Musa Ali', '0011223344', 30000], ['Casual staff', 'Aisha Bello', '2011223344', 30000],
+    ['Starlink subscription', 'Starlink Internet Services Nigeria', '0711223344', 38000]]);
+  assert.deepEqual(r.body.problems.map(p => [p.row, p.reason.split(' ')[0]]), [[6, 'no'], [7, 'account']], 'rows left out, with the reason');
+  assert.deepEqual(r.body.notes.map(n => n.row), [3, 5], 'leading zeros put back');
+  // CSV, without a Mandatory column, amounts with commas and the naira sign.
+  const csv = 'Beneficiary,Bank,Account Number,Account Name,Amount\r\nHauwa Musa,First Bank of Nigeria,3011223344,Hauwa M. Musa,"₦50,000.00"\r\n';
+  r = await send(u.acct, Buffer.from(csv), 'allowance.csv');
+  assert.equal(r.body.hasMandatory, false);
+  assert.deepEqual(r.body.payees.map(p => [p.name, p.accountName, p.amount]), [['Hauwa Musa', 'Hauwa M. Musa', 50000]]);
+  // No headings: a clear message.
+  r = await send(u.acct, Buffer.from('a,b\r\n1,2\r\n'), 'x.csv');
+  assert.equal(r.status, 400);
+  assert.match(r.body.error, /headings were not found/);
+  const t = await u.acct.get('/api/cashflow/mandatories/import-template');
+  assert.equal(t.status, 200);
+  assert.match(t.body.toString(), /Mandatory,Beneficiary,Bank,Account Number,Account Name,Amount/);
+});

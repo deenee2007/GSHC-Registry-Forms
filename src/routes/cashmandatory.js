@@ -21,7 +21,9 @@
 const express = require('express');
 const crypto = require('crypto');
 const mongoose = require('mongoose');
+const multer = require('multer');
 const { CashMandatory, User } = require('../models');
+const payeeImport = require('../services/payeeImport');
 const cf = require('../services/cashflow');
 const verification = require('../services/verification');
 const store = require('../services/signatureStore');
@@ -123,6 +125,24 @@ router.get('/template', wrap(async (req, res) => {
     || await CashMandatory.findOne({}).sort({ month: -1, createdAt: -1 });
   res.json({ from: last ? { refNo: last.refNo, monthName: cf.monthName(last.month) } : null,
     items: last ? last.items.filter(x => !x.struck).map(x => ({ title: x.title, payees: x.payees.map(p => ({ name: p.name, bank: p.bank, accountNo: p.accountNo, accountName: p.accountName === p.name ? '' : p.accountName, amount: p.amount })) })) : [] });
+}));
+
+// Beneficiaries from a spreadsheet (Excel or CSV), for the Chief Accountant's form.
+// Nothing is saved here: the rows come back to the form, to be checked and submitted.
+const sheet = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 1 } }).single('file');
+router.post('/import', (req, res, next) => sheet(req, res, (err) => next(err && err.code === 'LIMIT_FILE_SIZE' ? new HttpError(400, 'The file must be under 5 MB.') : err)), wrap(async (req, res) => {
+  if (!isAccountant(req.user)) throw new HttpError(403, 'The Chief Accountant prepares the mandatories.');
+  if (!req.file) throw new HttpError(400, 'Choose the spreadsheet.');
+  let out;
+  try { out = payeeImport.parse(req.file.buffer, req.file.originalname); } catch (e) { throw new HttpError(e.status || 400, e.message); }
+  res.json(out);
+}));
+
+// A blank spreadsheet (CSV, opens in Excel) with the headings the import reads.
+router.get('/import-template', wrap(async (req, res) => {
+  if (!isAccountant(req.user)) throw new HttpError(403, 'The Chief Accountant prepares the mandatories.');
+  const csv = '\ufeffMandatory,Beneficiary,Bank,Account Number,Account Name,Amount\r\nCasual staff,Musa Ali,Jaiz Bank,0011223344,,30000\r\n';
+  res.set('Content-Type', 'text/csv; charset=utf-8').set('Content-Disposition', 'attachment; filename="mandatories-template.csv"').send(csv);
 }));
 
 router.get('/:id', wrap(async (req, res) => {

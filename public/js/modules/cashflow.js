@@ -869,6 +869,13 @@
             return el('div', { class: 'cfr-item is-on' }, [
               el('div', { class: 'cfb-sec__head' }, [
                 el('input', { class: 'cfb-sec__title', type: 'text', maxlength: '200', value: x.title, placeholder: `Mandatory ${i + 1}, e.g. Casual staff, Starlink subscription`, 'aria-label': `Title of mandatory ${i + 1}`, oninput: (e) => { x.title = e.target.value; } }),
+                el('button', { class: 'btn btn--ghost btn--small', type: 'button', title: 'Beneficiaries from an Excel or CSV file', onclick: () => importSheet((r) => {
+                  const filled = x.payees.filter(p => p.name || p.accountNo || p.amount).length;
+                  const add = filled && !confirm(`${x.title || 'This mandatory'} already has ${filled} beneficiar${filled === 1 ? 'y' : 'ies'}. OK replaces them with the ${r.payees.length} from the file; Cancel adds the file's to them.`);
+                  x.payees = [...(add ? x.payees.filter(p => p.name || p.accountNo || p.amount) : []), ...r.payees.map(asRow)];
+                  draw();
+                  report(r, `${r.payees.length} beneficiar${r.payees.length === 1 ? 'y' : 'ies'} imported into ${x.title || 'the mandatory'}.`);
+                }) }, '⬆ Import'),
                 items.length > 1 ? el('button', { class: 'btn btn--ghost btn--small', type: 'button', onclick: () => { if (!confirm(`Remove ${x.title || 'this mandatory'} from this month's list?`)) return; items.splice(i, 1); draw(); } }, '✕ Remove') : null
               ]),
               ...x.payees.map((p, j) => el('div', { class: 'cfr-payee' }, [
@@ -888,6 +895,45 @@
           }), el('button', { class: 'btn btn--ghost cfb-add', type: 'button', onclick: () => { items.push({ title: '', payees: [blank()] }); draw(); const t = wrap.querySelectorAll('.cfb-sec__title'); t[t.length - 1].focus(); } }, '+ Add a mandatory'));
           totals();
         }
+        // ── From a spreadsheet ──
+        const asRow = (p) => ({ name: p.name, bank: p.bank, accountNo: p.accountNo, accountName: p.accountName && p.accountName !== p.name ? p.accountName : '', amount: String(p.amount) });
+        function importSheet(then) {
+          const pick = el('input', { type: 'file', accept: '.xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv', style: 'display:none' });
+          pick.addEventListener('change', async () => {
+            const file = pick.files[0]; pick.remove();
+            if (!file) return;
+            const f = new FormData(); f.append('file', file);
+            try {
+              const r = await api.post('/cashflow/mandatories/import', f);
+              if (!r.payees.length) { report(r, 'No beneficiary could be imported from this file.'); return; }
+              then(r);
+            } catch (e) { ui.toast(e.message, 'error', 8000); }
+          });
+          document.body.appendChild(pick); pick.click();
+        }
+        // What was imported, and the rows left out with the reason.
+        function report(r, head) {
+          ui.modal('Spreadsheet Import', el('div', null, [
+            el('p', null, [el('strong', null, head), ' Check them before submitting.']),
+            r.problems.length ? el('div', { class: 'notice notice--warn' }, `${r.problems.length} row${r.problems.length === 1 ? ' was' : 's were'} left out. Correct ${r.problems.length === 1 ? 'it' : 'them'} in the file and import again, or add ${r.problems.length === 1 ? 'it' : 'them'} by hand.`) : null,
+            r.problems.length ? ui.table([{ label: 'Row', value: p => String(p.row) }, { label: 'Beneficiary', value: p => p.name || '—' }, { label: 'Why', value: p => p.reason }], r.problems) : null,
+            r.notes.length ? el('p', { class: 'muted' }, `For ${r.notes.length} account number${r.notes.length === 1 ? '' : 's'} the leading zero, dropped by Excel, was put back (rows ${r.notes.map(n => n.row).join(', ')}). Confirm ${r.notes.length === 1 ? 'it' : 'them'}.`) : null
+          ]), { confirmText: 'OK', cancelText: 'Close' });
+        }
+        // The whole list: rows grouped by the Mandatory column; a mandatory of the same name has its beneficiaries replaced.
+        const importAll = () => importSheet((r) => {
+          if (!r.hasMandatory) { ui.toast('This file has no Mandatory column. Use ⬆ Import on the mandatory the beneficiaries belong to, or add a Mandatory column (see the template).', 'info', 9000); return; }
+          const groups = new Map();
+          r.payees.forEach(p => { const t = p.mandatory || 'Untitled'; groups.set(t, [...(groups.get(t) || []), p]); });
+          items = items.filter(x => x.title.trim() || x.payees.some(p => p.name || p.accountNo || p.amount));
+          let added = 0, replaced = 0;
+          for (const [title, ps] of groups) {
+            const same = items.find(x => x.title.trim().toLowerCase() === title.toLowerCase());
+            if (same) { same.payees = ps.map(asRow); replaced++; } else { items.push({ title: title === 'Untitled' ? '' : title, payees: ps.map(asRow) }); added++; }
+          }
+          draw();
+          report(r, `${r.payees.length} beneficiar${r.payees.length === 1 ? 'y' : 'ies'} imported: ${[added ? `${added} new mandator${added === 1 ? 'y' : 'ies'}` : '', replaced ? `${replaced} replaced` : ''].filter(Boolean).join(', ')}.`);
+        });
         draw();
         const note = el('textarea', { rows: 2, maxlength: '3000', placeholder: 'Optional, e.g. Two casual staff added this month' }); note.value = m ? m.note : '';
         const answer = el('textarea', { rows: 3, maxlength: '2000' });
@@ -895,6 +941,11 @@
           m ? el('div', { class: 'notice notice--warn' }, [el('strong', null, `Query from the ${m.query ? m.query.by : ''}: `), m.query ? m.query.text : '']) : null,
           m ? ui.field('Your answer', answer) : null,
           ui.field('Month', month),
+          el('div', { class: 'toolbar cfm-import' }, [
+            el('button', { class: 'btn btn--ghost', type: 'button', onclick: importAll }, '⬆ Import from Spreadsheet'),
+            el('a', { class: 'btn btn--ghost', href: '/api/cashflow/mandatories/import-template', download: 'mandatories-template.csv' }, '⬇ Download the Template'),
+            el('span', { class: 'muted' }, 'Excel (.xlsx) or CSV, with columns Mandatory, Beneficiary, Bank, Account Number, Account Name (optional), Amount.')
+          ]),
           el('p', { class: 'muted' }, from ? `Started from the ${from.monthName} list (${from.refNo}). Change any amount, add or remove beneficiaries or mandatories, then submit to the Chief Registrar.` : 'Add each mandatory with its beneficiaries, bank, 10 digit account number and amount. Next month\'s list will start as a copy of this one.'),
           wrap, grand,
           ui.field('Remarks (optional)', note)
