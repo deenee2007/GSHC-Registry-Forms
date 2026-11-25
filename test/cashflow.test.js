@@ -72,103 +72,125 @@ before(async () => {
 });
 after(async () => { server.close(); await mongoose.connection.dropDatabase(); await mongoose.disconnect(); });
 
-test('requests, the CJ\'s decisions item by item, payment, and the balance', async () => {
+// The DCR Admin and Finance prepares an item (its beneficiaries) and submits it to the CJ.
+const payee = (name, amount, acct = '1012345678', bank = 'Zenith Bank') => ({ name, bank, accountNo: acct, amount });
+async function toCJ(item, payees) {
+  const r = await u.dcr.put(`/api/cashflow/${item.id}/prepare`, { payees });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const s = await u.dcr.post('/api/cashflow/submit', { ids: [item.id] });
+  assert.equal(s.status, 201, JSON.stringify(s.body));
+  return s.body.submission;
+}
+
+test('requests go to the DCR, who enters the beneficiaries and submits them to the CJ; approval, transmission, payment, the balance', async () => {
   const month = cf.thisMonth();
   assert.equal((await u.clerk.get('/api/cashflow')).status, 403, 'not for other staff');
-  assert.equal((await u.acct.post('/api/cashflow', { item: 'Fuel', sections: one('Fuel', 1, 100) })).status, 403, 'the Accountant does not request');
-  assert.equal((await u.cj.get('/api/admin/users')).status, 403);
-  assert.equal((await admin.put('/api/cashflow/admin/releases', { month, amount: 1000000 })).status, 200, 'the administrator sets the release');
+  assert.equal((await u.acct.post('/api/cashflow', { item: 'Fuel', sections: one('Fuel', 1, 100) })).status, 403, 'the Chief Accountant does not request');
+  assert.equal((await admin.put('/api/cashflow/admin/releases', { month, amount: 1000000 })).status, 200, 'the administrator sets the overhead');
   assert.equal((await u.dcr.put('/api/cashflow/admin/releases', { month, amount: 5 })).status, 403, 'not the DCR');
   assert.equal((await u.cr.put('/api/cashflow/admin/releases', { month, amount: 1000000 })).status, 200, 'the Chief Registrar enters the overhead received');
   assert.ok((await u.cj.get('/api/notifications')).body.notifications.some(n => /overhead received/.test(n.message)), 'the CJ is told');
 
-  // Three requests, one with an attachment.
+  // Three requests: each goes to the DCR, not the CJ.
   const form = new FormData();
   Object.entries({ item: 'Diesel for the generator', description: 'For the court complex', sections: JSON.stringify(one('Diesel, litres', 400, 1000)), department: 'Works', justification: 'Power outages' }).forEach(([k, v]) => form.append(k, v));
   form.append('files', new Blob(['%PDF-1.4']), 'quotation.pdf');
   let r = await u.aide.upload('/api/cashflow', form);
   assert.equal(r.status, 201, JSON.stringify(r.body));
   const fuel = r.body.item;
-  assert.equal(fuel.amount, 400000, 'quantity times unit price');
-  assert.equal(fuel.sn, 1);
+  assert.equal(fuel.amount, 400000);
+  assert.equal(fuel.status, 'with_dcr');
   assert.equal(fuel.attachments.length, 1);
   const stat = (await u.cr.post('/api/cashflow', { item: 'Stationery', sections: one('Stationery', 1, 250000), justification: 'Registry stock' })).body.item;
   const trip = (await u.dcr.post('/api/cashflow', { item: 'Travel to Abuja', sections: one('Travel and lodging', 2, 150000) })).body.item;
-  assert.ok((await u.cj.get('/api/notifications')).body.notifications.some(n => /put Stationery/.test(n.message)), 'the CJ is told');
-
-  // The CJ sees the list, who submitted each, and the money; others do not see the money.
+  assert.ok((await u.dcr.get('/api/notifications')).body.notifications.some(n => /requested Stationery/.test(n.message)), 'the DCR is told');
+  assert.ok(!(await u.cj.get('/api/notifications')).body.notifications.some(n => /Stationery/.test(n.message)), 'not yet the CJ');
+  assert.equal((await u.cj.post(`/api/cashflow/${fuel.id}/decide`, { action: 'approve', pin: '1357' })).status, 409, 'the CJ decides only what the DCR submits');
+  // The CJ still sees every item, those with the DCR included.
   let cj = (await u.cj.get('/api/cashflow')).body;
-  assert.deepEqual(cj.items.map(x => [x.sn, x.item, x.requestedByRole]), [[1, 'Diesel for the generator', 'Aide to the Hon. Chief Judge'], [2, 'Stationery', 'Chief Registrar'], [3, 'Travel to Abuja', 'DCR Admin and Finance']]);
-  assert.equal(cj.summary.released, 1000000);
-  assert.equal(cj.summary.balance, 1000000);
-  assert.equal((await u.dcr.get('/api/cashflow')).body.summary, null, 'not the money');
-  assert.equal((await u.cr.get('/api/cashflow')).body.summary.released, 1000000, 'the Chief Registrar sees the money');
-  assert.equal((await u.cr.get('/api/cashflow')).body.items.length, 3, 'the Chief Registrar sees every item');
-  assert.equal((await u.acct.get('/api/cashflow')).body.items.length, 0, 'the Accountant sees only the approved');
+  assert.deepEqual(cj.items.map(x => [x.sn, x.item, x.status]), [[1, 'Diesel for the generator', 'with_dcr'], [2, 'Stationery', 'with_dcr'], [3, 'Travel to Abuja', 'with_dcr']]);
 
-  // Approve less than asked, with the PIN.
-  assert.equal((await u.cr.post(`/api/cashflow/${fuel.id}/decide`, { action: 'approve', pin: '1357' })).status, 403, 'only the CJ decides');
+  // The DCR returns the stationery to the Chief Registrar with a query; the answer comes back to the DCR.
+  assert.equal((await u.cr.post(`/api/cashflow/${stat.id}/return`, { note: 'x' })).status, 403, 'only the DCR');
+  r = await u.dcr.post(`/api/cashflow/${stat.id}/return`, { note: 'Attach the store request' });
+  assert.equal(r.body.item.status, 'returned');
+  r = await u.cr.put(`/api/cashflow/${stat.id}`, { answer: 'Attached; reduced to 200,000', sections: one('Stationery', 1, 200000) });
+  assert.equal(r.body.item.status, 'with_dcr');
+  assert.equal(r.body.item.amount, 200000);
+
+  // The DCR enters the beneficiaries (adding up to the amount) and submits.
+  assert.equal((await u.dcr.put(`/api/cashflow/${fuel.id}/prepare`, { payees: [payee('Gombe Fuels Ltd', 300000, '12345')] })).status, 400, 'ten digits');
+  await u.dcr.put(`/api/cashflow/${fuel.id}/prepare`, { payees: [payee('Gombe Fuels Ltd', 300000)] });
+  assert.equal((await u.dcr.post('/api/cashflow/submit', { ids: [fuel.id] })).status, 400, 'the beneficiaries must add up to the amount');
+  await u.dcr.put(`/api/cashflow/${fuel.id}/prepare`, { payees: [payee('Gombe Fuels Ltd', 300000), payee('Bauchi Oil', 100000, '2012345678', 'Jaiz Bank')] });
+  await u.dcr.put(`/api/cashflow/${trip.id}/prepare`, { payees: [payee('Arewa Travels', 300000, '0712345678', 'Access Bank')] });
+  assert.equal((await u.cr.post('/api/cashflow/submit', { ids: [fuel.id] })).status, 403, 'only the DCR submits');
+  r = await u.dcr.post('/api/cashflow/submit', { ids: [fuel.id, trip.id], note: 'The November cash flow' });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  assert.match(r.body.submission.refNo, /^GSHC\/CF\/SUB\/\d{4}\/0001$/);
+  assert.equal(r.body.submission.supplementary, false);
+  assert.ok((await u.cj.get('/api/notifications')).body.notifications.some(n => /submitted 2 cash flow item/.test(n.message)), 'the CJ is told');
+  const memo = (await u.cj.get(`/api/cashflow/submissions/${r.body.submission.id}`)).body;
+  assert.equal(memo.items.length, 2);
+  assert.equal(memo.submission.total, 700000);
+
+  // The CJ approves less: the beneficiaries are scaled to it.
   assert.notEqual((await u.cj.post(`/api/cashflow/${fuel.id}/decide`, { action: 'approve', pin: '0000' })).status, 200, 'the PIN');
   assert.equal((await u.cj.post(`/api/cashflow/${fuel.id}/decide`, { action: 'approve', amount: 500000, pin: '1357' })).status, 400, 'not more than asked');
   r = await u.cj.post(`/api/cashflow/${fuel.id}/decide`, { action: 'approve', amount: 350000, pin: '1357' });
   assert.equal(r.status, 200, JSON.stringify(r.body));
-  assert.equal(r.body.item.decision.amount, 350000);
-  assert.ok(r.body.item.decision.signatureUrl);
-  assert.ok((await u.dcr.get('/api/notifications')).body.notifications.some(n => /for release of funds: Diesel/.test(n.message)), 'the DCR is told');
-  // Return with a query; the requester answers and it comes back.
-  assert.equal((await u.cj.post(`/api/cashflow/${stat.id}/decide`, { action: 'return' })).status, 400, 'the query is needed');
-  await u.cj.post(`/api/cashflow/${stat.id}/decide`, { action: 'return', note: 'Attach the store request' });
-  assert.equal((await u.dcr.put(`/api/cashflow/${stat.id}`, { answer: 'x' })).status, 409, 'only its requester');
-  r = await u.cr.put(`/api/cashflow/${stat.id}`, { answer: 'Store request attached; reduced to 200,000', sections: one('Stationery', 1, 200000) });
-  assert.equal(r.body.item.status, 'pending');
-  assert.equal(r.body.item.amount, 200000);
-  // Decline, leaving it to the requester.
+  assert.deepEqual(r.body.item.payees.map(p => [p.name, p.amount, p.approved]), [['Gombe Fuels Ltd', 300000, 262500], ['Bauchi Oil', 100000, 87500]]);
+  assert.ok((await u.dcr.get('/api/notifications')).body.notifications.some(n => /Transmit to the Chief Registrar/.test(n.message)), 'the DCR is told');
+  // Declined, left to the requester.
   await u.cj.post(`/api/cashflow/${trip.id}/decide`, { action: 'decline', note: 'Not this month', requesterDecides: true });
-  assert.equal((await u.cr.post(`/api/cashflow/${trip.id}/carry`)).status, 403, 'not someone else');
 
-  // The DCR requests the release of funds; the CJ approves it; the Accountant pays; the balance goes down.
-  const payee = { name: 'Gombe Fuels Ltd', bank: 'Zenith Bank', accountNo: '1012345678', amount: 350000 };
-  r = await u.dcr.post('/api/cashflow/releases', { items: [{ item: fuel.id, payees: [payee] }], note: 'For the November diesel' });
-  assert.equal(r.status, 201, JSON.stringify(r.body));
-  const rel = r.body.release;
-  assert.match(rel.refNo, /^GSHC\/CF\/REL\/\d{4}\/0001$/);
-  assert.equal((await u.acct.post(`/api/cashflow/releases/${rel.id}/pay`, { payee: rel.items[0].payees[0].id, pvNo: 'PV/11/26' })).status, 403, 'not before the CJ approves the release');
-  r = await u.cj.post(`/api/cashflow/releases/${rel.id}/decide`, { action: 'approve', pin: '1357' });
+  // The DCR transmits an instalment; the CR sends it; the Chief Accountant pays.
+  assert.equal((await u.dcr.post('/api/cashflow/transmit', { items: [{ id: fuel.id, payees: [{ id: r.body.item.payees[0].id, amount: 300000 }] }] })).status, 400, 'not more than approved for the beneficiary');
+  r = await u.dcr.post('/api/cashflow/transmit', { items: [{ id: fuel.id, payees: [{ id: r.body.item.payees[0].id, amount: 200000 }] }] });
   assert.equal(r.status, 200, JSON.stringify(r.body));
-  const pid = rel.items[0].payees[0].id;
-  // The Chief Registrar transmits it to the Accountant; not before.
-  assert.ok((await u.cr.get('/api/notifications')).body.notifications.some(n => /Transmit it to the Accountant/.test(n.message)), 'the CR is told');
-  assert.equal((await u.acct.get('/api/cashflow/releases')).body.releases.length, 0, 'the Accountant does not see it yet');
-  assert.equal((await u.acct.post(`/api/cashflow/releases/${rel.id}/pay`, { payee: pid, pvNo: 'PV/11/26' })).status, 403, 'not before transmission');
-  assert.equal((await u.dcr.post('/api/cashflow/releases/transmit', { ids: [rel.id] })).status, 403, 'only the CR transmits');
-  r = await u.cr.post('/api/cashflow/releases/transmit', { ids: [rel.id], note: 'Please pay' });
+  let it = (await u.cr.get(`/api/cashflow/${fuel.id}`)).body.item;
+  assert.equal(it.tranches.length, 1);
+  assert.equal(it.leftToTransmit, 150000);
+  const line = it.tranches[0].payees[0].id;
+  assert.equal((await u.acct.post(`/api/cashflow/${fuel.id}/pay`, { line, pvNo: 'PV/1' })).status, 409, 'not before the CR sends it');
+  assert.equal((await u.dcr.post('/api/cashflow/send', { ids: [fuel.id] })).status, 403, 'only the CR sends');
+  r = await u.cr.post('/api/cashflow/send', { ids: [fuel.id], note: 'Please pay' });
   assert.equal(r.status, 200, JSON.stringify(r.body));
-  assert.equal((await u.cr.post('/api/cashflow/releases/transmit', { ids: [rel.id] })).status, 409, 'not twice');
-  assert.ok((await u.acct.get('/api/notifications')).body.notifications.some(n => /transmitted by the Chief Registrar/.test(n.message)), 'the Accountant is told');
-  assert.equal((await u.acct.post(`/api/cashflow/releases/${rel.id}/pay`, { payee: pid, pvNo: '' })).status, 400, 'the PV number');
-  // The amount is locked to what the CJ approved, whatever is sent.
-  r = await u.acct.post(`/api/cashflow/releases/${rel.id}/pay`, { payee: pid, pvNo: 'PV/11/26', amount: 1000 });
+  assert.equal((await u.cr.post('/api/cashflow/send', { ids: [fuel.id] })).status, 409, 'nothing more to send');
+  assert.ok((await u.acct.get('/api/notifications')).body.notifications.some(n => /sent by the Chief Registrar/.test(n.message)), 'the Chief Accountant is told');
+  r = await u.acct.post(`/api/cashflow/${fuel.id}/pay`, { line, pvNo: 'PV/11/26', amount: 1 });
   assert.equal(r.status, 200, JSON.stringify(r.body));
-  assert.equal(r.body.release.items[0].payees[0].paid.amount, 350000);
-  assert.equal(r.body.release.status, 'paid');
-  assert.equal((await u.cj.get(`/api/cashflow/${fuel.id}`)).body.item.status, 'paid');
+  assert.equal(r.body.item.payments[0].amount, 200000, 'the amount is what was transmitted, whatever is sent');
+  assert.equal(r.body.item.status, 'approved', 'part paid');
+  // The rest, at once.
+  await u.dcr.post('/api/cashflow/transmit', { items: [{ id: fuel.id }] });
+  await u.cr.post('/api/cashflow/send', { ids: [fuel.id] });
+  it = (await u.acct.get(`/api/cashflow/${fuel.id}`)).body.item;
+  assert.deepEqual(it.tranches[1].payees.map(p => [p.name, p.amount]), [['Gombe Fuels Ltd', 62500], ['Bauchi Oil', 87500]]);
+  await u.acct.post(`/api/cashflow/${fuel.id}/pay`, { line: it.tranches[1].payees[0].id, pvNo: 'PV/12/26' });
+  r = await u.acct.post(`/api/cashflow/${fuel.id}/pay`, { line: it.tranches[1].payees[1].id, pvNo: 'PV/13/26' });
+  assert.equal(r.body.item.status, 'paid');
   cj = (await u.cj.get('/api/cashflow')).body;
   assert.equal(cj.summary.paid, 350000);
   assert.equal(cj.summary.balance, 650000);
-  assert.ok((await u.cj.get('/api/notifications')).body.notifications.some(n => /Paid: .* to Gombe Fuels Ltd for Diesel/.test(n.message)));
+  assert.ok((await u.cj.get('/api/notifications')).body.notifications.some(n => /to Gombe Fuels Ltd for Diesel/.test(n.message)));
 
-  // The requester carries the declined item to the next cash flow.
+  // The requester carries the declined item to the next cash flow: back to the DCR.
   r = await u.dcr.post(`/api/cashflow/${trip.id}/carry`);
   assert.equal(r.status, 200, JSON.stringify(r.body));
   assert.equal(r.body.item.month, cf.nextMonth(month));
-  assert.equal(r.body.item.status, 'pending');
-  assert.equal(r.body.item.carriedFrom, cf.monthName(month));
+  assert.equal(r.body.item.status, 'with_dcr');
+  // The stationery goes up later, as a supplementary submission; the CJ returns it to the DCR with a query.
+  const sub = await toCJ(stat, [payee('Kano Stationers', 200000, '3012345678', 'First Bank of Nigeria')]);
+  assert.equal(sub.supplementary, true);
+  r = await u.cj.post(`/api/cashflow/${stat.id}/decide`, { action: 'return', note: 'Which registries?' });
+  assert.equal(r.body.item.status, 'with_dcr');
+  assert.equal(r.body.item.query.by, 'Hon. Chief Judge');
 });
 
 test('a new month: the balance is brought forward, and what was left waiting moves in', async () => {
   const { CashItem } = require('../src/models');
   const now = cf.thisMonth();
-  // Make the stationery request (still pending) belong to last month.
   const [y, m] = now.split('-').map(Number);
   const last = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`;
   await admin.put('/api/cashflow/admin/releases', { month: last, amount: 200000 });
@@ -177,10 +199,12 @@ test('a new month: the balance is brought forward, and what was left waiting mov
   const st = r.items.find(x => x.item === 'Stationery');
   assert.ok(st, 'moved into this month');
   assert.equal(st.carriedFrom, cf.monthName(last));
+  assert.equal(st.status, 'with_dcr', 'still with the DCR');
   assert.equal(r.summary.broughtForward, 200000, 'last month\'s balance comes forward');
   assert.equal(r.summary.available, 1200000);
   assert.equal(r.summary.balance, 850000);
-  // The CJ dismisses an item not approved.
+  // Submitted again; the CJ declines it and dismisses it.
+  await u.dcr.post('/api/cashflow/submit', { ids: [st.id] });
   await u.cj.post(`/api/cashflow/${st.id}/decide`, { action: 'decline', note: 'No' });
   assert.equal((await u.cr.post(`/api/cashflow/${st.id}/dismiss`)).status, 403, 'left to the CJ');
   assert.equal((await u.cj.post(`/api/cashflow/${st.id}/dismiss`)).body.item.status, 'dismissed');
@@ -191,15 +215,14 @@ test('the administrator oversees the cash flow (everything, the money too) but d
   const r = await admin.get('/api/cashflow');
   assert.equal(r.status, 200);
   assert.ok(r.body.items.length >= 1, 'every item');
-  assert.ok(r.body.summary && typeof r.body.balance === 'undefined' && r.body.summary.balance !== undefined, 'the money');
+  assert.ok(r.body.summary && r.body.summary.balance !== undefined, 'the money');
   const item = r.body.items[0];
   assert.equal((await admin.get(`/api/cashflow/${item.id}`)).status, 200, 'details');
   assert.equal((await admin.post('/api/cashflow', { item: 'X', sections: one('X', 1, 5) })).status, 403, 'no requests');
-  const pending = r.body.items.find(x => x.status === 'pending');
-  if (pending) assert.equal((await admin.post(`/api/cashflow/${pending.id}/decide`, { action: 'decline' })).status, 403, 'no decisions');
+  assert.equal((await admin.post('/api/cashflow/submit', { ids: [item.id] })).status, 403, 'no submissions');
 });
 
-test('the printed approved cash flow has a QR code that confirms it, and shows if it was altered', async () => {
+test('the printed approved cash flow has a QR code that confirms it and its beneficiaries, and shows if it was altered', async () => {
   const { CashSheet } = require('../src/models');
   const month = cf.thisMonth();
   const a = await u.cj.post('/api/cashflow/sheet', { month });
@@ -212,25 +235,24 @@ test('the printed approved cash flow has a QR code that confirms it, and shows i
   assert.equal(v.status, 'valid');
   assert.match(v.document, /Approved Cash Flow/);
   assert.match(v.reference, /total approved ₦350,000\.00/);
-  assert.equal(v.signedBy[0].capacity, 'Hon. Chief Judge');
+  assert.deepEqual(v.lines, ['Diesel for the generator: Gombe Fuels Ltd · Zenith Bank · ******5678 · ₦262,500.00', 'Diesel for the generator: Bauchi Oil · Jaiz Bank · ******5678 · ₦87,500.00'], 'the beneficiaries, accounts masked');
   // A new approval: the next print has a new code; the first still checks as it was.
   const n = (await u.aide.post('/api/cashflow', { item: 'Toner', sections: one('Toner', 3, 30000) })).body.item;
+  await toCJ(n, [payee('Office Supplies', 90000, '0712345678', 'Access Bank')]);
   await u.cj.post(`/api/cashflow/${n.id}/decide`, { action: 'approve', pin: '1357' });
   const b = await u.cj.post('/api/cashflow/sheet', { month });
   assert.notEqual(b.body.verifyCode, a.body.verifyCode);
   assert.equal((await fetch(`${base}/api/verify/${a.body.verifyCode}`).then(x => x.json())).status, 'valid');
-  // Altered in the database: the check says so.
   await CashSheet.updateOne({ verifyCode: a.body.verifyCode }, { total: 1 });
   assert.equal((await fetch(`${base}/api/verify/${a.body.verifyCode}`).then(x => x.json())).status, 'tampered');
 });
 
 let renoId;
-test('an item in sections, each with lines and a subtotal; the CJ approves part of it', async () => {
+test('an item in sections, each with lines and a subtotal; the CJ approves part of it, and the beneficiaries follow', async () => {
   const reno = [
     { title: 'Roofing', lines: [{ description: 'Roofing sheets', quantity: 120, unitPrice: 8500 }, { description: 'Nails', quantity: 10, unitPrice: 3000 }, { description: 'Labour', quantity: 1, unitPrice: 250000 }] },
     { title: 'Painting', lines: [{ description: 'Paint, buckets', quantity: 40, unitPrice: 12000 }, { description: 'Labour', quantity: 1, unitPrice: 150000 }] }
   ];
-  // Quantity and unit price on every line; headings when there are sections.
   assert.equal((await u.cr.post('/api/cashflow', { item: 'Renovation', sections: [{ title: '', lines: [{ description: 'Sheets', quantity: 2 }] }] })).status, 400, 'the unit price');
   assert.equal((await u.cr.post('/api/cashflow', { item: 'Renovation', sections: [{ title: '', lines: [{ description: 'Sheets', unitPrice: 5 }] }] })).status, 400, 'the quantity');
   assert.equal((await u.cr.post('/api/cashflow', { item: 'Renovation', sections: [reno[0], { ...reno[1], title: '' }] })).status, 400, 'each section a heading');
@@ -240,17 +262,19 @@ test('an item in sections, each with lines and a subtotal; the CJ approves part 
   const it = r.body.item;
   assert.equal(it.amount, 1930000, 'the grand total, worked out (not the amount sent)');
   assert.deepEqual(it.sections.map(sec => [sec.title, sec.subtotal]), [['Roofing', 1300000], ['Painting', 630000]]);
-  assert.equal(it.sections[0].lines[0].amount, 1020000);
-  // Approve the roofing and the paint, not the painting labour.
+  // Two contractors.
+  await toCJ(it, [payee('Bauchi Roofing Works', 1300000, '3012345678', 'First Bank of Nigeria'), payee('Yalwa Painters', 630000, '0012345678', 'Jaiz Bank')]);
   assert.equal((await u.cj.post(`/api/cashflow/${it.id}/decide`, { action: 'approve', pin: '1357', struck: ['0.0', '0.1', '0.2', '1.0', '1.1'] })).status, 400, 'not every line struck');
   assert.equal((await u.cj.post(`/api/cashflow/${it.id}/decide`, { action: 'approve', pin: '1357', struck: ['1.1'], amount: 1800000 })).status, 400, 'not more than the lines approved');
   r = await u.cj.post(`/api/cashflow/${it.id}/decide`, { action: 'approve', pin: '1357', struck: ['1.1'] });
   renoId = it.id;
   assert.equal(r.status, 200, JSON.stringify(r.body));
   assert.equal(r.body.item.decision.amount, 1780000);
-  assert.equal(r.body.item.sections[1].lines[1].struck, true);
   assert.equal(r.body.item.sections[1].approvedSubtotal, 480000);
   assert.match(r.body.item.history[0].note, /Not approved: Labour/);
+  const ps = r.body.item.payees;
+  assert.equal(Math.round((ps[0].approved + ps[1].approved) * 100) / 100, 1780000, 'the beneficiaries add up to what was approved');
+  assert.deepEqual(ps.map(p => p.amount), [1300000, 630000], 'the amounts requested are kept');
 });
 
 test('items made before sections become one line each', async () => {
@@ -275,61 +299,34 @@ test('a role held only for the cash flow opens no unit', async () => {
   assert.deepEqual(await units(given), ['hc1'], 'a unit given to them in Settings');
 });
 
-test('release of funds: several beneficiaries, instalments, queries, a decline frees the amount', async () => {
-  // The renovation: ₦1,780,000 approved. A first instalment to two contractors.
-  const roofer = { name: 'Bauchi Roofing Works', bank: 'First Bank of Nigeria', accountNo: '3012345678', amount: 700000 };
-  const painter = { name: 'Yalwa Painters', bank: 'Jaiz Bank', accountNo: '0012345678', amount: 200000 };
-  assert.equal((await u.cr.post('/api/cashflow/releases', { items: [{ item: renoId, payees: [roofer] }] })).status, 403, 'only the DCR');
-  assert.equal((await u.dcr.post('/api/cashflow/releases', { items: [{ item: renoId, payees: [{ ...roofer, accountNo: '12345' }] }] })).status, 400, 'ten digits');
-  assert.equal((await u.dcr.post('/api/cashflow/releases', { items: [{ item: renoId, payees: [{ ...roofer, amount: 2000000 }] }] })).status, 400, 'not more than approved');
-  let r = await u.dcr.post('/api/cashflow/releases', { items: [{ item: renoId, payees: [roofer, painter] }] });
-  assert.equal(r.status, 201, JSON.stringify(r.body));
-  const first = r.body.release;
-  assert.equal(first.total, 900000);
-  let item = (await u.dcr.get(`/api/cashflow/${renoId}`)).body.item;
-  assert.equal(item.released, 900000);
-  assert.equal(item.toRelease, 880000);
-  assert.equal((await u.dcr.post('/api/cashflow/releases', { items: [{ item: renoId, payees: [{ ...roofer, amount: 900000 }] }] })).status, 400, 'not more than is left');
-  // A second instalment; the CJ returns it with a query, the DCR corrects it.
-  r = await u.dcr.post('/api/cashflow/releases', { items: [{ item: renoId, payees: [{ ...roofer, amount: 500000 }] }] });
-  const second = r.body.release;
-  await u.cj.post(`/api/cashflow/releases/${second.id}/decide`, { action: 'return', note: 'Roof first; send this after inspection' });
-  assert.equal((await u.dcr.put(`/api/cashflow/releases/${second.id}`, { items: [{ item: renoId, payees: [{ ...roofer, amount: 880000 }] }] })).status, 400, 'the answer');
-  r = await u.dcr.put(`/api/cashflow/releases/${second.id}`, { answer: 'Inspected; full balance', items: [{ item: renoId, payees: [{ ...roofer, amount: 880000 }] }] });
+
+test('instalments: transmitted in parts, sent together by the Chief Registrar, and an item closed as paid', async () => {
+  let it = (await u.dcr.get(`/api/cashflow/${renoId}`)).body.item;
+  const [roof, paint] = it.payees;
+  // First instalment: half to the roofer; the painter nothing yet.
+  let r = await u.dcr.post('/api/cashflow/transmit', { items: [{ id: renoId, payees: [{ id: roof.id, amount: 600000 }] }], note: 'First instalment' });
   assert.equal(r.status, 200, JSON.stringify(r.body));
-  assert.equal(r.body.release.status, 'pending');
-  // The CJ approves both at once, with one PIN.
-  assert.notEqual((await u.cj.post('/api/cashflow/releases/decide-many', { ids: [first.id, second.id], pin: '0000' })).status, 200, 'the PIN');
-  r = await u.cj.post('/api/cashflow/releases/decide-many', { ids: [first.id, second.id], pin: '1357' });
-  assert.equal(r.status, 200, JSON.stringify(r.body));
-  assert.equal(r.body.approved, 2);
-  r = await u.cr.post('/api/cashflow/releases/transmit', { ids: [first.id, second.id] });
-  assert.equal(r.body.transmitted, 2, 'the CR transmits both at once');
-  // The Accountant pays each beneficiary; the item is paid when all is paid.
-  const pay = async (rel, i, pv) => u.acct.post(`/api/cashflow/releases/${rel.id}/pay`, { payee: rel.items[0].payees[i].id, pvNo: pv });
-  assert.equal((await pay(first, 0, 'PV/1')).status, 200);
-  assert.equal((await pay(first, 0, 'PV/1')).status, 409, 'not twice');
-  assert.equal((await pay(first, 1, 'PV/2')).status, 200);
-  item = (await u.cj.get(`/api/cashflow/${renoId}`)).body.item;
-  assert.equal(item.status, 'approved', 'part paid');
-  assert.equal(item.paid, 900000);
-  assert.equal(item.releases.length, 2);
-  const s2 = (await u.cj.get(`/api/cashflow/releases/${second.id}`)).body.release;
-  assert.equal((await pay(s2, 0, 'PV/3')).status, 200);
-  item = (await u.cj.get(`/api/cashflow/${renoId}`)).body.item;
-  assert.equal(item.status, 'paid');
-  assert.equal(item.payments.length, 3);
-  // A declined release frees its amount; a part paid item can be closed.
+  // Several items sent together by the CR (the toner, transmitted in full, too).
   const toner = (await u.cj.get('/api/cashflow')).body.items.find(x => x.item === 'Toner');
-  r = await u.dcr.post('/api/cashflow/releases', { items: [{ item: toner.id, payees: [{ name: 'Office Supplies', bank: 'Access Bank', accountNo: '0712345678', amount: 90000 }] }] });
-  await u.cj.post(`/api/cashflow/releases/${r.body.release.id}/decide`, { action: 'decline', note: 'Use the store stock' });
-  assert.equal((await u.dcr.get(`/api/cashflow/${toner.id}`)).body.item.toRelease, 90000, 'free again');
-  r = await u.dcr.post('/api/cashflow/releases', { items: [{ item: toner.id, payees: [{ name: 'Office Supplies', bank: 'Access Bank', accountNo: '0712345678', amount: 60000 }] }] });
-  await u.cj.post(`/api/cashflow/releases/${r.body.release.id}/decide`, { action: 'approve', pin: '1357' });
-  await u.cr.post('/api/cashflow/releases/transmit', { ids: [r.body.release.id] });
-  await u.acct.post(`/api/cashflow/releases/${r.body.release.id}/pay`, { payee: r.body.release.items[0].payees[0].id, pvNo: 'PV/4' });
-  assert.equal((await u.cr.post(`/api/cashflow/${toner.id}/complete`)).status, 403);
-  r = await u.dcr.post(`/api/cashflow/${toner.id}/complete`, { note: 'The rest from store' });
+  await u.dcr.post('/api/cashflow/transmit', { items: [{ id: toner.id }] });
+  const desk = (await u.cr.get('/api/cashflow/desk')).body;
+  assert.deepEqual(desk.toSend.map(x => x.item).sort(), ['Renovation of High Court No. II', 'Toner']);
+  r = await u.cr.post('/api/cashflow/send', { ids: [renoId, toner.id] });
+  assert.equal(r.body.sent, 2);
+  it = (await u.acct.get(`/api/cashflow/${renoId}`)).body.item;
+  await u.acct.post(`/api/cashflow/${renoId}/pay`, { line: it.tranches[0].payees[0].id, pvNo: 'PV/20' });
+  it = (await u.dcr.get(`/api/cashflow/${renoId}`)).body.item;
+  assert.equal(it.paid, 600000);
+  assert.equal(it.leftToTransmit, 1180000);
+  assert.equal(it.can.complete, true, 'nothing waiting: it may be closed');
+  // Second instalment waiting with the CR: it cannot be closed yet.
+  await u.dcr.post('/api/cashflow/transmit', { items: [{ id: renoId, payees: [{ id: paint.id, amount: 100000 }] }] });
+  assert.equal((await u.dcr.post(`/api/cashflow/${renoId}/complete`)).status, 409, 'an instalment is still with the Chief Registrar');
+  await u.cr.post('/api/cashflow/send', { ids: [renoId] });
+  it = (await u.acct.get(`/api/cashflow/${renoId}`)).body.item;
+  await u.acct.post(`/api/cashflow/${renoId}/pay`, { line: it.tranches[1].payees[0].id, pvNo: 'PV/21' });
+  assert.equal((await u.cr.post(`/api/cashflow/${renoId}/complete`)).status, 403);
+  r = await u.dcr.post(`/api/cashflow/${renoId}/complete`, { note: 'The rest from the contingency' });
   assert.equal(r.status, 200, JSON.stringify(r.body));
   assert.equal(r.body.item.status, 'paid');
 });
@@ -337,41 +334,34 @@ test('release of funds: several beneficiaries, instalments, queries, a decline f
 test('the CJ approves several cash flow items at once, with one PIN', async () => {
   const a = (await u.aide.post('/api/cashflow', { item: 'Water', sections: one('Water, cartons', 50, 2000) })).body.item;
   const b = (await u.cr.post('/api/cashflow', { item: 'Cleaning', sections: one('Detergent', 20, 1500) })).body.item;
+  await u.dcr.put(`/api/cashflow/${a.id}/prepare`, { payees: [payee('Gombe Water', 100000)] });
+  await u.dcr.put(`/api/cashflow/${b.id}/prepare`, { payees: [payee('Clean Co', 30000, '0123456789', 'Wema Bank')] });
+  // The DCR submits the month's items together.
+  const desk = (await u.dcr.get('/api/cashflow/desk')).body;
+  assert.ok(desk.toSubmit.some(x => x.id === a.id && x.ready));
+  assert.equal((await u.dcr.post('/api/cashflow/submit', { ids: [a.id, b.id] })).status, 201);
   assert.equal((await u.cr.post('/api/cashflow/decide-many', { ids: [a.id, b.id], pin: '1357' })).status, 403);
   assert.notEqual((await u.cj.post('/api/cashflow/decide-many', { ids: [a.id, b.id], pin: '0000' })).status, 200, 'the PIN');
   const r = await u.cj.post('/api/cashflow/decide-many', { ids: [a.id, b.id], pin: '1357', note: 'Approved' });
   assert.equal(r.status, 200, JSON.stringify(r.body));
   assert.equal(r.body.total, 130000);
-  assert.equal((await u.cj.get(`/api/cashflow/${a.id}`)).body.item.decision.amount, 100000);
+  const it = (await u.cj.get(`/api/cashflow/${a.id}`)).body.item;
+  assert.equal(it.decision.amount, 100000);
+  assert.equal(it.payees[0].approved, 100000);
   assert.equal((await u.cj.post('/api/cashflow/decide-many', { ids: [a.id], pin: '1357' })).status, 409, 'already decided');
 });
 
-test('the approved release memo has a QR code that confirms the beneficiaries and amounts', async () => {
-  const { CashRelease } = require('../src/models');
-  const list = (await u.cj.get('/api/cashflow/releases')).body.releases;
-  const ok = list.find(x => x.status !== 'declined' && x.items.some(i => i.name === 'Diesel for the generator'));
-  const q = await u.dcr.get(`/api/cashflow/releases/${ok.id}/qr`);
-  assert.equal(q.status, 200, JSON.stringify(q.body));
-  assert.match(q.body.qrDataUrl, /^data:image\/png/);
-  let v = await fetch(`${base}/api/verify/${q.body.verifyCode}`).then(x => x.json());
-  assert.equal(v.status, 'valid');
-  assert.match(v.document, /Release of Funds: GSHC\/CF\/REL/);
-  assert.deepEqual(v.lines, ['Gombe Fuels Ltd · Zenith Bank · ******5678 · ₦350,000.00'], 'the account number masked');
-  // Not before approval.
-  const waiting = (await u.dcr.post('/api/cashflow/releases', { items: [{ item: (await u.cj.get('/api/cashflow')).body.items.find(x => x.item === 'Cleaning').id, payees: [{ name: 'Clean Co', bank: 'Wema Bank', accountNo: '0123456789', amount: 30000 }] }] })).body.release;
-  assert.equal((await u.dcr.get(`/api/cashflow/releases/${waiting.id}/qr`)).status, 404);
-  // An account number changed in the database: the check says so, and the Accountant cannot pay it.
-  const doc = await CashRelease.findById(ok.id);
-  doc.items[0].payees[0].accountNo = '9999999999';
-  doc.markModified('items');
-  await doc.save();
-  v = await fetch(`${base}/api/verify/${q.body.verifyCode}`).then(x => x.json());
-  assert.equal(v.status, 'tampered');
-  await u.cj.post(`/api/cashflow/releases/${waiting.id}/decide`, { action: 'approve', pin: '1357' });
-  await u.cr.post('/api/cashflow/releases/transmit', { ids: [waiting.id] });
-  const w = (await u.acct.get(`/api/cashflow/releases/${waiting.id}`)).body.release;
-  await CashRelease.updateOne({ _id: waiting.id }, { $set: { 'items.0.payees.0.amount': 90000 } });
-  assert.equal((await u.acct.post(`/api/cashflow/releases/${waiting.id}/pay`, { payee: w.items[0].payees[0].id, pvNo: 'PV/9' })).status, 409, 'altered after approval: not paid');
+test('an item altered after approval cannot be transmitted or paid', async () => {
+  const { CashItem } = require('../src/models');
+  const water = (await u.cj.get('/api/cashflow')).body.items.find(x => x.item === 'Water');
+  await u.dcr.post('/api/cashflow/transmit', { items: [{ id: water.id }] });
+  await u.cr.post('/api/cashflow/send', { ids: [water.id] });
+  const it = (await u.acct.get(`/api/cashflow/${water.id}`)).body.item;
+  await CashItem.updateOne({ _id: water.id }, { $set: { 'payees.0.accountNo': '9999999999' } });
+  assert.equal((await u.acct.post(`/api/cashflow/${water.id}/pay`, { line: it.tranches[0].payees[0].id, pvNo: 'PV/9' })).status, 409, 'altered after approval: not paid');
+  const cleaning = (await u.cj.get('/api/cashflow')).body.items.find(x => x.item === 'Cleaning');
+  await CashItem.updateOne({ _id: cleaning.id }, { $set: { 'payees.0.approved': 90000 } });
+  assert.equal((await u.dcr.post('/api/cashflow/transmit', { items: [{ id: cleaning.id }] })).status, 409, 'nor transmitted');
 });
 
 test('the monthly mandatories: Chief Accountant, Chief Registrar, Hon. Chief Judge, transmission, payment, and the money', async () => {

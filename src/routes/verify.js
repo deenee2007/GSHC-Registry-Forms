@@ -27,9 +27,6 @@ router.get('/:code', async (req, res, next) => {
         // A printed approved cash flow.
         const sheet = code ? await require('./cashflow').verifySheet(code) : null;
         if (sheet) return res.json(sheet);
-        // An approved request for the release of funds.
-        const release = code ? await require('./cashrelease').verifyRelease(code) : null;
-        if (release) return res.json(release);
         // An approved list of monthly mandatories.
         const mand = code ? await require('./cashmandatory').verifyMandatory(code) : null;
         if (mand) return res.json(mand);

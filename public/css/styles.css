@@ -1205,3 +1205,7 @@ button.dash-card:hover { border-color: var(--green-500); }
 /* Mandatories: the spreadsheet import buttons */
 .cfm-import { align-items: center; flex-wrap: wrap; margin: .2rem 0 .4rem; }
 .cfm-import a.btn { text-decoration: none; }
+
+/* Cash flow: the DCR desk */
+.cf-warn { color: var(--danger); font-weight: 600; }
+.cfb-grand--off { background: #fdf1ef; color: #7b1d14; }

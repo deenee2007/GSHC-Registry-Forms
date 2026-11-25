@@ -208,7 +208,7 @@ test('the restore drill: every part of the system comes back (nominal roll, leav
   await db.collection('staffdocuments').insertOne({ _id: id(), title: 'Appointment letter', createdAt: at });
   await db.collection('leaves').insertOne({ _id: id(), kind: 'annual', days: 30, createdAt: at });
   await db.collection('cashitems').insertOne({ _id: id(), month: '2026-11', sn: 1, item: 'Diesel', amount: 550000, createdAt: at });
-  await db.collection('cashreleases').insertOne({ _id: id(), refNo: 'GSHC/CF/REL/2026/0001', total: 550000, items: [], createdAt: at });
+  await db.collection('cashsubmissions').insertOne({ _id: id(), refNo: 'GSHC/CF/SUB/2026/0001', month: '2026-11', total: 550000, items: [], createdAt: at });
   await db.collection('cashmandatories').insertOne({ _id: id(), refNo: 'GSHC/CF/MAN/2026/0001', month: '2026-11', total: 98000, items: [], createdAt: at });
   await db.collection('cashsheets').insertOne({ _id: id(), month: '2026-11', verifyCode: 'GSHC-DRIL-L000-0001', total: 1, createdAt: at });
   await db.collection('appmeta').updateOne({ _id: 'cashflowReleases' }, { $set: { 'months.2026-11': 15000000 } }, { upsert: true });
