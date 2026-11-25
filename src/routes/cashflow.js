@@ -17,7 +17,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const multer = require('multer');
-const { CashItem, CashSheet, CashRelease, User, Notification } = require('../models');
+const { CashItem, CashSheet, CashRelease, CashMandatory, User, Notification } = require('../models');
 const crypto = require('crypto');
 const verification = require('../services/verification');
 const cf = require('../services/cashflow');
@@ -137,7 +137,8 @@ function cleanFields(b) {
 router.get('/me', wrap(async (req, res) => {
   await cf.rollOver();
   res.json({ month: cf.thisMonth(), monthName: cf.monthName(cf.thisMonth()), cj: isCJ(req.user), seesMoney: seesMoney(req.user), requester: isRequester(req.user),
-    accountant: isAccountant(req.user), seesAll: seesAll(req.user), admin: isAdmin(req.user), setsOverhead: setsOverhead(req.user) });
+    accountant: isAccountant(req.user), seesAll: seesAll(req.user), admin: isAdmin(req.user), setsOverhead: setsOverhead(req.user),
+    mandatories: isCJ(req.user) || isCR(req.user) || isDCR(req.user) || isAccountant(req.user) || isAdmin(req.user) });
 }));
 
 // Waiting for this person: the CJ's decisions, the Accountant's payments, a requester's queries.
@@ -147,6 +148,14 @@ router.get('/counts', wrap(async (req, res) => {
   if (isCJ(u)) n += await CashItem.countDocuments({ status: 'pending' }) + await CashRelease.countDocuments({ status: 'pending' });
   // The Chief Registrar: approved releases to transmit to the Accountant.
   if (isCR(u)) n += await CashRelease.countDocuments({ status: 'approved', transmitted: null });
+  // The mandatories: the Chief Registrar's approval or transmission, the CJ's approval, the Chief Accountant's queries and payments.
+  if (isCR(u)) n += await CashMandatory.countDocuments({ $or: [{ status: 'with_cr' }, { status: 'approved', transmitted: null }] });
+  if (isCJ(u)) n += await CashMandatory.countDocuments({ status: 'pending' });
+  if (isAccountant(u)) {
+    n += await CashMandatory.countDocuments({ preparedBy: u._id, status: 'returned' });
+    n += await CashMandatory.aggregate([{ $match: { status: 'approved', transmitted: { $ne: null } } }, { $unwind: '$items' }, { $match: { 'items.struck': false } },
+      { $unwind: '$items.payees' }, { $match: { 'items.payees.paid': null } }, { $count: 'n' }]).then(r => (r[0] && r[0].n) || 0);
+  }
   if (isAccountant(u)) n += (await CashRelease.aggregate([{ $match: { status: 'approved', transmitted: { $ne: null } } }, { $unwind: '$items' }, { $unwind: '$items.payees' }, { $match: { 'items.payees.paid': null } }, { $count: 'n' }]).then(r => (r[0] && r[0].n) || 0));
   if (isRequester(u)) n += await CashItem.countDocuments({ requestedBy: u._id, status: 'returned' });
   if (isDCR(u)) {

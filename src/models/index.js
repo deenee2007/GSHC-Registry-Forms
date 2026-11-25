@@ -416,6 +416,35 @@ const CashReleaseSchema = new Schema({
 }, { timestamps: true });
 CashReleaseSchema.index({ 'items.item': 1 });
 
+// The monthly mandatories: the standing payments made every month (casual
+// staff, subscriptions, allowances to heads of units and directors…),
+// approved directly by the Hon. Chief Judge, not on the cash flow. The
+// Chief Accountant prepares the month's list; the Chief Registrar approves
+// it and sends it to the Chief Judge, who approves it with the signing PIN
+// (all, or without some mandatories); the Chief Registrar then transmits it
+// to the Chief Accountant, who pays each beneficiary. They are paid from
+// the month's overhead, before the cash flow.
+const CashMandatorySchema = new Schema({
+  refNo:         { type: String, required: true, unique: true },
+  month:         { type: String, required: true, index: true },
+  items:         { type: [{ _id: false, title: String, amount: Number, struck: { type: Boolean, default: false },
+    payees: [{ name: String, bank: String, accountNo: String, accountName: String, amount: Number,
+      paid: { type: { _id: false, pvNo: String, date: String, amount: Number, byName: String, at: Date }, default: null } }] }], default: [] },
+  total:         { type: Number, required: true },
+  approvedTotal: { type: Number, default: 0 },
+  note:          { type: String, trim: true, default: '' },
+  status:        { type: String, enum: ['with_cr', 'pending', 'returned', 'approved', 'paid'], default: 'with_cr', index: true },
+  preparedBy:    { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  preparedByName: String,
+  query:         { type: { _id: false, text: String, byName: String, by: String, at: Date }, default: null },
+  forwarded:     { type: { _id: false, byName: String, note: String, at: Date }, default: null },
+  decision:      { type: { _id: false, kind: String, note: String, by: Schema.Types.ObjectId, byName: String, title: String, at: Date, image: ImageRef }, default: null },
+  verifyCode:    { type: String, unique: true, sparse: true },
+  contentHash:   { type: String, default: '' },
+  transmitted:   { type: { _id: false, by: Schema.Types.ObjectId, byName: String, note: String, at: Date }, default: null },
+  history:       { type: [{ _id: false, action: String, byName: String, note: String, at: Date }], default: [] }
+}, { timestamps: true });
+
 const CashSheetSchema = new Schema({
   month:       { type: String, required: true, index: true },
   verifyCode:  { type: String, required: true, unique: true },
@@ -585,5 +614,6 @@ module.exports = {
   CashItem:     mongoose.model('CashItem', CashItemSchema),
   CashSheet:    mongoose.model('CashSheet', CashSheetSchema),
   CashRelease:  mongoose.model('CashRelease', CashReleaseSchema),
+  CashMandatory: mongoose.model('CashMandatory', CashMandatorySchema),
   CASE_STATUSES, DOC_TYPES
 };

@@ -27,7 +27,7 @@ const SIGNER_ROLES = {
   // recorded by the Accountant.
   cj_aide:               'Aide to the Hon. Chief Judge',
   dcr_admin_finance:     'DCR Admin and Finance',
-  accountant:            'Accountant'
+  accountant:            'Chief Accountant'
 };
 
 const judge = [{ role: 'judge', label: 'Judge' }];

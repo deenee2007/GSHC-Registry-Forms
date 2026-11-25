@@ -68,6 +68,7 @@ function createApp() {
   api.use('/leave', require('./routes/leave'));
   api.use('/mystaff', require('./routes/mystaff'));
   api.use('/cashflow/releases', require('./routes/cashrelease'));
+  api.use('/cashflow/mandatories', require('./routes/cashmandatory'));
   api.use('/cashflow', require('./routes/cashflow'));
   api.use((req, res, next) => next(new HttpError(404, 'Not found.')));
 
