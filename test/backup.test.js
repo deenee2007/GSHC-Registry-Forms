@@ -191,3 +191,51 @@ test('a backup restores into an empty database, never over a working one', async
   });
   assert.equal(latest.file, entry.file, '--latest takes the newest file in the store');
 });
+
+test('the restore drill: every part of the system comes back (nominal roll, leave, cash flow…), ids and all', async () => {
+  const mongoose2 = require('mongoose');
+  const { COLLECTIONS, NOT_BACKED_UP } = require('../src/services/backup');
+  // No collection of the system is forgotten: each is backed up, or left out on purpose.
+  for (const m of Object.values(mongoose2.models)) {
+    const c = m.collection.collectionName;
+    assert.ok(COLLECTIONS.includes(c) || NOT_BACKED_UP.includes(c), `${c} is neither backed up nor deliberately left out`);
+  }
+  // Something in each part added since the first backups: Personnel, Leave, Cash Flow.
+  const db = mongoose.connection.db;
+  const id = () => new mongoose2.Types.ObjectId();
+  const at = new Date('2026-11-20T10:00:00Z');
+  await db.collection('staffs').insertOne({ _id: id(), psn: 'GSHC/0001', name: 'Drill Officer', dob: '1980-01-01', createdAt: at });
+  await db.collection('staffdocuments').insertOne({ _id: id(), title: 'Appointment letter', createdAt: at });
+  await db.collection('leaves').insertOne({ _id: id(), kind: 'annual', days: 30, createdAt: at });
+  await db.collection('cashitems').insertOne({ _id: id(), month: '2026-11', sn: 1, item: 'Diesel', amount: 550000, createdAt: at });
+  await db.collection('cashreleases').insertOne({ _id: id(), refNo: 'GSHC/CF/REL/2026/0001', total: 550000, items: [], createdAt: at });
+  await db.collection('cashmandatories').insertOne({ _id: id(), refNo: 'GSHC/CF/MAN/2026/0001', month: '2026-11', total: 98000, items: [], createdAt: at });
+  await db.collection('cashsheets').insertOne({ _id: id(), month: '2026-11', verifyCode: 'GSHC-DRIL-L000-0001', total: 1, createdAt: at });
+  await db.collection('appmeta').updateOne({ _id: 'cashflowReleases' }, { $set: { 'months.2026-11': 15000000 } }, { upsert: true });
+
+  // What the database holds at the moment of the backup (the backup then logs itself in the audit log).
+  const meta = (name) => name === 'appmeta' ? { _id: { $nin: ['backupLock', 'backupAlert'] } } : {};
+  const before = {};
+  for (const name of COLLECTIONS) before[name] = (await db.collection(name).find(meta(name)).sort({ _id: 1 }).toArray()).map(x => String(x._id));
+  const r = await admin.post('/api/admin/backups');
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  const entry = await Backup.findById(r.body.backup.id);
+  const target = DB2 + 'drill';
+  try {
+    await restore({ file: path.join(DIR, entry.file), uri: target, log: () => {} });
+    const c2 = await mongoose2.createConnection(target).asPromise();
+    try {
+      for (const name of COLLECTIONS) {
+        const b = (await c2.db.collection(name).find(meta(name)).sort({ _id: 1 }).toArray()).map(x => String(x._id));
+        assert.equal(b.length, before[name].length, `${name}: ${b.length} restored of ${before[name].length}`);
+        assert.deepEqual(b, before[name], `${name}: the same ids`);
+      }
+      const mand = await c2.db.collection('cashmandatories').findOne({});
+      assert.ok(mand.createdAt instanceof Date, 'dates stay dates');
+      assert.equal((await c2.db.collection('appmeta').findOne({ _id: 'cashflowReleases' })).months['2026-11'], 15000000, 'the overhead received');
+    } finally { await c2.dropDatabase(); await c2.close(); }
+  } catch (e) {
+    const c3 = await mongoose2.createConnection(target).asPromise(); await c3.dropDatabase(); await c3.close();
+    throw e;
+  }
+});

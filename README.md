@@ -168,6 +168,19 @@ Email is sent through Brevo. Set `BREVO_API_KEY` (an API key, starting
 `xkeysib-`) and `MAIL_FROM` (a sender address verified in Brevo) on Render.
 Without them, the email features are hidden and everything else works.
 
+**When an email fails**, the message says why, in plain words, with what to
+put right: the server's IP address blocked by Brevo, the API key not
+accepted, the sender address not verified, no credits left, too many at
+once, or Brevo unreachable. **Settings, Users, ✉ Send a Test Email** checks
+the email settings at any time.
+
+**Brevo and the server's IP address:** if IP blocking is on in Brevo
+(Security, Authorised IPs), Brevo refuses email from any address not on its
+list. Render sends from a range of addresses, shown on the service under
+**Connect, Outbound** (for example `74.220.51.0/24` and `74.220.59.0/24`).
+Allow every address in those ranges, or turn the blocking off; allowing a
+single address breaks email whenever Render uses another one.
+
 ## Reports
 **📊 Reports** in the menu shows what happened in a period: forms created,
 submitted, signed, returned and revoked, forms awaiting signature now, and
@@ -237,8 +250,13 @@ naming them when it is next edited.
 ## Backups
 Once a day the server makes a backup by itself and keeps it privately on
 Cloudinary (no public address; only the server can read it):
-* one compressed file with the units, users, signing rules, records,
-  notifications, settings and audit log, exact to the second;
+* one compressed file with **every collection of the system**, exact to
+  the second: units, users, signing rules, records, cases, the Court
+  Diary, the nominal roll, staff folders, leave, the cash flow (items,
+  releases of funds, mandatories, printed sheets, the overhead received),
+  notifications, settings and the audit log. The list is taken from the
+  system itself, so a new feature is never left out; only short lived
+  sign in links and the list of backups are not kept (a test checks this);
 * each signed document's saved copy, once, as its own file.
 
 Backups are kept 30 days (`BACKUP_KEEP_DAYS`); the newest is never removed.
@@ -247,8 +265,16 @@ up soon after it wakes. If a backup fails, administrators with an email
 address are told (at most once a day) and it is tried again every hour.
 
 On the **Dashboard**, administrators see the last backup, the list of kept
-backups with **Download**, and **Back up now**. Signature images are not in
-the file; they stay in Cloudinary.
+backups with **Download**, and **Back up now**. Signature images, scanned
+case documents, receipts, staff documents and cash flow attachments are not
+in the file: the file holds their links, and the files stay in Cloudinary.
+
+**Keep a copy away from Cloudinary.** The backups and the uploaded files are
+in the same Cloudinary account, so losing that account would lose both.
+Once a week, **Download** the newest backup from the Dashboard and keep it
+on a computer or drive of the Directorate of ICT (and a second copy
+elsewhere). The file holds personal data and passwords' hashes: keep it
+where only the ICT staff can reach it.
 
 **Restoring** (only into a new, empty database; it refuses to touch one
 that has users):
@@ -258,6 +284,25 @@ npm run restore -- gshc_2026-10-19_020000_000.json.gz --uri <new database>
 ```
 Then point `MONGODB_URI` on Render at the restored database. Everyone's
 password, PIN and signature carry over.
+
+**The restore drill** (do it before going live, then every three months, so
+the steps are known before they are needed). On a computer with Node.js and
+a copy of this repository (`npm install` once):
+1. Choose a new, empty database: the same MongoDB address as `MONGODB_URI`
+   with a new database name at the end, for example `.../gshc_drill`.
+2. Restore the newest backup into it:
+   `MONGODB_URI=<the drill database> CLOUDINARY_URL=<same as on Render> npm run restore -- --latest`
+   It lists each collection with the number of entries restored.
+3. Run the system against it on that computer:
+   `MONGODB_URI=<the drill database> CLOUDINARY_URL=<same as on Render> npm start`,
+   open `http://localhost:3100`, sign in as an administrator, and check a
+   signed document (its QR check), a case with its scanned documents, a
+   staff record, a leave application and the cash flow.
+4. Delete the drill database (in the MongoDB console), so two copies of the
+   court's data are not left lying about.
+
+The automatic tests run the same drill on every change: every collection is
+backed up, restored into an empty database, and compared entry by entry.
 
 ## Process Registry
 New cases are filed, numbered and assigned to a court here.
@@ -603,28 +648,104 @@ Registrar's certificate, the marriage certificate and the marriage register
 are to follow.
 
 ## Cash Flow
-**💵 Cash Flow** in the menu, by signing role: the **Aide to the Hon. Chief
-Judge**, the **Chief Registrar** and the **DCR Admin and Finance** request
-items; the **Hon. Chief Judge** decides; the **Accountant** pays. One cash
-flow each month. A request (item, description, amount or quantity and unit
-price, department, justification, attachments) goes straight onto the
-month's cash flow and the CJ is notified. The CJ sees the list (S/No, item,
-amount, submitted by, status, Details) and, alone, the money: brought
-forward, released (entered by the administrator in Settings, Cash Flow),
-available, approved, paid and balance. Item by item the CJ approves (the
-amount requested or less, with the signing PIN), declines (leaving the
-carry forward or dismissal to the requester, or not) or returns it with a
-query, which the requester answers and sends back. The Accountant records
-the payment (PV number, date, amount) and the balance goes down. A new
-month brings the balance forward, and items still waiting for a decision or
-a payment move into it; an item not approved is carried to the next cash
-flow or dismissed. The approved cash flow prints with the CJ's signature
-and a QR code: what was printed is fixed under its verification code
-(printed again unchanged, the same code), and the public check confirms the
-month, the number of items and the total, or shows it was altered. The
-administrator sees the whole cash flow, the money included, for oversight,
-but does not request, decide or pay.
-Each step is notified, kept in the item's history and in the audit log.
+**💵 Cash Flow** in the menu, by signing role. The roles held only for the
+cash flow (the Aide to the Hon. Chief Judge, the DCR Admin and Finance, the
+Chief Accountant) open no unit: without a unit, such an account sees only
+Home, Cash Flow and My Account.
+
+* **The month's money:** the **Chief Registrar** (or the administrator)
+  enters the overhead received from the government each month. With the
+  balance brought forward, it is what is available; the mandatories come
+  out first, and what is left is for the cash flow. The Hon. Chief Judge,
+  the Chief Registrar and the administrator see the money.
+* **Cash flow items:** the Aide to the Hon. Chief Judge, the Chief
+  Registrar and the DCR Admin and Finance request items. Each item has its
+  lines (quantity × unit price, worked out), in sections where it has parts
+  (for example Roofing, Painting, each with a subtotal). The Hon. Chief
+  Judge approves (all, part of the lines, or a lower amount, with the
+  signing PIN; several items at once if he chooses), declines, or returns
+  an item with a query. Items left waiting move to the next month; an item
+  not approved is carried forward or dismissed.
+* **Release of funds:** for approved items, the DCR Admin and Finance
+  requests the release of funds, naming the beneficiaries (bank, 10 digit
+  account number, amount), in full or in instalments. The Hon. Chief Judge
+  approves it with the PIN (several at once if he chooses), returns it or
+  declines it. The **Chief Registrar transmits** the approved release to
+  the **Chief Accountant**, who pays each beneficiary at the approved
+  amount and records the PV. The release prints as a memo with a QR code.
+* **Monthly mandatories:** the standing payments made every month (casual
+  staff, subscriptions, allowances…). The Chief Accountant prepares the
+  month's list (a copy of last month's, or imported from a spreadsheet);
+  the Chief Registrar approves it and sends it to the Hon. Chief Judge, who
+  approves it with the PIN (all, or without some mandatories); the Chief
+  Registrar transmits it; the Chief Accountant pays. No release of funds is
+  needed. The list prints with a QR code.
+* **Printing and checking:** the approved cash flow, each release memo and
+  each list of mandatories print with the Chief Judge's signature and a QR
+  code. The public check confirms what was approved, and says if anything
+  (an account number, an amount) was altered since; an altered release or
+  list cannot be paid.
+
+Each step is notified, kept in the history and in the audit log.
+
+## Checklist for going live
+Work through it in order on the day before going live, and tick each item.
+
+**1. The server (Render, the service, Environment)**
+- [ ] A paid instance (free instances sleep, and the daily backup and
+      reminders then wait until someone opens the site).
+- [ ] `MONGODB_URI`: the production database.
+- [ ] `SESSION_SECRET`: present (generated by Render). Never share it.
+- [ ] `ADMIN_PASSWORD`: a strong password, known only to the ICT officers.
+      `ADMIN_RESET` absent or off.
+- [ ] `PUBLIC_BASE_URL`: the court's real address (for example
+      `https://registry.example.gov.ng`, no slash at the end). QR codes and
+      email links are built from it: once documents are printed, it should
+      not change.
+- [ ] `CLOUDINARY_URL`: present (files, signatures and backups).
+- [ ] `BREVO_API_KEY` and `MAIL_FROM` (a sender verified in Brevo);
+      `MAIL_FROM_NAME` if not "GSHC Registry".
+- [ ] `APP_TIMEZONE` absent (it defaults to Africa/Lagos) or set to it.
+
+**2. Email**
+- [ ] Brevo, Security, Authorised IPs: Render's outbound ranges allowed (see
+      **Passwords and email**), or the blocking turned off.
+- [ ] Settings, Users, **✉ Send a Test Email** arrives (check spam too).
+- [ ] Each service using Brevo has its own API key, named after it.
+
+**3. Backups**
+- [ ] Dashboard: **Back up now** succeeds, and the list shows the file.
+- [ ] The **restore drill** done once (see **Backups**), and the steps kept
+      with the ICT records.
+- [ ] A weekly offline copy arranged (Dashboard, Download), and who does it.
+
+**4. Clearing the training data** (see the next section)
+- [ ] Every training form, case, staff record, leave and cash flow entry is
+      to go: tell the users first.
+- [ ] Home, **Before Going Live**, **🗑 Clear Test Data**. It backs up
+      first, then clears; it can be done once only.
+- [ ] Afterwards, check the kept configuration: units and their forms,
+      signing rules, Process Registry case types and fees, a starting suit
+      number set by hand, leave and personnel settings, email switches.
+
+**5. People and records**
+- [ ] The real accounts created, each with the right units, privileges and
+      signing roles. In particular: the Hon. Chief Judge, the Chief
+      Registrar, the Registrars and Judges, the Process Registrar, the
+      Marriage Registrar, the Director of Personnel and Staff Officer, the
+      Aide to the Hon. Chief Judge, the DCR Admin and Finance, and the
+      Chief Accountant.
+- [ ] Every signer has registered a signature and a signing PIN (Home
+      reminds them until they do).
+- [ ] The real nominal roll imported (Directorate of Personnel), and the
+      personal staff accounts activated.
+- [ ] The overhead received for the first month entered (Chief Registrar,
+      Cash Flow).
+
+**6. The first day**
+- [ ] One real form signed and printed; its QR code checked from a phone.
+- [ ] One real case filed at the Process Registry, through to assignment.
+- [ ] The next morning: the Dashboard shows the night's backup.
 
 ## Before going live: clearing test data
 Training and testing are done on the live site; then everything is cleared
@@ -635,12 +756,17 @@ listing what it will remove. Typing `CLEAR TEST DATA` removes:
 * the Process Registry's cases, scanned documents, later processes and
   Court Diary dates;
 * the nominal roll, staff folders and leave applications;
+* the whole cash flow: items, releases of funds, mandatories, printed
+  sheets, the overhead entered, and their numbering;
 * every user account except the administrator clearing it and the built-in
   administrator, with their signatures, PINs, sign-in sessions and any
   invitation or reset link not yet used;
 * the whole audit log (the clearing itself is its first new entry);
-* all numbering (suits, invoices, leave letters) and the court rotation,
-  which start again from 1.
+* all numbering (suits, invoices, leave letters, cash flow items, releases,
+  mandatories) and the court rotation, which start again from 1.
+
+Every collection of the system is either cleared or kept on purpose; a test
+fails if a new one is neither.
 
 Kept, as configuration: units and their forms, signing rules, Process
 Registry settings (case types, fees), leave and personnel settings and the

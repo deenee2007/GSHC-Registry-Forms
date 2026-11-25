@@ -21,7 +21,9 @@ async function send({ to, name, subject, text, html }) {
   if (t === 'memory') { sent.push(message); return; }
   if (t === 'console') { console.log(`[mail] To: ${to}\n[mail] Subject: ${subject}\n${text}\n`); return; }
 
-  const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+  let res;
+  try {
+    res = await fetch('https://api.brevo.com/v3/smtp/email', {
     method: 'POST',
     headers: { 'api-key': config.brevoApiKey, 'content-type': 'application/json', accept: 'application/json' },
     body: JSON.stringify({
@@ -30,12 +32,33 @@ async function send({ to, name, subject, text, html }) {
       subject, textContent: text, htmlContent: html
     }),
     signal: AbortSignal.timeout(15000)
-  });
+    });
+  } catch (e) {
+    console.error('Brevo could not be reached:', e.message);
+    throw Object.assign(new Error(`The email could not be sent: ${explain(0, '')}`), { status: 502, reason: explain(0, ''), expose: true });
+  }
   if (!res.ok) {
     const detail = await res.text().catch(() => '');
     console.error(`Brevo rejected an email (${res.status}): ${detail.slice(0, 300)}`);
-    throw Object.assign(new Error('The email could not be sent. Check the email settings on the server.'), { status: 502 });
+    const reason = explain(res.status, detail);
+    throw Object.assign(new Error(`The email could not be sent: ${reason}`), { status: 502, reason, expose: true });
   }
+}
+
+// Why Brevo refused, in plain words, with where to put it right. (Brevo
+// answers with a status and a JSON body: { code, message }.)
+function explain(status, body) {
+  let msg = '';
+  try { msg = String(JSON.parse(body).message || ''); } catch (e) { msg = String(body || ''); }
+  if (!status) return 'the server could not reach Brevo (no connection, or Brevo did not answer in time). Try again shortly.';
+  if (status === 401 && /\bIP\b|ip address/i.test(msg)) return 'Brevo blocked the server\'s IP address. In Brevo, open Security, Authorised IPs, and allow the server\'s outbound addresses (in Render: the service, Connect, Outbound), or turn off the blocking of unknown IP addresses.';
+  if (status === 401) return 'Brevo did not accept the API key. Check BREVO_API_KEY in the server\'s environment settings (in Render: the service, Environment), and that the key is still active in Brevo.';
+  if (/sender/i.test(msg)) return 'the sender address (MAIL_FROM) is not a verified sender in Brevo. Verify it in Brevo (Senders, Domains and Dedicated IPs), or change MAIL_FROM.';
+  if (status === 402 || /credit|plan|quota|limit/i.test(msg)) return 'the Brevo account has no email credits left, or has reached its plan limit. Check the plan in Brevo.';
+  if (status === 403) return `Brevo refused the request${msg ? ` (${msg.slice(0, 160)})` : ''}. The Brevo account may be suspended or not yet activated for sending.`;
+  if (status === 429) return 'too many emails at once: Brevo asked to slow down. Try again in a few minutes.';
+  if (status >= 500) return 'Brevo is having a problem on its side. Try again shortly.';
+  return `Brevo refused the email${msg ? ` (${msg.slice(0, 160)})` : ''}.`;
 }
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -115,4 +138,4 @@ function backupFailedMessage(user, error, link) {
   };
 }
 
-module.exports = { enabled, send, layout, inviteMessage, resetMessage, alertMessage, backupFailedMessage, sent };
+module.exports = { explain, enabled, send, layout, inviteMessage, resetMessage, alertMessage, backupFailedMessage, sent };

@@ -69,6 +69,19 @@ router.get('/meta', wrap(async (req, res) => {
   res.json({ privileges: PRIVILEGES, signerRoles: SIGNER_ROLES, mailEnabled: mail.enabled(), settings: await settings.get() });
 }));
 
+// A test email, to the administrator's own address (or another), to check
+// the email settings; on failure, why, in plain words.
+router.post('/test-email', wrap(async (req, res) => {
+  if (!mail.enabled()) throw new HttpError(503, 'Email is not set up on this server: BREVO_API_KEY and MAIL_FROM are needed in the environment settings.');
+  const to = String(req.body.to || req.user.email || '').trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) throw new HttpError(400, 'Enter the email address to send the test to.');
+  try {
+    await mail.send({ to, name: req.user.fullName, ...mail.alertMessage(req.user, 'GSHC Registry: test email', 'This is a test email from the GSHC Registry. If you can read it, email is working.', '') });
+  } catch (e) { throw Object.assign(new HttpError(e.status || 502, e.message), { expose: true }); }
+  await audit.log(req, 'test_email_sent', { details: { to } });
+  res.json({ ok: true, to });
+}));
+
 // System wide switches, e.g. { emailAlerts: false } stops alert emails for everyone.
 router.put('/settings', wrap(async (req, res) => {
   const out = await settings.set(req.body || {});
