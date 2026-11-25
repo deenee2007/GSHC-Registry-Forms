@@ -11,7 +11,7 @@
  * dismiss it.
  */
 const mongoose = require('mongoose');
-const { CashItem, CashRelease } = require('../models');
+const { CashItem, CashRelease, CashMandatory } = require('../models');
 
 const meta = () => mongoose.connection.collection('appmeta');
 const RELEASES = 'cashflowReleases';
@@ -134,12 +134,23 @@ async function summary(month) {
   const paidBy = Object.fromEntries((await CashItem.aggregate([
     { $unwind: '$payments' }, { $match: { 'payments.month': { $lte: month } } }, { $group: { _id: '$payments.month', n: { $sum: '$payments.amount' } } }
   ])).map(x => [x._id, x.n]));
-  Object.keys(paidBy).forEach(m => months.add(m));
+  // The mandatories of a month: approved, and paid (each beneficiary paid).
+  const mandatory = Object.fromEntries((await CashMandatory.aggregate([
+    { $match: { month: { $lte: month }, status: { $in: ['approved', 'paid'] } } }, { $group: { _id: '$month', n: { $sum: '$approvedTotal' } } }
+  ])).map(x => [x._id, x.n]));
+  const mandatoryPaid = Object.fromEntries((await CashMandatory.aggregate([
+    { $match: { month: { $lte: month } } }, { $unwind: '$items' }, { $unwind: '$items.payees' }, { $match: { 'items.payees.paid': { $ne: null } } },
+    { $group: { _id: '$month', n: { $sum: '$items.payees.paid.amount' } } }
+  ])).map(x => [x._id, x.n]));
+  [...Object.keys(paidBy), ...Object.keys(mandatory), ...Object.keys(mandatoryPaid)].forEach(m => months.add(m));
   let brought = 0, out = null;
   for (const m of [...months].sort()) {
-    const released = rel[m] || 0, paid = paidBy[m] || 0;
+    const released = rel[m] || 0, cashPaid = paidBy[m] || 0, mPaid = mandatoryPaid[m] || 0, paid = cashPaid + mPaid;
     const available = brought + released;
-    if (m === month) out = { month, broughtForward: brought, released, available, paid, balance: available - paid };
+    // The mandatories come first: what is left of the available is for the cash flow.
+    const mand = mandatory[m] || 0;
+    if (m === month) out = { month, broughtForward: brought, released, available, mandatories: mand, mandatoriesPaid: mPaid,
+      forCashflow: round(available - mand), paid, cashflowPaid: cashPaid, balance: round(available - paid) };
     brought = available - paid;
   }
   const approved = await CashItem.aggregate([{ $match: { month, status: { $in: ['approved', 'paid'] } } }, { $group: { _id: null, n: { $sum: '$decision.amount' } } }]);

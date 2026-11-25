@@ -373,3 +373,61 @@ test('the approved release memo has a QR code that confirms the beneficiaries an
   await CashRelease.updateOne({ _id: waiting.id }, { $set: { 'items.0.payees.0.amount': 90000 } });
   assert.equal((await u.acct.post(`/api/cashflow/releases/${waiting.id}/pay`, { payee: w.items[0].payees[0].id, pvNo: 'PV/9' })).status, 409, 'altered after approval: not paid');
 });
+
+test('the monthly mandatories: Chief Accountant, Chief Registrar, Hon. Chief Judge, transmission, payment, and the money', async () => {
+  const month = cf.thisMonth();
+  const casual = { title: 'Casual staff', payees: [{ name: 'Musa Ali', bank: 'Jaiz Bank', accountNo: '0011223344', amount: 30000 }, { name: 'Aisha Bello', bank: 'Zenith Bank', accountNo: '2011223344', amount: 30000 }] };
+  const starlink = { title: 'Starlink subscription', payees: [{ name: 'Starlink Internet Services Nigeria', bank: 'Access Bank', accountNo: '0711223344', amount: 38000 }] };
+  const allowance = { title: 'Allowance to heads of units', payees: [{ name: 'Hauwa Musa', bank: 'First Bank of Nigeria', accountNo: '3011223344', amount: 50000 }] };
+  assert.equal((await u.cr.post('/api/cashflow/mandatories', { month, items: [casual] })).status, 403, 'the Chief Accountant prepares');
+  assert.equal((await u.acct.post('/api/cashflow/mandatories', { month, items: [{ title: 'X', payees: [{ name: 'Y', bank: 'Z', accountNo: '1', amount: 5 }] }] })).status, 400, 'ten digits');
+  let r = await u.acct.post('/api/cashflow/mandatories', { month, items: [casual, starlink, allowance] });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  let m = r.body.list;
+  assert.equal(m.total, 148000);
+  assert.equal(m.status, 'with_cr');
+  assert.match(m.refNo, /^GSHC\/CF\/MAN\/\d{4}\/0001$/);
+  // The CJ cannot approve before the Chief Registrar sends it; the CR returns it with a query.
+  assert.equal((await u.cj.post(`/api/cashflow/mandatories/${m.id}/approve`, { pin: '1357' })).status, 409);
+  r = await u.cr.post(`/api/cashflow/mandatories/${m.id}/return`, { note: 'Attach the casual staff attendance' });
+  assert.equal(r.body.list.status, 'returned');
+  assert.equal((await u.acct.put(`/api/cashflow/mandatories/${m.id}`, { items: [casual, starlink, allowance] })).status, 400, 'the answer');
+  r = await u.acct.put(`/api/cashflow/mandatories/${m.id}`, { answer: 'Attendance attached', items: [casual, starlink, allowance] });
+  assert.equal(r.body.list.status, 'with_cr');
+  // The CR sends it on; the CJ approves it without the allowance.
+  assert.equal((await u.dcr.post(`/api/cashflow/mandatories/${m.id}/forward`)).status, 403);
+  r = await u.cr.post(`/api/cashflow/mandatories/${m.id}/forward`, { note: 'Recommended' });
+  assert.equal(r.body.list.status, 'pending');
+  assert.ok((await u.cj.get('/api/notifications')).body.notifications.some(n => /mandatories/.test(n.message)), 'the CJ is told');
+  assert.notEqual((await u.cj.post(`/api/cashflow/mandatories/${m.id}/approve`, { pin: '0000' })).status, 200, 'the PIN');
+  r = await u.cj.post(`/api/cashflow/mandatories/${m.id}/approve`, { pin: '1357', struck: [2] });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  m = r.body.list;
+  assert.equal(m.approvedTotal, 98000);
+  // The money: the mandatories come out of what is available, before the cash flow.
+  const s = (await u.cj.get(`/api/cashflow?month=${month}`)).body.summary;
+  assert.equal(s.mandatories, 98000);
+  assert.equal(s.forCashflow, Math.round((s.available - 98000) * 100) / 100);
+  // Not paid before the CR transmits; then the amount is what was approved.
+  const pay = (i, j) => u.acct.post(`/api/cashflow/mandatories/${m.id}/pay`, { payee: m.items[i].payees[j].id, pvNo: `PV/M/${i}${j}`, amount: 1 });
+  assert.equal((await pay(0, 0)).status, 409, 'not before transmission');
+  r = await u.cr.post(`/api/cashflow/mandatories/${m.id}/transmit`, { note: 'Pay by the 25th' });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal((await pay(2, 0)).status, 409, 'not a mandatory the CJ left out');
+  r = await pay(0, 0);
+  assert.equal(r.body.list.items[0].payees[0].paid.amount, 30000);
+  await pay(0, 1);
+  r = await pay(1, 0);
+  assert.equal(r.body.list.status, 'paid');
+  const after = (await u.cj.get(`/api/cashflow?month=${month}`)).body.summary;
+  assert.equal(after.mandatoriesPaid, 98000);
+  assert.equal(after.balance, Math.round((after.available - after.paid) * 100) / 100);
+  // The QR check, and next month's list starts from this one.
+  const q = await u.cj.get(`/api/cashflow/mandatories/${m.id}/qr`);
+  const v = await fetch(`${base}/api/verify/${q.body.verifyCode}`).then(x => x.json());
+  assert.equal(v.status, 'valid');
+  assert.match(v.document, /Monthly Mandatories/);
+  assert.equal(v.lines.length, 2);
+  const t = (await u.acct.get('/api/cashflow/mandatories/template')).body;
+  assert.deepEqual(t.items.map(x => x.title), ['Casual staff', 'Starlink subscription'], 'what was approved last month');
+});
